@@ -13,6 +13,11 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # İlk başlangıçta (boş volume'de) bu dosya otomatik çalıştırılır ve
+      # tabloları + seed verisini (17 kas grubu, 20 egzersiz) yükler.
+      # NOT: sadece volume BOŞKEN çalışır. Şemayı değiştirdiysen ve yeniden
+      # yüklemek istiyorsan önce `docker compose down -v` ile volume'ü sil.
+      - ./backend/db/schema_v1.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       # backend, db "healthy" olana kadar beklesin (aşağıdaki depends_on)
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bodytrack}"]
