@@ -1,0 +1,32 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ── Ortam / sırlar ──
+.env
+*.env
+!.env.example
+
+# ── Test / araç önbellekleri ──
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── IDE / OS ──
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Node / React Native (mobile/ için ileride) ──
+node_modules/
+*.log
+
+# ── Docker ──
+# (named volume kullanıyoruz; yerel veri klasörü tutmuyoruz)

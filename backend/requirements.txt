@@ -1,0 +1,27 @@
+# ── BodyTrack Backend — Çalışma zamanı bağımlılıkları ──
+# Sürümler "uyumlu sürüm" (~=) ile sabitlendi: aynı minor içinde patch
+# güncellemelerine izin verir, beklenmedik kırıcı güncellemeleri engeller.
+
+# Web çatısı (async) ve ASGI sunucusu
+fastapi~=0.115.0
+uvicorn[standard]~=0.32.0
+
+# Veritabanı: SQLAlchemy 2.0 (async ORM) + asyncpg (async PostgreSQL sürücüsü)
+sqlalchemy~=2.0.36
+asyncpg~=0.30.0
+
+# Şema migration aracı (tabloları versiyonlu yönetmek için)
+alembic~=1.14.0
+
+# Ayar/şema doğrulama: Pydantic v2 + ortam değişkenlerini okuyan settings eklentisi
+pydantic~=2.10.0
+pydantic-settings~=2.6.0
+email-validator~=2.2.0   # Pydantic EmailStr için gerekli
+
+# Kimlik doğrulama: JWT üretimi/doğrulaması + bcrypt ile şifre hash'leme
+python-jose[cryptography]~=3.3.0
+passlib[bcrypt]~=1.7.4
+bcrypt~=4.0.1            # passlib 1.7.4 ile uyumlu sürüm (4.1+ gereksiz uyarı basar)
+
+# Cache / kuyruk: Redis (4.2+ async desteği dahili gelir)
+redis~=5.2.0

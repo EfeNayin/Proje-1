@@ -1,0 +1,27 @@
+# BodyTrack backend — araç yapılandırması.
+# Bağımlılıklar requirements*.txt ile yönetiliyor; bu dosya yalnızca
+# geliştirme araçlarının (ruff, mypy, pytest) ayarlarını tutar.
+
+[project]
+name = "bodytrack-backend"
+version = "0.1.0"
+description = "BodyTrack — hipertrofi-odaklı bodybuilding platformu backend'i"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/F: pycodestyle+pyflakes, I: import sıralama, UP: modern syntax,
+# B: hatalı kalıplar (bugbear), ASYNC: async tuzakları
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

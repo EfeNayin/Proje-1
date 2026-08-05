@@ -1,0 +1,13 @@
+# ── Geliştirme bağımlılıkları (testler, lint, tip kontrol) ──
+# Çalışma zamanı imajına girmez; sadece lokal geliştirme + CI içindir.
+
+-r requirements.txt   # runtime bağımlılıklarını da dahil et
+
+# Test
+pytest~=8.3.0
+pytest-asyncio~=0.24.0   # async test fonksiyonları için
+httpx~=0.27.0            # FastAPI uygulamasına test isteği atmak için (ASGI client)
+
+# Kod kalitesi
+ruff~=0.8.0    # hem linter hem formatter (flake8+black+isort yerine tek araç)
+mypy~=1.13.0   # statik tip kontrolü

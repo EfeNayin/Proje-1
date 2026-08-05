@@ -1,0 +1,49 @@
+# ── BodyTrack yerel geliştirme ortamı ──
+# Üç servis: PostgreSQL (veri), Redis (cache/kuyruk), backend (FastAPI).
+# Çalıştır:  docker compose up --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bodytrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bodytrack}
+      POSTGRES_DB: ${POSTGRES_DB:-bodytrack}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # backend, db "healthy" olana kadar beklesin (aşağıdaki depends_on)
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bodytrack}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      # Kod değişikliklerini canlı yansıt (Dockerfile'daki --reload ile birlikte)
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
