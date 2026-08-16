@@ -1,8 +1,9 @@
 """Request and response models for the auth endpoints."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
+from zoneinfo import available_timezones
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -10,6 +11,21 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 # sharing their first 72 bytes would therefore be interchangeable, so we
 # reject anything longer instead of truncating it quietly.
 BCRYPT_MAX_BYTES = 72
+
+# Languages the product currently ships. Adding one is a code change (you need
+# the translations anyway), which is why this lives here and not as a database
+# CHECK constraint that would force a migration.
+SupportedLocale = Literal["tr", "en"]
+
+# Every name in Python's IANA database is also known to PostgreSQL, so a value
+# that passes this check is safe to use in `AT TIME ZONE` later. Computed once
+# at import: the set has ~600 entries and never changes at runtime.
+#
+# NOTE: this relies on the IANA database being available. Debian slim images do
+# not always ship one, and without it available_timezones() returns an EMPTY
+# set, which would reject every timezone. requirements.txt therefore pins the
+# `tzdata` package as a guaranteed fallback.
+_VALID_TIMEZONES = available_timezones()
 
 Username = Annotated[
     str,
@@ -24,11 +40,27 @@ Username = Annotated[
 Password = Annotated[str, Field(min_length=8, max_length=72, examples=["s3cret-passphrase"])]
 
 
+def validate_timezone(value: str) -> str:
+    """Reject anything that is not an IANA timezone name.
+
+    An unchecked value would be stored happily and then blow up much later,
+    inside the analytics query, when PostgreSQL evaluates `AT TIME ZONE`.
+    """
+    if value not in _VALID_TIMEZONES:
+        raise ValueError(f"Unknown IANA timezone: {value!r}. Example: 'Europe/Istanbul'")
+    return value
+
+
 class RegisterRequest(BaseModel):
     email: EmailStr
     username: Username
     password: Password
     display_name: str | None = Field(default=None, max_length=100)
+
+    # Clients should send the device's timezone. The default keeps signup
+    # working if they do not, and matches the current primary market.
+    timezone: str = Field(default="Europe/Istanbul", examples=["Europe/Istanbul"])
+    locale: SupportedLocale = "tr"
 
     @field_validator("password")
     @classmethod
@@ -41,6 +73,11 @@ class RegisterRequest(BaseModel):
                 "(non-ASCII characters count as more than one byte)"
             )
         return value
+
+    @field_validator("timezone")
+    @classmethod
+    def timezone_is_known(cls, value: str) -> str:
+        return validate_timezone(value)
 
 
 class LoginRequest(BaseModel):
@@ -73,6 +110,8 @@ class UserProfile(BaseModel):
     bio: str | None
     is_private: bool
     weight_unit: str
+    timezone: str
+    locale: str
     created_at: datetime
 
 

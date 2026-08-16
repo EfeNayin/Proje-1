@@ -65,6 +65,22 @@ class User(Base):
         Text, nullable=False, server_default=text("'kg'")
     )
 
+    # IANA timezone name, e.g. "Europe/Istanbul".
+    # Required by the weekly volume analytics: performed_at is stored in UTC,
+    # so a workout at 01:00 Monday in Istanbul is 22:00 Sunday UTC and would
+    # fall into the previous week if the week boundary were computed in UTC.
+    # Cannot be reconstructed after the fact, so it is captured at signup.
+    timezone: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'Europe/Istanbul'")
+    )
+
+    # BCP 47 language tag, e.g. "tr" or "en". Allowed values are constrained
+    # in the application layer, not the database, so that adding a language
+    # does not require a migration.
+    locale: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'tr'")
+    )
+
     created_at: Mapped[created_at]
     updated_at: Mapped[updated_at]
 

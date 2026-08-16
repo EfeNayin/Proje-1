@@ -51,6 +51,21 @@ CREATE TABLE users (
     is_private    BOOLEAN      NOT NULL DEFAULT TRUE,  -- gizlilik default PRIVATE
     weight_unit   TEXT         NOT NULL DEFAULT 'kg'
                   CHECK (weight_unit IN ('kg', 'lb')), -- ileride lb desteği için hazır
+
+    -- IANA saat dilimi adı ('Europe/Istanbul', 'America/New_York').
+    -- ZORUNLU: haftalık hacim analitiği "hafta" sınırını kullanıcının YEREL
+    -- saatine göre belirlemeli. performed_at TIMESTAMPTZ olduğu için UTC'de
+    -- saklanır; UTC üzerinden date_trunc('week') alınırsa İstanbul'da
+    -- Pazartesi 01:00'de yapılan antrenman (UTC'de Pazar 22:00) bir ÖNCEKİ
+    -- haftaya düşer. Bu bilgi sonradan geriye dönük türetilemez, o yüzden
+    -- ilk kayıttan itibaren tutulur. İstemci cihazın saat dilimini gönderir.
+    timezone      TEXT         NOT NULL DEFAULT 'Europe/Istanbul',
+
+    -- BCP 47 dil etiketi ('tr', 'en', ileride 'de'...). Arayüz dili ve
+    -- sunucudan dönen metinler için. Geçerli değerler uygulama katmanında
+    -- kısıtlanır; burada CHECK yok ki yeni dil eklemek migration gerektirmesin.
+    locale        TEXT         NOT NULL DEFAULT 'tr',
+
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -460,6 +475,26 @@ WHERE e.name = 'Cable Fly' AND m.name = 'front_delts';
 --  ŞEMA TAMAM — Katman 1: 7 tablo, seed dahil
 --  users, refresh_tokens, muscle_groups, exercises,
 --  exercise_muscle_groups, workouts, sets
+--
+--  ULUSLARARASILAŞMA NOTLARI (bilinçli ertelenenler):
+--   • week_start_day → date_trunc('week') HER ZAMAN Pazartesi'den başlar (ISO
+--     8601). Türkiye ve Avrupa için doğru; ABD'de haftalar Pazar başlar. Bu
+--     "yanlış veri" değil "farklı konvansiyon" — geçmişe dönük yeniden
+--     hesaplanabildiği için users.week_start_day kolonu sonradan eklenebilir.
+--   • Çok dilli katalog → şu an exercises.name (EN) + name_tr (TR) kolonları
+--     var. 3. dil eklenirken bu kalıp bozulur; o noktada ayrı bir
+--     exercise_translations(exercise_id, locale, name) tablosuna geçilmeli.
+--     Katalog 20 satır olduğu sürece bu migration önemsiz, şimdi yapmak erken.
+--   • Metinsel sıralama ve arama → veritabanı C.UTF-8 collation ile kurulur
+--     (bkz. docker-compose.yml, POSTGRES_INITDB_ARGS). Bu, Unicode varsayılan
+--     kurallarını uygular: ö/ü/ş/ğ/ç doğru küçülür, ama Türkçe'ye özgü I→ı
+--     kuralı UYGULANMAZ. Mevcut 20 egzersizde bu fark hiçbir soruna yol
+--     açmıyor (test edildi). GET /exercises?q= aramasını yazarken tekrar
+--     değerlendir: gerekirse name_tr kolonuna Türkçe ICU collation ver
+--     (CREATE COLLATION tr_icu (provider=icu, locale='tr-TR')). DİKKAT:
+--     Türkçe collation'ı veritabanı geneline verme — lower('INCLINE') o zaman
+--     'ınclıne' olur ve İngilizce arama bozulur. Dile duyarlı arama, ileride
+--     çeviri tablosuna geçmenin bir başka gerekçesi.
 --
 --  SCHEMA BACKLOG (ileriki fazlarda migration'la eklenecekler):
 --   Faz 2 → follows, workout_likes, workout_comments, personal_records,

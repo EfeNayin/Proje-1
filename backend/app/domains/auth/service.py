@@ -50,6 +50,8 @@ async def register(db: AsyncSession, payload: RegisterRequest) -> tuple[User, To
         username=payload.username,
         password_hash=hash_password(payload.password),
         display_name=payload.display_name,
+        timezone=payload.timezone,
+        locale=payload.locale,
     )
     db.add(user)
     await db.flush()  # populate user.id before it is used as a foreign key

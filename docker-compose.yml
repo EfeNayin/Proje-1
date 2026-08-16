@@ -4,11 +4,26 @@
 
 services:
   db:
-    image: postgres:16-alpine
+    # DİKKAT: alpine DEĞİL. postgres:16-alpine musl libc kullanır ve orada
+    # C.UTF-8 locale'i yoktur — sessizce "C"ye düşer. C collation'da harf
+    # katlama sadece ASCII'de çalışır: lower('GÖĞÜS') = 'gÖĞÜs' olur ve
+    # Türkçe egzersiz araması tamamen bozulur. Debian tabanlı imaj glibc
+    # kullandığı için C.UTF-8 düzgün çalışır.
+    image: postgres:16
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bodytrack}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bodytrack}
       POSTGRES_DB: ${POSTGRES_DB:-bodytrack}
+      # Collation'ı şansa bırakma. İki yönlü risk var:
+      #  • tr_TR ile kurulursa Türkçe harf kuralları devreye girer:
+      #    lower('I') = 'ı' olur, lower('INCLINE') = 'ınclıne' olur —
+      #    CITEXT email eşleşmesi ve İngilizce arama bozulur.
+      #  • C (UTF-8'siz) ile kurulursa katlama sadece ASCII'de çalışır:
+      #    lower('GÖĞÜS') = 'gÖĞÜs' olur, Türkçe arama bozulur.
+      # C.UTF-8 ikisinin arasında doğru yeri tutar: Unicode varsayılanı.
+      # DİKKAT: collation'ı sonradan değiştirmek tüm veritabanını
+      # dump/restore etmek demektir; bu satır o yüzden burada.
+      POSTGRES_INITDB_ARGS: "--locale=C.UTF-8"
     ports:
       - "5432:5432"
     volumes:
