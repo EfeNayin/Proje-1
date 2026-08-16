@@ -11,7 +11,7 @@
 import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -53,6 +53,10 @@ def create_access_token(user_id: UUID) -> str:
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "type": _TOKEN_TYPE_ACCESS,
+        # jti (JWT ID): her token'ı benzersiz kılar. Olmazsa aynı saniyede
+        # üretilen iki token birebir aynı olur (iat/exp saniye hassasiyetinde),
+        # bu da refresh_tokens.token_hash UNIQUE kısıtını ihlal eder.
+        "jti": str(uuid4()),
         "iat": datetime.now(UTC),
         "exp": expire_at,
     }
@@ -70,6 +74,7 @@ def create_refresh_token(user_id: UUID) -> tuple[str, datetime]:
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "type": _TOKEN_TYPE_REFRESH,
+        "jti": str(uuid4()),
         "iat": datetime.now(UTC),
         "exp": expire_at,
     }
