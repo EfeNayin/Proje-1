@@ -6,7 +6,16 @@ Maps to schema_v1.sql -> muscle_groups, exercises, exercise_muscle_groups
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, SmallInteger, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    SmallInteger,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -59,6 +68,12 @@ class MuscleGroup(Base):
         CheckConstraint(
             "region IN ('upper', 'lower', 'core')", name="muscle_groups_region_check"
         ),
+        Index(
+            "idx_muscle_groups_name_tr",
+            func.lower(func.immutable_unaccent(name_tr)),
+            postgresql_using="gin",
+            postgresql_ops={"lower_1": "gin_trgm_ops"},
+        ),
     )
 
     def __repr__(self) -> str:
@@ -107,12 +122,26 @@ class Exercise(Base):
     )
     creator: Mapped["User | None"] = relationship()
 
-    # Functional indexes on lower(...) so that case-insensitive search
-    # (GET /exercises?q=bench) can use an index instead of scanning.
-    # Names match schema_v1.sql exactly.
+    # Search indexes. Two things combine here: immutable_unaccent + lower so
+    # that "gogus" finds "Göğüs", and a GIN trigram index so that the
+    # "%term%" match the API performs can actually use an index — a btree
+    # cannot serve a leading wildcard.
+    # The expression must stay identical to _normalise() in
+    # exercises/service.py, otherwise the planner silently falls back to a
+    # sequential scan.
     __table_args__ = (
-        Index("idx_exercises_name", text("lower(name)")),
-        Index("idx_exercises_name_tr", text("lower(name_tr)")),
+        Index(
+            "idx_exercises_name",
+            func.lower(func.immutable_unaccent(name)),
+            postgresql_using="gin",
+            postgresql_ops={"lower_1": "gin_trgm_ops"},
+        ),
+        Index(
+            "idx_exercises_name_tr",
+            func.lower(func.immutable_unaccent(name_tr)),
+            postgresql_using="gin",
+            postgresql_ops={"lower_1": "gin_trgm_ops"},
+        ),
     )
 
     def __repr__(self) -> str:

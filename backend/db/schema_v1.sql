@@ -27,6 +27,24 @@ CREATE EXTENSION IF NOT EXISTS citext;
 -- gen_random_uuid() PostgreSQL 13+ içinde built-in; eski sürümlere karşı garanti.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- unaccent: aksan/çengel işaretlerini soyar. "Göğüs" → "Gogus", "Sırt" → "Sirt".
+-- Telefonda çoğu kullanıcı Türkçe karakter yazmadığı için arama bunu kullanır:
+-- "gogus" yazan "Göğüs"ü bulabilmeli.
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+-- pg_trgm: metni 3 harflik parçalara bölerek GIN indeksinde saklar. Arama
+-- "%bench%" gibi iki taraflı joker kullandığı için buna ihtiyaç var — btree
+-- indeksi bu kalıbı hiçbir şekilde karşılayamaz, sadece "bench%" öneklerini.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- unaccent() varsayılan olarak STABLE'dır (kullanılan sözlüğe bağlı olduğu için)
+-- ve bu haliyle indeks ifadesinde kullanılamaz. Sözlüğü açıkça sabitleyen bu
+-- sarmalayıcı IMMUTABLE olarak işaretlenebilir, böylece hem sorguda hem
+-- indekste aynı fonksiyonu kullanıp indeksten faydalanabiliriz.
+CREATE OR REPLACE FUNCTION immutable_unaccent(text)
+RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT AS
+$$ SELECT public.unaccent('public.unaccent'::regdictionary, $1) $$;
+
 -- updated_at alanını her UPDATE'te otomatik güncelleyen ortak fonksiyon.
 -- Her tabloda elle "updated_at = now()" yazmak yerine trigger ile merkezi tutuyoruz.
 CREATE OR REPLACE FUNCTION set_updated_at()
@@ -116,6 +134,10 @@ CREATE TABLE muscle_groups (
     created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+-- Kas grubu adıyla arama/filtreleme (hacim ekranı). exercises ile aynı kalıp.
+CREATE INDEX idx_muscle_groups_name_tr ON muscle_groups
+    USING GIN (lower(immutable_unaccent(name_tr)) gin_trgm_ops);
+
 
 -- ─────────────────────────────────────────────────────────────────────────
 --  exercises  ·  Egzersiz kataloğu (dışa açık → UUID)
@@ -132,10 +154,15 @@ CREATE TABLE exercises (
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
--- Egzersiz arama (GET /exercises?q=bench) için isim indeksi.
-CREATE INDEX idx_exercises_name ON exercises(lower(name));
--- Türkçe isimle arama da yapılacak (TR-first ürün).
-CREATE INDEX idx_exercises_name_tr ON exercises(lower(name_tr));
+-- Egzersiz arama (GET /exercises?q=bench). İki özellik birleşiyor:
+--  • immutable_unaccent + lower → "gogus" yazan "Göğüs"ü bulur
+--  • GIN + gin_trgm_ops → "%bench%" ortadan eşleşmesi indeksten faydalanır
+-- Sorgu tarafında AYNI ifade kullanılmalı (bkz. exercises/service.py
+-- _normalise), yoksa planner indeksi eşleştiremez ve sessizce seq scan'e döner.
+CREATE INDEX idx_exercises_name ON exercises
+    USING GIN (lower(immutable_unaccent(name)) gin_trgm_ops);
+CREATE INDEX idx_exercises_name_tr ON exercises
+    USING GIN (lower(immutable_unaccent(name_tr)) gin_trgm_ops);
 
 
 -- ─────────────────────────────────────────────────────────────────────────
