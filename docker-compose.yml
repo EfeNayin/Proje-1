@@ -51,7 +51,11 @@ services:
       retries: 5
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      # dev hedefi: üretim imajının üzerine pytest/ruff/mypy ekler.
+      # Testler: docker compose exec backend pytest
+      target: dev
     env_file:
       - ./backend/.env
     ports:
