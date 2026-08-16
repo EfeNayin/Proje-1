@@ -144,12 +144,16 @@ class TestWeekBoundary:
         assert after.local_week.isoformat() == "2026-08-10"
 
 
-class TestMuscleVolumeDistribution:
-    async def test_a_set_is_split_across_muscles_by_contribution(
+class TestDirectVolumeCounting:
+    async def test_only_primary_muscles_count_as_direct_sets(
         self, client: AsyncClient, db: AsyncSession, register_payload: dict[str, str]
     ) -> None:
-        """One bench set counts as 0.65 chest sets, 0.20 triceps, 0.15 front
-        delts — the mechanism the whole MEV/MAV/MRV feature rests on."""
+        """A bench set is 1 direct chest set and 0 direct triceps sets.
+
+        MEV/MAV/MRV are published for direct work: the stimulus triceps get
+        from pressing is already folded into their (lowered) landmarks, so
+        counting it again would double-count.
+        """
         await client.post("/auth/register", json=register_payload)
         await _log_workout(
             db, "efe", datetime(2026, 8, 19, 18, 0, tzinfo=ZoneInfo("Europe/Istanbul"))
@@ -159,8 +163,8 @@ class TestMuscleVolumeDistribution:
             await db.execute(
                 text("""
                     SELECT mg.name,
-                           SUM(emg.contribution_pct / 100.0)                      AS effective_sets,
-                           SUM(s.weight_kg * s.reps * emg.contribution_pct / 100) AS volume_kg
+                           count(*) FILTER (WHERE emg.role = 'primary') AS direct_sets,
+                           count(*)                                     AS involved_sets
                     FROM sets s
                     JOIN exercise_muscle_groups emg ON emg.exercise_id = s.exercise_id
                     JOIN muscle_groups mg           ON mg.id = emg.muscle_group_id
@@ -172,11 +176,11 @@ class TestMuscleVolumeDistribution:
             )
         ).all()
 
-        by_muscle = {row.name: (float(row.effective_sets), float(row.volume_kg)) for row in rows}
+        by_muscle = {row.name: (row.direct_sets, row.involved_sets) for row in rows}
 
-        assert by_muscle["chest"] == pytest.approx((0.65, 520.0))
-        assert by_muscle["triceps"] == pytest.approx((0.20, 160.0))
-        assert by_muscle["front_delts"] == pytest.approx((0.15, 120.0))
+        assert by_muscle["chest"] == (1, 1)
+        assert by_muscle["triceps"] == (0, 1)
+        assert by_muscle["front_delts"] == (0, 1)
 
     async def test_warmup_sets_are_excluded(
         self, client: AsyncClient, db: AsyncSession, register_payload: dict[str, str]

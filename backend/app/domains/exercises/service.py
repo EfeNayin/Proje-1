@@ -14,8 +14,8 @@ from app.domains.exercises.schemas import (
     ExerciseListResponse,
     ExerciseQuery,
     ExerciseSummary,
-    MuscleContribution,
     MuscleGroupSummary,
+    MuscleInvolvement,
 )
 from app.models import Exercise, ExerciseMuscleGroup, MuscleGroup
 
@@ -102,15 +102,17 @@ async def get_exercise(db: AsyncSession, exercise_id: UUID) -> ExerciseDetail:
         raise NotFoundError("Exercise not found")
 
     muscles = [
-        MuscleContribution(
+        MuscleInvolvement(
             name=link.muscle_group.name,
             name_tr=link.muscle_group.name_tr,
             role=cast(Literal["primary", "secondary"], link.role),
-            contribution_pct=link.contribution_pct,
+            effectiveness=link.effectiveness,
         )
-        # Heaviest contribution first, so the client can show "chest" as the
-        # headline muscle without sorting again.
-        for link in sorted(exercise.muscle_links, key=lambda x: -x.contribution_pct)
+        # Primary muscles first, then by effectiveness, so the client can show
+        # the headline muscle without sorting again.
+        for link in sorted(
+            exercise.muscle_links, key=lambda x: (x.role != "primary", -x.effectiveness)
+        )
     ]
 
     return ExerciseDetail(

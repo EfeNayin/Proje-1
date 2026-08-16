@@ -171,26 +171,38 @@ class TestExerciseDetail:
 
         assert response.status_code == 200, response.text
         muscles = {m["name"]: m for m in response.json()["muscles"]}
-        assert muscles["chest"]["contribution_pct"] == 65
         assert muscles["chest"]["role"] == "primary"
-        assert muscles["triceps"]["contribution_pct"] == 20
+        assert muscles["chest"]["effectiveness"] == 5
         assert muscles["triceps"]["role"] == "secondary"
+        assert muscles["triceps"]["effectiveness"] == 3
 
-    async def test_contributions_sum_to_100(
+    async def test_every_exercise_has_a_primary_muscle(
         self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
-        """The volume split depends on this; a catalogue entry that does not
-        add up would silently under- or over-count a muscle."""
+        """Weekly volume only counts direct work, so an exercise with no
+        primary muscle would be logged and then vanish from analytics."""
         listing = (await client.get("/exercises?limit=100", headers=auth_headers)).json()
 
         for item in listing["items"]:
             detail = (
                 await client.get(f"/exercises/{item['id']}", headers=auth_headers)
             ).json()
-            total = sum(m["contribution_pct"] for m in detail["muscles"])
-            assert total == 100, f"{item['name']} sums to {total}"
+            primaries = [m for m in detail["muscles"] if m["role"] == "primary"]
+            assert primaries, f"{item['name']} has no primary muscle"
 
-    async def test_muscles_are_ordered_by_contribution(
+    async def test_effectiveness_is_within_range(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        listing = (await client.get("/exercises?limit=100", headers=auth_headers)).json()
+
+        for item in listing["items"]:
+            detail = (
+                await client.get(f"/exercises/{item['id']}", headers=auth_headers)
+            ).json()
+            for muscle in detail["muscles"]:
+                assert 1 <= muscle["effectiveness"] <= 5, item["name"]
+
+    async def test_primary_muscles_come_first(
         self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
         listing = (await client.get("/exercises?q=deadlift", headers=auth_headers)).json()
@@ -198,8 +210,10 @@ class TestExerciseDetail:
             await client.get(f"/exercises/{listing['items'][0]['id']}", headers=auth_headers)
         ).json()
 
-        percentages = [m["contribution_pct"] for m in detail["muscles"]]
-        assert percentages == sorted(percentages, reverse=True)
+        roles = [m["role"] for m in detail["muscles"]]
+        # Primary muscles first, so the client can show the headline muscle
+        # without sorting again.
+        assert roles == sorted(roles, key=lambda r: r != "primary")
 
     async def test_unknown_id_returns_404(
         self, client: AsyncClient, auth_headers: dict[str, str]

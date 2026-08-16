@@ -166,21 +166,36 @@ CREATE INDEX idx_exercises_name_tr ON exercises
 
 
 -- ─────────────────────────────────────────────────────────────────────────
---  exercise_muscle_groups  ·  Egzersiz → kas katkısı (ANALİTİĞİN KALBİ)
+--  exercise_muscle_groups  ·  Egzersiz → kas ilişkisi (ANALİTİĞİN KALBİ)
 -- ─────────────────────────────────────────────────────────────────────────
---  Bir egzersizin yapılan her set'i, kaslara YÜZDE ile dağıtılır.
---  Örn. Bench Press: göğüs %65 (primary), triceps %20, ön omuz %15 (secondary).
---  "Haftalık göğüs seti" = ilgili set'lerin contribution_pct toplamı.
---  Bu sayede 1 set bench, göğüse 0.65 set, omuza 0.15 set olarak sayılabilir.
---  Bir egzersizin tüm satırlarının contribution_pct toplamı ≈ 100 olmalı
---  (uygulama katmanında doğrulanır; DB'de zorlamak triggersız mümkün değil).
+--  İki BAĞIMSIZ boyut tutuyoruz:
+--
+--  role: 'primary' = bu hareket bu kası DOĞRUDAN çalıştırır.
+--        'secondary' = kas dahil oluyor ama hareketin hedefi değil.
+--        Haftalık set sayımı (direct_sets) yalnızca primary satırları sayar.
+--        Sebebi: RP'nin yayınladığı MEV/MAV/MRV eşikleri doğrudan çalışma
+--        için kalibre edilmiştir — presleme gibi hareketlerden gelen dolaylı
+--        hacim eşiklere zaten dahil edilip sayılar aşağı çekilmiştir. Dolaylı
+--        hacmi ayrıca eklemek çift sayım olur.
+--        (rpstrength.com/expert-advice/training-volume-landmarks-muscle-growth)
+--
+--  effectiveness: 1-5. Bu hareketin BU kas için ne kadar iyi bir seçim
+--        olduğu. Ölçüm değil, değerlendirme — bilinçli olarak öyle
+--        tasarlandı. Yüzdeyle katkı dağıtmak sahte bir kesinlik yaratıyordu;
+--        elimizde her hareket için EMG verisi yok.
+--          5 → bu kas için en iyi seçeneklerden biri
+--          4 → iyi, küçük eksiklerle (gerilme veya yüklenebilirlik sınırlı)
+--          3 → işe yarar ama optimal değil
+--          2 → zayıf uyarı, yardımcı rol
+--          1 → marjinal, kas aktif ama büyüme uyarısı sayılmaz
+--        İki boyut bağımsız: barfiks pazıya secondary ama etkili (4).
 CREATE TABLE exercise_muscle_groups (
     exercise_id      UUID      NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
     muscle_group_id  SMALLINT  NOT NULL REFERENCES muscle_groups(id) ON DELETE RESTRICT,
     role             TEXT      NOT NULL DEFAULT 'primary'
                      CHECK (role IN ('primary', 'secondary')),
-    contribution_pct SMALLINT  NOT NULL
-                     CHECK (contribution_pct BETWEEN 1 AND 100),  -- bu kasa katkı yüzdesi
+    effectiveness    SMALLINT  NOT NULL
+                     CHECK (effectiveness BETWEEN 1 AND 5),
     PRIMARY KEY (exercise_id, muscle_group_id)   -- bir egzersiz-kas çifti tekil
 );
 
@@ -292,211 +307,213 @@ INSERT INTO exercises (name, name_tr, equipment, is_compound) VALUES
 
 
 -- ============================================================================
---  SEED: exercise_muscle_groups — 20 egzersizin TAMAMI için kas eşleştirmesi
---  Her egzersizin contribution_pct toplamı = 100.
---  Yüzdeler EMG çalışmaları + antrenman literatürüne dayalı yaklaşık değerler;
---  ileride veriye göre kalibre edilebilir.
+--  SEED: exercise_muscle_groups — 20 egzersizin tamamı
+--
+--  role          : primary = doğrudan çalışma (haftalık set sayımına girer)
+--                  secondary = dahil ama hedef değil (sayıma girmez)
+--  effectiveness : 1-5, bu hareketin BU kas için ne kadar iyi olduğu.
+--                  Ölçüm değil değerlendirme; ileride kendi kullanıcı
+--                  verinizle veya literatürle kalibre edilebilir.
 -- ============================================================================
 
--- Barbell Back Squat: quads 55 + glutes 30 + hamstrings 15
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 55 FROM exercises e, muscle_groups m
+-- Barbell Back Squat
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Back Squat' AND m.name = 'quads';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 30 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Back Squat' AND m.name = 'glutes';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 15 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 2 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Back Squat' AND m.name = 'hamstrings';
 
--- Barbell Front Squat: quads 65 + glutes 20 + abs 15 (dik gövde → core yükü)
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 65 FROM exercises e, muscle_groups m
+-- Barbell Front Squat
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Front Squat' AND m.name = 'quads';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 20 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Front Squat' AND m.name = 'glutes';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 15 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Front Squat' AND m.name = 'abs';
 
--- Conventional Deadlift: hamstrings 40 + glutes 30 + lower_back 20 + lats 10
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 40 FROM exercises e, muscle_groups m
+-- Conventional Deadlift
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Conventional Deadlift' AND m.name = 'hamstrings';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 30 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Conventional Deadlift' AND m.name = 'glutes';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 20 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Conventional Deadlift' AND m.name = 'lower_back';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 10 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 2 FROM exercises e, muscle_groups m
 WHERE e.name = 'Conventional Deadlift' AND m.name = 'lats';
 
--- Romanian Deadlift: hamstrings 55 + glutes 30 + lower_back 15
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 55 FROM exercises e, muscle_groups m
+-- Romanian Deadlift
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Romanian Deadlift' AND m.name = 'hamstrings';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 30 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Romanian Deadlift' AND m.name = 'glutes';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 15 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Romanian Deadlift' AND m.name = 'lower_back';
 
--- Barbell Bench Press: chest 65 + triceps 20 + front_delts 15
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 65 FROM exercises e, muscle_groups m
+-- Barbell Bench Press
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Bench Press' AND m.name = 'chest';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 20 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Bench Press' AND m.name = 'triceps';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 15 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Bench Press' AND m.name = 'front_delts';
 
--- Incline Barbell Bench: chest 55 + front_delts 25 + triceps 20
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 55 FROM exercises e, muscle_groups m
+-- Incline Barbell Bench
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Incline Barbell Bench' AND m.name = 'chest';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 25 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Incline Barbell Bench' AND m.name = 'front_delts';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 20 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Incline Barbell Bench' AND m.name = 'triceps';
 
--- Dumbbell Bench Press: chest 65 + triceps 20 + front_delts 15
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 65 FROM exercises e, muscle_groups m
+-- Dumbbell Bench Press
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Dumbbell Bench Press' AND m.name = 'chest';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 20 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Dumbbell Bench Press' AND m.name = 'triceps';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 15 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Dumbbell Bench Press' AND m.name = 'front_delts';
 
--- Overhead Press: front_delts 55 + triceps 25 + side_delts 20
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 55 FROM exercises e, muscle_groups m
+-- Overhead Press
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Overhead Press' AND m.name = 'front_delts';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 25 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Overhead Press' AND m.name = 'triceps';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 20 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Overhead Press' AND m.name = 'side_delts';
 
--- Barbell Row: upper_back 40 + lats 35 + biceps 15 + rear_delts 10
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 40 FROM exercises e, muscle_groups m
+-- Barbell Row
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Row' AND m.name = 'upper_back';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 35 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Row' AND m.name = 'lats';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 15 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Row' AND m.name = 'biceps';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 10 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Barbell Row' AND m.name = 'rear_delts';
 
--- Pull-up: lats 60 + biceps 20 + upper_back 20
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 60 FROM exercises e, muscle_groups m
+-- Pull-up
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Pull-up' AND m.name = 'lats';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 20 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Pull-up' AND m.name = 'biceps';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 20 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Pull-up' AND m.name = 'upper_back';
 
--- Lat Pulldown: lats 65 + biceps 20 + upper_back 15
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 65 FROM exercises e, muscle_groups m
+-- Lat Pulldown
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Lat Pulldown' AND m.name = 'lats';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 20 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Lat Pulldown' AND m.name = 'biceps';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 15 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Lat Pulldown' AND m.name = 'upper_back';
 
--- Dumbbell Row: lats 45 + upper_back 30 + biceps 15 + rear_delts 10
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 45 FROM exercises e, muscle_groups m
+-- Dumbbell Row
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Dumbbell Row' AND m.name = 'lats';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 30 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Dumbbell Row' AND m.name = 'upper_back';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 15 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Dumbbell Row' AND m.name = 'biceps';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 10 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 2 FROM exercises e, muscle_groups m
 WHERE e.name = 'Dumbbell Row' AND m.name = 'rear_delts';
 
--- Leg Press: quads 65 + glutes 25 + hamstrings 10
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 65 FROM exercises e, muscle_groups m
+-- Leg Press
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Leg Press' AND m.name = 'quads';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 25 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 3 FROM exercises e, muscle_groups m
 WHERE e.name = 'Leg Press' AND m.name = 'glutes';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 10 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 2 FROM exercises e, muscle_groups m
 WHERE e.name = 'Leg Press' AND m.name = 'hamstrings';
 
--- Leg Curl: hamstrings 90 + calves 10
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 90 FROM exercises e, muscle_groups m
+-- Leg Curl
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Leg Curl' AND m.name = 'hamstrings';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 10 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 1 FROM exercises e, muscle_groups m
 WHERE e.name = 'Leg Curl' AND m.name = 'calves';
 
--- Leg Extension: quads 100
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 100 FROM exercises e, muscle_groups m
+-- Leg Extension
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Leg Extension' AND m.name = 'quads';
 
--- Lateral Raise: side_delts 90 + traps 10
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 90 FROM exercises e, muscle_groups m
+-- Lateral Raise
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Lateral Raise' AND m.name = 'side_delts';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 10 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 2 FROM exercises e, muscle_groups m
 WHERE e.name = 'Lateral Raise' AND m.name = 'traps';
 
--- Dumbbell Curl: biceps 85 + forearms 15
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 85 FROM exercises e, muscle_groups m
+-- Dumbbell Curl
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Dumbbell Curl' AND m.name = 'biceps';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 15 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 2 FROM exercises e, muscle_groups m
 WHERE e.name = 'Dumbbell Curl' AND m.name = 'forearms';
 
--- Tricep Pushdown: triceps 100
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 100 FROM exercises e, muscle_groups m
+-- Tricep Pushdown
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Tricep Pushdown' AND m.name = 'triceps';
 
--- Calf Raise: calves 100
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 100 FROM exercises e, muscle_groups m
+-- Calf Raise
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 5 FROM exercises e, muscle_groups m
 WHERE e.name = 'Calf Raise' AND m.name = 'calves';
 
--- Cable Fly: chest 85 + front_delts 15
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'primary', 85 FROM exercises e, muscle_groups m
+-- Cable Fly
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'primary', 4 FROM exercises e, muscle_groups m
 WHERE e.name = 'Cable Fly' AND m.name = 'chest';
-INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, contribution_pct)
-SELECT e.id, m.id, 'secondary', 15 FROM exercises e, muscle_groups m
+INSERT INTO exercise_muscle_groups (exercise_id, muscle_group_id, role, effectiveness)
+SELECT e.id, m.id, 'secondary', 2 FROM exercises e, muscle_groups m
 WHERE e.name = 'Cable Fly' AND m.name = 'front_delts';
-
 
 -- ============================================================================
 --  ŞEMA TAMAM — Katman 1: 7 tablo, seed dahil

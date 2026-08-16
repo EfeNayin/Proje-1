@@ -174,13 +174,13 @@ class ExerciseMuscleGroup(Base):
         primary_key=True,
     )
 
-    # 'primary' -> the muscle the movement mainly targets
-    # 'secondary' -> meaningfully involved, but not the main target
+    # 'primary' -> trained directly; counts toward weekly volume
+    # 'secondary' -> involved, but not the target; excluded from the count
     role: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'primary'")
     )
 
-    contribution_pct: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    effectiveness: Mapped[int] = mapped_column(SmallInteger, nullable=False)
 
     exercise: Mapped["Exercise"] = relationship(back_populates="muscle_links")
     muscle_group: Mapped["MuscleGroup"] = relationship(back_populates="exercise_links")
@@ -190,8 +190,8 @@ class ExerciseMuscleGroup(Base):
             "role IN ('primary', 'secondary')", name="exercise_muscle_groups_role_check"
         ),
         CheckConstraint(
-            "contribution_pct BETWEEN 1 AND 100",
-            name="exercise_muscle_groups_contribution_pct_check",
+            "effectiveness BETWEEN 1 AND 5",
+            name="exercise_muscle_groups_effectiveness_check",
         ),
         # Supports the reverse lookup: "which exercises train this muscle?"
         Index("idx_emg_muscle_group", "muscle_group_id"),

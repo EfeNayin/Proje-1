@@ -29,17 +29,22 @@ class MuscleGroupSummary(BaseModel):
     mrv: int | None
 
 
-class MuscleContribution(BaseModel):
-    """How much one exercise loads one muscle.
+class MuscleInvolvement(BaseModel):
+    """One muscle an exercise trains.
 
-    contribution_pct drives the volume split: a bench press set counts as 0.65
-    chest sets rather than a whole one.
+    role "primary" means the muscle is trained directly and the set counts
+    toward that muscle's weekly volume; "secondary" means it is involved but
+    not counted, because the volume landmarks already assume that indirect
+    work happens.
+
+    effectiveness is 1-5: how good this exercise is for this muscle. It is a
+    judgement rather than a measurement.
     """
 
     name: str
     name_tr: str
     role: Literal["primary", "secondary"]
-    contribution_pct: int
+    effectiveness: int
 
 
 class ExerciseSummary(BaseModel):
@@ -57,7 +62,7 @@ class ExerciseSummary(BaseModel):
 class ExerciseDetail(ExerciseSummary):
     """Single-exercise view, including which muscles it trains."""
 
-    muscles: list[MuscleContribution]
+    muscles: list[MuscleInvolvement]
 
 
 class ExerciseListResponse(BaseModel):
