@@ -9,7 +9,7 @@
 """
 
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -47,13 +47,13 @@ def hash_token(raw_token: str) -> str:
 
 def create_access_token(user_id: UUID) -> str:
     """Kısa ömürlü access token üretir. DB'ye yazılmaz (stateless)."""
-    expire_at = datetime.now(timezone.utc) + timedelta(
+    expire_at = datetime.now(UTC) + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "type": _TOKEN_TYPE_ACCESS,
-        "iat": datetime.now(timezone.utc),
+        "iat": datetime.now(UTC),
         "exp": expire_at,
     }
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
@@ -66,11 +66,11 @@ def create_refresh_token(user_id: UUID) -> tuple[str, datetime]:
     service) bu ham token'ı kullanıcıya gönderir, hash'ini ise
     refresh_tokens tablosuna kaydeder.
     """
-    expire_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expire_at = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "type": _TOKEN_TYPE_REFRESH,
-        "iat": datetime.now(timezone.utc),
+        "iat": datetime.now(UTC),
         "exp": expire_at,
     }
     token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
