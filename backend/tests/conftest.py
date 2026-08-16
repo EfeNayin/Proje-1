@@ -162,3 +162,38 @@ async def auth_headers(
     assert response.status_code == 201, response.text
     token = response.json()["tokens"]["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+async def other_auth_headers(client: AsyncClient) -> dict[str, str]:
+    """A second, unrelated account.
+
+    Used to prove that one user cannot read or mutate another's data — the
+    kind of hole that stays silent until it leaks real user data.
+    """
+    response = await client.post(
+        "/auth/register",
+        json={
+            "email": "intruder@example.com",
+            "username": "intruder",
+            "password": "supersecret123",
+        },
+    )
+    assert response.status_code == 201, response.text
+    token = response.json()["tokens"]["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+async def bench_press_id(client: AsyncClient, auth_headers: dict[str, str]) -> str:
+    """Id of a seeded exercise, for building workouts in tests."""
+    response = await client.get("/exercises?q=barbell bench", headers=auth_headers)
+    assert response.status_code == 200, response.text
+    return str(response.json()["items"][0]["id"])
+
+
+@pytest.fixture
+async def squat_id(client: AsyncClient, auth_headers: dict[str, str]) -> str:
+    response = await client.get("/exercises?q=back squat", headers=auth_headers)
+    assert response.status_code == 200, response.text
+    return str(response.json()["items"][0]["id"])

@@ -14,6 +14,7 @@ from app.core.exceptions import AppError
 from app.domains.auth.router import router as auth_router
 from app.domains.exercises.router import router as exercises_router
 from app.domains.users.router import router as users_router
+from app.domains.workouts.router import router as workouts_router
 
 API_PREFIX = "/api/v1"
 
@@ -40,6 +41,7 @@ async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
 app.include_router(auth_router, prefix=API_PREFIX)
 app.include_router(exercises_router, prefix=API_PREFIX)
 app.include_router(users_router, prefix=API_PREFIX)
+app.include_router(workouts_router, prefix=API_PREFIX)
 
 
 @app.get("/health", tags=["meta"], summary="Liveness probe")
