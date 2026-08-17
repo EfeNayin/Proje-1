@@ -547,4 +547,16 @@ WHERE e.name = 'Cable Fly' AND m.name = 'front_delts';
 --           readiness_logs, users.experience_level, users.primary_goal
 --   Faz 4+ → set_videos, video_analyses (CV) · sensor_recordings (HAR)
 --   Ayrıca → sets.rest_seconds, sets.source, exercises.slug (gerekirse)
+
+--  ANTRENMAN TERMİNOLOJİSİ (kasıtlı olarak ertelenenler):
+--   • sets.set_type → dropset / rest_pause için. Şu an sadece is_warmup var.
+--     Mobil çalışıp gerçek kullanım görüldükten sonra eklenecek. Dropset'in
+--     kaç set sayılacağı KULLANICI TERCİHİ olacak (users.dropset_counting
+--     gibi bir ayar) — camiada ortak standart yok, kimi tek set kimi her
+--     düşüşü ayrı sayıyor.
+--   • personal_records + estimated_1rm → Faz 2. 1RM saklanan değil türetilen
+--     bir değer (Epley/Brzycki), asıl anlamı PR takibi ve leaderboard'da.
+--   • workout_templates.is_amrap → Faz 3. AMRAP bir programlama talimatı,
+--     loglama alanı değil: seti yaptıktan sonra kaydedilen şey çıkan tekrar
+--     sayısı ve RPE. Failure de RPE 10 / RIR 0 ile zaten ifade edilebiliyor.
 -- ============================================================================
