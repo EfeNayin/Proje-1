@@ -1,11 +1,9 @@
 /**
  * Profile screen.
  *
- * Deliberately plain: its job right now is to prove the round trip works —
- * stored token, authenticated request, real data from the API.
+ * Read-only for now; editing lands here once the training loop is settled.
  */
 
-import { Stack } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -17,8 +15,8 @@ import {
   View,
 } from "react-native";
 
-import { useAuth } from "../../src/auth/AuthContext";
-import { colors, radius, spacing } from "../../src/theme";
+import { useAuth } from "../../../src/auth/AuthContext";
+import { colors, radius, spacing } from "../../../src/theme";
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -38,8 +36,8 @@ export default function ProfileScreen() {
     try {
       await refreshProfile();
     } catch {
-      // A failed refresh leaves the last known profile on screen; the client
-      // already signs the user out if the session is truly gone.
+      // The last known profile stays on screen; the client already signs the
+      // user out if the session is genuinely gone.
     } finally {
       setRefreshing(false);
     }
@@ -54,34 +52,27 @@ export default function ProfileScreen() {
   }
 
   return (
-    <>
-      <Stack.Screen options={{ title: "Profile" }} />
-      <ScrollView
-        contentContainerStyle={styles.container}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.accent}
-          />
-        }
-      >
-        <Text style={styles.name}>{user.display_name ?? user.username}</Text>
-        <Text style={styles.username}>@{user.username}</Text>
+    <ScrollView
+      contentContainerStyle={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
+      }
+    >
+      <Text style={styles.name}>{user.display_name ?? user.username}</Text>
+      <Text style={styles.username}>@{user.username}</Text>
 
-        <View style={styles.card}>
-          <Row label="Email" value={user.email} />
-          <Row label="Units" value={user.weight_unit} />
-          <Row label="Timezone" value={user.timezone} />
-          <Row label="Language" value={user.locale} />
-          <Row label="Visibility" value={user.is_private ? "Private" : "Public"} />
-        </View>
+      <View style={styles.card}>
+        <Row label="Email" value={user.email} />
+        <Row label="Units" value={user.weight_unit} />
+        <Row label="Timezone" value={user.timezone} />
+        <Row label="Language" value={user.locale} />
+        <Row label="Visibility" value={user.is_private ? "Private" : "Public"} />
+      </View>
 
-        <Pressable style={styles.signOut} onPress={() => void signOut()}>
-          <Text style={styles.signOutText}>Sign out</Text>
-        </Pressable>
-      </ScrollView>
-    </>
+      <Pressable style={styles.signOut} onPress={() => void signOut()}>
+        <Text style={styles.signOutText}>Sign out</Text>
+      </Pressable>
+    </ScrollView>
   );
 }
 

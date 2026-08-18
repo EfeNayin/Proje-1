@@ -1,6 +1,9 @@
 /**
- * Layout for the signed-in screens. The guard: anyone without a session is
- * sent to login before a protected screen can render.
+ * Signed-in area. The guard lives here; anyone without a session is sent to
+ * login before a protected screen renders.
+ *
+ * A Stack rather than Tabs directly, because the active workout screen should
+ * cover the tab bar: mid-set is not the moment to offer navigation elsewhere.
  */
 
 import { Redirect, Stack } from "expo-router";
@@ -20,8 +23,16 @@ export default function AppLayout() {
       screenOptions={{
         headerStyle: { backgroundColor: colors.background },
         headerTintColor: colors.text,
+        headerShadowVisible: false,
         contentStyle: { backgroundColor: colors.background },
       }}
-    />
+    >
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="workout/[id]" options={{ title: "Workout" }} />
+      <Stack.Screen
+        name="workout/exercise-picker"
+        options={{ title: "Add exercise", presentation: "modal" }}
+      />
+    </Stack>
   );
 }
