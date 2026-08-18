@@ -17,6 +17,28 @@ export const colors = {
   danger: "#ff6b6b",
 } as const;
 
+/**
+ * Colours for the weekly volume readout.
+ *
+ * "high" is blue rather than a warning shade: between MAV and MRV is hard but
+ * productive training, not a mistake. Only above MRV is a problem.
+ */
+export const statusColors = {
+  untrained: "#4a5160",
+  below_mev: "#f0a955",
+  optimal: "#3ddc84",
+  high: "#4aa3f0",
+  above_mrv: "#ff6b6b",
+} as const;
+
+export const statusLabels = {
+  untrained: "Not trained",
+  below_mev: "Below MEV",
+  optimal: "Optimal",
+  high: "High",
+  above_mrv: "Over MRV",
+} as const;
+
 export const spacing = {
   xs: 4,
   sm: 8,
