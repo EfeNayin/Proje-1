@@ -82,6 +82,25 @@ export function addSet(workoutId: string, set: NewSet): Promise<WorkoutDetail> {
   });
 }
 
+/**
+ * Correct a logged set.
+ *
+ * Only the fields sent are changed, so passing just `reps` leaves the weight
+ * alone. exercise_id is deliberately not editable: moving a set to a
+ * different exercise would break its numbering, and deleting and re-adding
+ * is clearer anyway.
+ */
+export function updateSet(
+  workoutId: string,
+  setId: number,
+  changes: { weight_kg?: number; reps?: number; rir?: number | null; is_warmup?: boolean },
+): Promise<WorkoutDetail> {
+  return apiRequest<WorkoutDetail>(`/workouts/${workoutId}/sets/${setId}`, {
+    method: "PATCH",
+    body: changes,
+  });
+}
+
 export function deleteSet(workoutId: string, setId: number): Promise<WorkoutDetail> {
   return apiRequest<WorkoutDetail>(`/workouts/${workoutId}/sets/${setId}`, {
     method: "DELETE",
