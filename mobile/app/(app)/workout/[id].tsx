@@ -34,7 +34,10 @@ type ExerciseBlock = {
 };
 
 /** Groups sets by exercise, preserving the order they were first logged in. */
-function groupByExercise(sets: LoggedSet[], extraIds: { id: string; name: string }[]): ExerciseBlock[] {
+function groupByExercise(
+  sets: LoggedSet[],
+  extraIds: { id: string; name: string }[],
+): ExerciseBlock[] {
   const blocks = new Map<string, ExerciseBlock>();
 
   for (const set of sets) {
@@ -114,6 +117,147 @@ function RestTimer({ since }: { since: number | null }) {
         Rest {minutes}:{String(seconds).padStart(2, "0")}
       </Text>
     </View>
+  );
+}
+
+/**
+ * The workout's name, edited in place.
+ *
+ * Saved on blur rather than per keystroke: a request per character would be
+ * wasteful, and there is no meaningful moment to autosave mid-word.
+ */
+function TitleField({
+  value,
+  onSave,
+}: {
+  value: string | null;
+  onSave: (title: string | null) => void;
+}) {
+  const [draft, setDraft] = useState(value ?? "");
+
+  // Keep in step when the server sends a different title back.
+  useEffect(() => setDraft(value ?? ""), [value]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed === (value ?? "")) return;
+    onSave(trimmed === "" ? null : trimmed);
+  };
+
+  return (
+    <TextInput
+      style={styles.titleInput}
+      value={draft}
+      onChangeText={setDraft}
+      onBlur={commit}
+      onSubmitEditing={commit}
+      placeholder="Name this workout"
+      placeholderTextColor={colors.textMuted}
+      returnKeyType="done"
+      maxLength={200}
+    />
+  );
+}
+
+/**
+ * One logged set. Tap to correct it, long-press to delete.
+ *
+ * Editing in place rather than in a modal: fixing a mistyped rep count is a
+ * two-second job and should not involve a screen transition.
+ */
+function SetRow({
+  set,
+  onSave,
+  onDelete,
+}: {
+  set: LoggedSet;
+  onSave: (setId: number, weight: number, reps: number) => Promise<void>;
+  onDelete: (setId: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [weight, setWeight] = useState("");
+  const [reps, setReps] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const startEditing = () => {
+    setWeight(String(Number(set.weight_kg)));
+    setReps(String(set.reps));
+    setEditing(true);
+  };
+
+  const save = async () => {
+    const parsedWeight = Number(weight.replace(",", "."));
+    const parsedReps = Number(reps);
+
+    if (!Number.isFinite(parsedWeight) || parsedWeight < 0) return;
+    if (!Number.isInteger(parsedReps) || parsedReps <= 0) return;
+
+    setSaving(true);
+    try {
+      await onSave(set.id, parsedWeight, parsedReps);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <View style={styles.setRowEditing}>
+        <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
+          {set.is_warmup ? "W" : set.set_number}
+        </Text>
+
+        <TextInput
+          style={styles.editInput}
+          value={weight}
+          onChangeText={setWeight}
+          keyboardType="decimal-pad"
+          autoFocus
+          selectTextOnFocus
+        />
+        <Text style={styles.editUnit}>kg ×</Text>
+        <TextInput
+          style={styles.editInput}
+          value={reps}
+          onChangeText={setReps}
+          keyboardType="number-pad"
+          selectTextOnFocus
+          onSubmitEditing={() => void save()}
+        />
+
+        <Pressable onPress={() => setEditing(false)} hitSlop={8} style={styles.editAction}>
+          <Ionicons name="close" size={20} color={colors.textMuted} />
+        </Pressable>
+        <Pressable onPress={() => void save()} hitSlop={8} style={styles.editAction} disabled={saving}>
+          {saving ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <Ionicons name="checkmark" size={20} color={colors.accent} />
+          )}
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      style={styles.setRow}
+      onPress={startEditing}
+      onLongPress={() =>
+        Alert.alert("Delete set?", undefined, [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete", style: "destructive", onPress: () => onDelete(set.id) },
+        ])
+      }
+    >
+      <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
+        {set.is_warmup ? "W" : set.set_number}
+      </Text>
+      <Text style={styles.setDetail}>
+        {Number(set.weight_kg)} kg × {set.reps}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -247,6 +391,17 @@ export default function ActiveWorkoutScreen() {
     [workout, pending],
   );
 
+  const handleSaveTitle = useCallback(
+    async (title: string | null) => {
+      try {
+        setWorkout(await workoutsApi.updateWorkout(id, { title }));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not save the name");
+      }
+    },
+    [id],
+  );
+
   const handleAddSet = useCallback(
     async (exerciseId: string, weight: number, reps: number, isWarmup: boolean) => {
       setBusyExercise(exerciseId);
@@ -265,6 +420,19 @@ export default function ActiveWorkoutScreen() {
         setError(err instanceof Error ? err.message : "Could not save the set");
       } finally {
         setBusyExercise(null);
+      }
+    },
+    [id],
+  );
+
+  const handleEditSet = useCallback(
+    async (setId: number, weight: number, reps: number) => {
+      setError(null);
+      try {
+        setWorkout(await workoutsApi.updateSet(id, setId, { weight_kg: weight, reps }));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not update the set");
+        throw err;
       }
     },
     [id],
@@ -291,7 +459,9 @@ export default function ActiveWorkoutScreen() {
     const empty = (workout?.sets.length ?? 0) === 0;
     Alert.alert(
       "Finish workout?",
-      empty ? "This workout has no sets. It will stay in your history as an empty session." : undefined,
+      empty
+        ? "This workout has no sets. It will stay in your history as an empty session."
+        : undefined,
       [
         { text: "Keep going", style: "cancel" },
         { text: "Finish", style: "default", onPress: () => void handleFinish() },
@@ -333,6 +503,8 @@ export default function ActiveWorkoutScreen() {
       />
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <TitleField value={workout.title} onSave={(title) => void handleSaveTitle(title)} />
+
         <View style={styles.summary}>
           <View>
             <Text style={styles.summaryValue}>{workout.total_sets}</Text>
@@ -349,27 +521,12 @@ export default function ActiveWorkoutScreen() {
             <Text style={styles.blockTitle}>{block.name}</Text>
 
             {block.sets.map((set) => (
-              <Pressable
+              <SetRow
                 key={set.id}
-                style={styles.setRow}
-                onLongPress={() =>
-                  Alert.alert("Delete set?", undefined, [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Delete",
-                      style: "destructive",
-                      onPress: () => void handleDeleteSet(set.id),
-                    },
-                  ])
-                }
-              >
-                <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
-                  {set.is_warmup ? "W" : set.set_number}
-                </Text>
-                <Text style={styles.setDetail}>
-                  {Number(set.weight_kg)} kg × {set.reps}
-                </Text>
-              </Pressable>
+                set={set}
+                onSave={handleEditSet}
+                onDelete={(setId) => void handleDeleteSet(setId)}
+              />
             ))}
 
             <SetForm
@@ -384,7 +541,9 @@ export default function ActiveWorkoutScreen() {
 
         <Pressable
           style={styles.addExercise}
-          onPress={() => router.push({ pathname: "/workout/exercise-picker", params: { workoutId: id } })}
+          onPress={() =>
+            router.push({ pathname: "/workout/exercise-picker", params: { workoutId: id } })
+          }
         >
           <Ionicons name="add" size={20} color={colors.accent} />
           <Text style={styles.addExerciseText}>Add exercise</Text>
@@ -393,7 +552,7 @@ export default function ActiveWorkoutScreen() {
         {blocks.length === 0 ? (
           <Text style={styles.hint}>Add an exercise to start logging sets.</Text>
         ) : (
-          <Text style={styles.hint}>Long-press a set to delete it.</Text>
+          <Text style={styles.hint}>Tap a set to correct it, long-press to delete.</Text>
         )}
       </ScrollView>
     </KeyboardAvoidingView>
@@ -410,6 +569,15 @@ const styles = StyleSheet.create({
   },
   content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
   finish: { color: colors.accent, fontSize: 16, fontWeight: "700" },
+
+  titleInput: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "700",
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+
   summary: {
     flexDirection: "row",
     alignItems: "center",
@@ -426,6 +594,7 @@ const styles = StyleSheet.create({
   timer: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
   timerText: { color: colors.textMuted, fontSize: 14 },
   error: { color: colors.danger, marginBottom: spacing.md },
+
   block: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -435,6 +604,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   blockTitle: { color: colors.text, fontSize: 16, fontWeight: "600", marginBottom: spacing.sm },
+
   setRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -442,14 +612,32 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  setNumber: {
-    color: colors.textMuted,
-    width: 28,
-    fontSize: 14,
-    fontWeight: "600",
+  setRowEditing: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  setNumber: { color: colors.textMuted, width: 28, fontSize: 14, fontWeight: "600" },
   warmupLabel: { color: colors.textMuted, opacity: 0.7 },
   setDetail: { color: colors.text, fontSize: 15 },
+  editInput: {
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    color: colors.text,
+    fontSize: 15,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    minWidth: 62,
+    textAlign: "center",
+  },
+  editUnit: { color: colors.textMuted, fontSize: 13 },
+  editAction: { paddingHorizontal: spacing.xs },
+
   form: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm, marginTop: spacing.md },
   field: { flex: 1 },
   fieldLabel: { color: colors.textMuted, fontSize: 11, marginBottom: 2 },
@@ -483,6 +671,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   addExercise: {
     flexDirection: "row",
     alignItems: "center",
