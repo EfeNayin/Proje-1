@@ -305,6 +305,111 @@ CREATE TRIGGER readiness_logs_set_updated_at
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 
+-- ─────────────────────────────────────────────────────────────────────────
+--  programs  ·  Bir antrenman programı (dışa açık → UUID)
+-- ─────────────────────────────────────────────────────────────────────────
+--  Kullanıcının şablonlarını gruplayan üst yapı. "PPL Programım", "5/3/1"
+--  gibi. Neden grup: deload, program değiştirme, eski sisteme dönme —
+--  hepsi program bazında anlamlı. Düz şablon listesi "programın neresindesin"
+--  diyemez, bu tablo diyebilir.
+--
+--  is_active: kullanıcının ŞU AN takip ettiği program. Bir kullanıcının aynı
+--  anda tek aktif programı olur (kısmi UNIQUE index ile zorlanır). Eski
+--  programlar silinmez, arşivlenir (is_active=false) — "eski sisteme dönme"
+--  senaryosu için geçmiş korunur.
+CREATE TABLE programs (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT         NOT NULL,
+    notes       TEXT,
+    is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+-- Bir kullanıcının aktif programlarını listelemek + tek aktif zorlaması.
+-- Kısmi UNIQUE: aynı anda sadece bir program is_active=true olabilir.
+CREATE UNIQUE INDEX idx_programs_one_active
+    ON programs(user_id) WHERE is_active;
+
+CREATE INDEX idx_programs_user ON programs(user_id, created_at DESC);
+
+CREATE TRIGGER programs_set_updated_at
+    BEFORE UPDATE ON programs
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+
+-- ─────────────────────────────────────────────────────────────────────────
+--  workout_templates  ·  Program içindeki bir "gün" (Push A, Pull A...)
+-- ─────────────────────────────────────────────────────────────────────────
+--  Bir programa ait şablon. day_order programdaki sırayı tutar (Push=1,
+--  Pull=2, Legs=3) — takvime SABİT gün değil, çünkü kullanıcı haftada 3 de
+--  gidebilir 5 de; sıra bozulmaz. "Bugün push günü" kullanıcının seçimi,
+--  dayatma değil (kullanıcının split-serbest tercihi bu şekilde korunur).
+CREATE TABLE workout_templates (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    program_id  UUID         NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+    name        TEXT         NOT NULL,
+    day_order   SMALLINT     NOT NULL DEFAULT 0,   -- program içi sıralama
+    notes       TEXT,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_templates_program ON workout_templates(program_id, day_order);
+
+CREATE TRIGGER workout_templates_set_updated_at
+    BEFORE UPDATE ON workout_templates
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+
+-- ─────────────────────────────────────────────────────────────────────────
+--  template_exercises  ·  Şablondaki bir hareket + hedefleri (iç → BIGSERIAL)
+-- ─────────────────────────────────────────────────────────────────────────
+--  "Bench Press, 4 set, 6-8 tekrar, RIR 2" gibi. Gerçek performans değil
+--  HEDEF — kullanıcı salonda bunu görüp gerçekleşeni sets tablosuna girer.
+--
+--  Tekrar ARALIK (target_reps_min/max), tek sayı değil: hipertrofide 6-8,
+--  8-12 gibi aralıklar kullanılır. min=max girilirse sabit sayı olur.
+--  RIR/RPE hedefi opsiyonel (bilim-temelli konumlanma için değerli).
+CREATE TABLE template_exercises (
+    id                BIGSERIAL   PRIMARY KEY,
+    template_id       UUID        NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
+    exercise_id       UUID        NOT NULL REFERENCES exercises(id) ON DELETE RESTRICT,
+    exercise_order    SMALLINT    NOT NULL DEFAULT 0,  -- şablon içi sıra
+
+    target_sets       SMALLINT    NOT NULL CHECK (target_sets > 0),
+    target_reps_min   SMALLINT    CHECK (target_reps_min > 0),
+    target_reps_max   SMALLINT    CHECK (target_reps_max > 0),
+    target_rir        SMALLINT    CHECK (target_rir BETWEEN 0 AND 10),
+    target_rpe        NUMERIC(3,1) CHECK (target_rpe BETWEEN 1 AND 10),
+
+    notes             TEXT,
+
+    -- Aralık tutarlı olmalı: min <= max. İkisi de NULL olabilir (aralık
+    -- belirtmeden sadece "4 set" demek geçerli).
+    CONSTRAINT template_exercises_reps_range
+        CHECK (target_reps_min IS NULL OR target_reps_max IS NULL
+               OR target_reps_min <= target_reps_max)
+);
+
+CREATE INDEX idx_template_exercises ON template_exercises(template_id, exercise_order);
+
+
+-- ─────────────────────────────────────────────────────────────────────────
+--  workouts tablosuna bağlantı: bir antrenman hangi şablondan başlatıldı?
+-- ─────────────────────────────────────────────────────────────────────────
+--  Nullable: serbest loglama (şablonsuz) hâlâ geçerli. Şablondan başlatılan
+--  antrenman bu alanı doldurur — böylece "bu programda kaç kez push yaptın",
+--  "geçen push'ta ne kaldırdın" sorguları mümkün olur.
+--  ON DELETE SET NULL: şablon silinse bile geçmiş antrenman korunur.
+ALTER TABLE workouts
+    ADD COLUMN template_id UUID REFERENCES workout_templates(id) ON DELETE SET NULL;
+
+CREATE INDEX idx_workouts_template ON workouts(template_id)
+    WHERE template_id IS NOT NULL;
+
+
 -- ============================================================================
 --  SEED: muscle_groups — 17 kas grubu, MEV/MAV/MRV değerleriyle
 --  Değerler Renaissance Periodization'ın yayınladığı aralıkların orta noktaları;
@@ -568,9 +673,10 @@ SELECT e.id, m.id, 'secondary', 2 FROM exercises e, muscle_groups m
 WHERE e.name = 'Cable Fly' AND m.name = 'front_delts';
 
 -- ============================================================================
---  ŞEMA TAMAM — Katman 1: 8 tablo, seed dahil
+--  ŞEMA TAMAM — Katman 1: 11 tablo, seed dahil
 --  users, refresh_tokens, muscle_groups, exercises,
---  exercise_muscle_groups, workouts, sets, readiness_logs
+--  exercise_muscle_groups, workouts, sets, readiness_logs,
+--  programs, workout_templates, template_exercises
 --
 --  ULUSLARARASILAŞMA NOTLARI (bilinçli ertelenenler):
 --   • week_start_day → date_trunc('week') HER ZAMAN Pazartesi'den başlar (ISO
@@ -595,10 +701,10 @@ WHERE e.name = 'Cable Fly' AND m.name = 'front_delts';
 --  SCHEMA BACKLOG (ileriki fazlarda migration'la eklenecekler):
 --   Faz 2 → follows, workout_likes, workout_comments, personal_records,
 --           notifications, body_measurements, progress_photos
---   Faz 3 → mesocycles, workout_templates, program_recommendations,
+--   Faz 3 → mesocycles, program_recommendations,
 --           users.experience_level, users.primary_goal
---           (readiness_logs bu listeden çıktı — erken teşhis değeri için
---           Faz 3 beklenmeden şimdi eklendi, bkz. tablo yukarıda)
+--           (readiness_logs ve workout_templates bu listeden çıktı — ikisi de
+--           Faz 3 beklenmeden şimdi eklendi, bkz. tablolar yukarıda)
 --   Faz 4+ → set_videos, video_analyses (CV) · sensor_recordings (HAR)
 --   Ayrıca → sets.rest_seconds, sets.source, exercises.slug (gerekirse)
 
