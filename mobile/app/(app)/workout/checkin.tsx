@@ -8,7 +8,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,6 +22,7 @@ import {
 
 import * as exercisesApi from "../../../src/api/exercises";
 import type { MuscleGroupSummary } from "../../../src/api/exercises";
+import * as programsApi from "../../../src/api/programs";
 import * as readinessApi from "../../../src/api/readiness";
 import * as workoutsApi from "../../../src/api/workouts";
 import { colors, radius, spacing } from "../../../src/theme";
@@ -105,6 +106,7 @@ function parseSleepHours(raw: string): number | null {
 
 export default function ReadinessCheckin() {
   const router = useRouter();
+  const { templateId } = useLocalSearchParams<{ templateId?: string }>();
 
   const [sleepHours, setSleepHours] = useState("");
   const [energy, setEnergy] = useState<number | null>(null);
@@ -140,9 +142,11 @@ export default function ReadinessCheckin() {
   };
 
   const startWorkoutAndLeave = async () => {
-    const workout = await workoutsApi.startWorkout();
-    await setActiveWorkout(workout.id);
-    router.replace(`/workout/${workout.id}`);
+    const workoutId = templateId
+      ? (await programsApi.startWorkoutFromTemplate(templateId)).workout_id
+      : (await workoutsApi.startWorkout()).id;
+    await setActiveWorkout(workoutId);
+    router.replace(`/workout/${workoutId}`);
   };
 
   const handleSkip = async () => {

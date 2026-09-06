@@ -27,6 +27,8 @@ export type WorkoutSummary = {
   total_volume_kg: string;
   total_sets: number;
   is_private: boolean;
+  /** Which template this session was started from, if any. */
+  template_id: string | null;
 };
 
 export type WorkoutDetail = WorkoutSummary & {

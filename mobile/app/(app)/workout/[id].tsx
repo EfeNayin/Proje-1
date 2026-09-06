@@ -22,10 +22,19 @@ import {
   View,
 } from "react-native";
 
+import * as programsApi from "../../../src/api/programs";
+import type { TemplateExerciseTarget } from "../../../src/api/programs";
 import * as workoutsApi from "../../../src/api/workouts";
 import type { LoggedSet, WorkoutDetail } from "../../../src/api/workouts";
 import { colors, radius, spacing } from "../../../src/theme";
 import { clearActiveWorkout } from "../../../src/workout/activeWorkout";
+import {
+  DEFAULT_REST_SECONDS,
+  formatRest,
+  getRestSeconds,
+  REST_PRESETS,
+  setRestSeconds,
+} from "../../../src/workout/restPreference";
 
 type ExerciseBlock = {
   exerciseId: string;
@@ -59,6 +68,19 @@ function groupByExercise(
   }
 
   return [...blocks.values()];
+}
+
+/** "4×6-8 @RIR2" — the template's goal for one exercise, not what was logged. */
+function formatTarget(target: TemplateExerciseTarget): string {
+  const { target_reps_min: min, target_reps_max: max } = target;
+  let reps: string;
+  if (min !== null && max !== null) reps = min === max ? String(min) : `${min}-${max}`;
+  else if (min !== null) reps = `${min}+`;
+  else if (max !== null) reps = `≤${max}`;
+  else reps = "?";
+
+  const rir = target.target_rir !== null ? ` @RIR${target.target_rir}` : "";
+  return `${target.target_sets}×${reps}${rir}`;
 }
 
 /**
@@ -102,20 +124,66 @@ function SessionDuration({ startedAt }: { startedAt: string }) {
   );
 }
 
-function RestTimer({ since }: { since: number | null }) {
-  const elapsed = useElapsedSeconds(since);
+/**
+ * Rest countdown.
+ *
+ * Started by hand rather than automatically after each set: people talk,
+ * change plates, or superset, and a clock that starts itself is usually
+ * already wrong by the time they look at it.
+ *
+ * The length is a saved preference chosen from presets, so it is picked once
+ * and not retyped every set.
+ */
+function RestTimer({
+  seconds,
+  onChangeSeconds,
+}: {
+  seconds: number;
+  onChangeSeconds: (value: number) => void;
+}) {
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const elapsed = useElapsedSeconds(startedAt);
 
-  if (since === null) return null;
+  const running = startedAt !== null;
+  const remaining = running ? Math.max(0, seconds - elapsed) : seconds;
+  const finished = running && remaining === 0;
 
-  const minutes = Math.floor(elapsed / 60);
-  const seconds = elapsed % 60;
+  const chooseDuration = () => {
+    Alert.alert("Rest between sets", undefined, [
+      ...REST_PRESETS.map((preset) => ({
+        text: formatRest(preset),
+        onPress: () => {
+          onChangeSeconds(preset);
+          setStartedAt(null);
+        },
+      })),
+      { text: "Cancel", style: "cancel" as const },
+    ]);
+  };
 
   return (
-    <View style={styles.timer}>
-      <Ionicons name="time-outline" size={16} color={colors.textMuted} />
-      <Text style={styles.timerText}>
-        Rest {minutes}:{String(seconds).padStart(2, "0")}
+    <View style={styles.rest}>
+      <Pressable style={styles.restDuration} onPress={chooseDuration} hitSlop={6}>
+        <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+        <Text style={styles.restLabel}>Rest</Text>
+        <Text style={styles.restValue}>{formatRest(seconds)}</Text>
+        <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
+      </Pressable>
+
+      <Text style={[styles.restCountdown, finished && styles.restDone]}>
+        {formatRest(remaining)}
       </Text>
+
+      <Pressable
+        style={[styles.restButton, running && styles.restButtonActive]}
+        onPress={() => setStartedAt(running ? null : Date.now())}
+      >
+        <Ionicons
+          name={running ? "stop" : "play"}
+          size={16}
+          color={running ? colors.text : colors.accentText}
+        />
+      </Pressable>
     </View>
   );
 }
@@ -226,6 +294,21 @@ function SetRow({
           onSubmitEditing={() => void save()}
         />
 
+        {/* Delete lives here, not only behind a long-press: holding for half a
+            second is easy to under-do, and a short press just opens this
+            editor, leaving no visible way out. */}
+        <Pressable
+          onPress={() =>
+            Alert.alert("Delete set?", undefined, [
+              { text: "Cancel", style: "cancel" },
+              { text: "Delete", style: "destructive", onPress: () => onDelete(set.id) },
+            ])
+          }
+          hitSlop={8}
+          style={styles.editAction}
+        >
+          <Ionicons name="trash-outline" size={19} color={colors.danger} />
+        </Pressable>
         <Pressable onPress={() => setEditing(false)} hitSlop={8} style={styles.editAction}>
           <Ionicons name="close" size={20} color={colors.textMuted} />
         </Pressable>
@@ -351,7 +434,23 @@ export default function ActiveWorkoutScreen() {
   const [loading, setLoading] = useState(true);
   const [busyExercise, setBusyExercise] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [lastSetAt, setLastSetAt] = useState<number | null>(null);
+  const [restSeconds, setRestSecondsState] = useState(DEFAULT_REST_SECONDS);
+  const [targets, setTargets] = useState<TemplateExerciseTarget[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getRestSeconds().then((value) => {
+      if (!cancelled) setRestSecondsState(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleChangeRest = useCallback((value: number) => {
+    setRestSecondsState(value);
+    void setRestSeconds(value);
+  }, []);
 
   // The picker navigates back with the choice in params; consume it once so a
   // re-render does not keep re-adding the same exercise.
@@ -386,6 +485,30 @@ export default function ActiveWorkoutScreen() {
     };
   }, [id]);
 
+  // Fetched separately rather than embedded in the workout response: targets
+  // belong to the template, not the session, and a resumed workout re-fetches
+  // them fresh instead of depending on whatever POST /templates/{id}/start
+  // returned when the session began.
+  useEffect(() => {
+    const templateId = workout?.template_id;
+    if (!templateId) {
+      setTargets([]);
+      return;
+    }
+    let cancelled = false;
+    programsApi
+      .getTemplate(templateId)
+      .then((data) => {
+        if (!cancelled) setTargets(data.exercises);
+      })
+      .catch(() => {
+        // No goals shown is a smaller problem than blocking logging over it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workout?.template_id]);
+
   const blocks = useMemo(
     () => (workout ? groupByExercise(workout.sets, pending) : []),
     [workout, pending],
@@ -414,8 +537,6 @@ export default function ActiveWorkoutScreen() {
           is_warmup: isWarmup,
         });
         setWorkout(updated);
-        // Warmups do not start a rest period worth watching.
-        if (!isWarmup) setLastSetAt(Date.now());
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not save the set");
       } finally {
@@ -511,33 +632,40 @@ export default function ActiveWorkoutScreen() {
             <Text style={styles.summaryLabel}>working sets</Text>
           </View>
           <SessionDuration startedAt={workout.performed_at} />
-          <RestTimer since={lastSetAt} />
         </View>
+
+        <RestTimer seconds={restSeconds} onChangeSeconds={handleChangeRest} />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        {blocks.map((block) => (
-          <View key={block.exerciseId} style={styles.block}>
-            <Text style={styles.blockTitle}>{block.name}</Text>
+        {blocks.map((block) => {
+          const target = targets.find((t) => t.exercise_id === block.exerciseId);
+          return (
+            <View key={block.exerciseId} style={styles.block}>
+              <Text style={styles.blockTitle}>{block.name}</Text>
+              {target ? (
+                <Text style={styles.blockTarget}>Target: {formatTarget(target)}</Text>
+              ) : null}
 
-            {block.sets.map((set) => (
-              <SetRow
-                key={set.id}
-                set={set}
-                onSave={handleEditSet}
-                onDelete={(setId) => void handleDeleteSet(setId)}
+              {block.sets.map((set) => (
+                <SetRow
+                  key={set.id}
+                  set={set}
+                  onSave={handleEditSet}
+                  onDelete={(setId) => void handleDeleteSet(setId)}
+                />
+              ))}
+
+              <SetForm
+                busy={busyExercise === block.exerciseId}
+                lastSet={block.sets[block.sets.length - 1]}
+                onSubmit={(weight, reps, isWarmup) =>
+                  void handleAddSet(block.exerciseId, weight, reps, isWarmup)
+                }
               />
-            ))}
-
-            <SetForm
-              busy={busyExercise === block.exerciseId}
-              lastSet={block.sets[block.sets.length - 1]}
-              onSubmit={(weight, reps, isWarmup) =>
-                void handleAddSet(block.exerciseId, weight, reps, isWarmup)
-              }
-            />
-          </View>
-        ))}
+            </View>
+          );
+        })}
 
         <Pressable
           style={styles.addExercise}
@@ -552,7 +680,7 @@ export default function ActiveWorkoutScreen() {
         {blocks.length === 0 ? (
           <Text style={styles.hint}>Add an exercise to start logging sets.</Text>
         ) : (
-          <Text style={styles.hint}>Tap a set to correct it, long-press to delete.</Text>
+          <Text style={styles.hint}>Tap a set to correct or delete it.</Text>
         )}
       </ScrollView>
     </KeyboardAvoidingView>
@@ -591,8 +719,37 @@ const styles = StyleSheet.create({
   },
   summaryValue: { color: colors.text, fontSize: 20, fontWeight: "700" },
   summaryLabel: { color: colors.textMuted, fontSize: 12 },
-  timer: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  timerText: { color: colors.textMuted, fontSize: 14 },
+  rest: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  restDuration: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  restLabel: { color: colors.textMuted, fontSize: 14 },
+  restValue: { color: colors.text, fontSize: 14, fontWeight: "600" },
+  restCountdown: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  restDone: { color: colors.accent },
+  restButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  restButtonActive: { backgroundColor: colors.border },
   error: { color: colors.danger, marginBottom: spacing.md },
 
   block: {
@@ -603,7 +760,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
   },
-  blockTitle: { color: colors.text, fontSize: 16, fontWeight: "600", marginBottom: spacing.sm },
+  blockTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
+  blockTarget: { color: colors.textMuted, fontSize: 12, marginBottom: spacing.sm },
 
   setRow: {
     flexDirection: "row",

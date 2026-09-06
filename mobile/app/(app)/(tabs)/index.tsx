@@ -10,11 +10,14 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
+import * as programsApi from "../../../src/api/programs";
+import type { WorkoutTemplate } from "../../../src/api/programs";
 import * as readinessApi from "../../../src/api/readiness";
 import * as workoutsApi from "../../../src/api/workouts";
 import type { WorkoutSummary } from "../../../src/api/workouts";
@@ -34,6 +37,7 @@ export default function TrainingHome() {
   const router = useRouter();
   const [workouts, setWorkouts] = useState<WorkoutSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeTemplates, setActiveTemplates] = useState<WorkoutTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -57,6 +61,17 @@ export default function TrainingHome() {
 
     const list = await workoutsApi.listWorkouts();
     setWorkouts(list.items);
+
+    // The active program's templates offer a quick way to start a planned
+    // session. Isolated in its own try/catch: a programs-API hiccup must not
+    // take down the workout history this screen exists to show.
+    try {
+      const programs = await programsApi.listPrograms();
+      const active = programs.find((program) => program.is_active);
+      setActiveTemplates(active ? (await programsApi.getProgram(active.id)).templates : []);
+    } catch {
+      setActiveTemplates([]);
+    }
   }, []);
 
   // Re-run on every focus so finishing a workout is reflected on return.
@@ -81,7 +96,8 @@ export default function TrainingHome() {
     setRefreshing(false);
   };
 
-  const handleStart = async () => {
+  /** templateId omitted starts a free session; given, starts from that template. */
+  const handleStart = async (templateId?: string) => {
     setStarting(true);
     try {
       let showCheckin = false;
@@ -97,13 +113,18 @@ export default function TrainingHome() {
       }
 
       if (showCheckin) {
-        router.push("/workout/checkin");
+        router.push({
+          pathname: "/workout/checkin",
+          params: templateId ? { templateId } : {},
+        });
         return;
       }
 
-      const workout = await workoutsApi.startWorkout();
-      await setActiveWorkout(workout.id);
-      router.push(`/workout/${workout.id}`);
+      const workoutId = templateId
+        ? (await programsApi.startWorkoutFromTemplate(templateId)).workout_id
+        : (await workoutsApi.startWorkout()).id;
+      await setActiveWorkout(workoutId);
+      router.push(`/workout/${workoutId}`);
     } catch {
       // Errors surface on the workout screen itself; nothing useful to show
       // here beyond letting the user tap again.
@@ -140,13 +161,35 @@ export default function TrainingHome() {
               <Ionicons name="chevron-forward" size={22} color={colors.accentText} />
             </Pressable>
           ) : (
-            <Pressable style={styles.start} onPress={handleStart} disabled={starting}>
-              {starting ? (
-                <ActivityIndicator color={colors.accentText} />
-              ) : (
-                <Text style={styles.startText}>Start workout</Text>
-              )}
-            </Pressable>
+            <>
+              <Pressable style={styles.start} onPress={() => void handleStart()} disabled={starting}>
+                {starting ? (
+                  <ActivityIndicator color={colors.accentText} />
+                ) : (
+                  <Text style={styles.startText}>Start workout</Text>
+                )}
+              </Pressable>
+
+              {activeTemplates.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.templateRow}
+                  contentContainerStyle={styles.templateRowContent}
+                >
+                  {activeTemplates.map((template) => (
+                    <Pressable
+                      key={template.id}
+                      style={styles.templateChip}
+                      onPress={() => void handleStart(template.id)}
+                      disabled={starting}
+                    >
+                      <Text style={styles.templateChipText}>{template.name}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
+            </>
           )}
 
           <Text style={styles.sectionTitle}>History</Text>
@@ -190,6 +233,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   startText: { color: colors.accentText, fontSize: 17, fontWeight: "700" },
+  templateRow: { marginTop: spacing.sm },
+  templateRowContent: { gap: spacing.sm },
+  templateChip: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  templateChipText: { color: colors.text, fontSize: 14, fontWeight: "600" },
   resume: {
     backgroundColor: colors.accent,
     borderRadius: radius.md,
