@@ -8,7 +8,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -35,6 +35,7 @@ import {
   REST_PRESETS,
   setRestSeconds,
 } from "../../../src/workout/restPreference";
+import { usePickedExercise } from "../../../src/workout/usePickedExercise";
 
 type ExerciseBlock = {
   exerciseId: string;
@@ -423,11 +424,7 @@ function SetForm({
 
 export default function ActiveWorkoutScreen() {
   const router = useRouter();
-  const { id, addExerciseId, addExerciseName } = useLocalSearchParams<{
-    id: string;
-    addExerciseId?: string;
-    addExerciseName?: string;
-  }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
 
   const [workout, setWorkout] = useState<WorkoutDetail | null>(null);
   const [pending, setPending] = useState<{ id: string; name: string }[]>([]);
@@ -452,20 +449,11 @@ export default function ActiveWorkoutScreen() {
     void setRestSeconds(value);
   }, []);
 
-  // The picker navigates back with the choice in params; consume it once so a
-  // re-render does not keep re-adding the same exercise.
-  const consumedParam = useRef<string | null>(null);
-  useEffect(() => {
-    if (!addExerciseId || !addExerciseName) return;
-    if (consumedParam.current === addExerciseId) return;
-    consumedParam.current = addExerciseId;
-
+  const { openPicker } = usePickedExercise((exercise) => {
     setPending((current) =>
-      current.some((item) => item.id === addExerciseId)
-        ? current
-        : [...current, { id: addExerciseId, name: addExerciseName }],
+      current.some((item) => item.id === exercise.id) ? current : [...current, exercise],
     );
-  }, [addExerciseId, addExerciseName]);
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -667,12 +655,7 @@ export default function ActiveWorkoutScreen() {
           );
         })}
 
-        <Pressable
-          style={styles.addExercise}
-          onPress={() =>
-            router.push({ pathname: "/workout/exercise-picker", params: { workoutId: id } })
-          }
-        >
+        <Pressable style={styles.addExercise} onPress={openPicker}>
           <Ionicons name="add" size={20} color={colors.accent} />
           <Text style={styles.addExerciseText}>Add exercise</Text>
         </Pressable>
