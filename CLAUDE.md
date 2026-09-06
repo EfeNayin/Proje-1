@@ -103,3 +103,9 @@ profil. Uçtan uca telefonda çalışıyor.
   eskimiş olabilir — dosya sistemine güven.
 - Takılırsan (aynı hatayı tekrar düzeltmeye çalışıyorsan) DUR; bu genelde
   yaklaşımın yanlış olduğunun işareti, kullanıcıya danış.
+- Doğrulama veya deneme amacıyla çalışma dizinini ezen komutlar ASLA
+  kullanılmayacak: git checkout <sha> -- ., git checkout -- ., git reset
+  --hard, git clean -fd. Bunlar commit'lenmemiş değişiklikleri uyarısız
+  siler ve geri getirilemez. Bir commit'i incelemek gerekiyorsa git show
+  <sha>:<dosya> veya git stash kullan. Çalışma dizininde commit'lenmemiş
+  değişiklik varken HEAD taşıma.
