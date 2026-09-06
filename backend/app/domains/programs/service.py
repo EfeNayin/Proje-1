@@ -15,6 +15,7 @@ Two invariants this module is responsible for:
    with itself under that index the instant both rows read is_active=true.
 """
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import delete, select, update
@@ -29,11 +30,12 @@ from app.domains.programs.schemas import (
     ProgramUpdate,
     TemplateExerciseRead,
     TemplateExercisesSet,
+    TemplateStart,
     WorkoutTemplateCreate,
     WorkoutTemplateRead,
     WorkoutTemplateUpdate,
 )
-from app.models import Exercise, Program, TemplateExercise, WorkoutTemplate
+from app.models import Exercise, Program, TemplateExercise, Workout, WorkoutTemplate
 
 
 async def _load_owned_program(db: AsyncSession, program_id: UUID, user_id: UUID) -> Program:
@@ -305,3 +307,35 @@ async def set_template_exercises(
     await db.flush()
     await db.commit()
     return await _to_template_detail(db, template)
+
+
+# ── Start from template ──────────────────────────────────────────────────
+
+
+async def start_workout_from_template(
+    db: AsyncSession, user_id: UUID, template_id: UUID
+) -> TemplateStart:
+    """Create an empty workout linked to this template.
+
+    No sets are created — only the link. The user logs what actually
+    happened against the returned targets, the same way they always log a
+    set; this endpoint just saves them from re-picking every exercise.
+    """
+    template = await _load_owned_template(db, template_id, user_id)
+    targets = await _load_exercises(db, template.id)
+
+    workout = Workout(
+        user_id=user_id,
+        template_id=template.id,
+        title=template.name,
+        performed_at=datetime.now(UTC),
+    )
+    db.add(workout)
+    await db.commit()
+
+    return TemplateStart(
+        workout_id=workout.id,
+        template_id=template.id,
+        performed_at=workout.performed_at,
+        targets=targets,
+    )

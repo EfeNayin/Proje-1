@@ -370,3 +370,51 @@ class TestTemplateExercises:
         )
 
         assert response.status_code == 422, response.text
+
+
+class TestStartWorkoutFromTemplate:
+    async def test_creates_a_linked_workout_with_no_sets(
+        self, client: AsyncClient, auth_headers: dict[str, str], bench_press_id: str
+    ) -> None:
+        program = await _create_program(client, auth_headers, name="PPL")
+        template = await _create_template(client, auth_headers, program["id"], name="Push A")
+        await client.put(
+            f"/templates/{template['id']}/exercises",
+            headers=auth_headers,
+            json={
+                "exercises": [{"exercise_id": bench_press_id, "target_sets": 4, "target_rir": 2}]
+            },
+        )
+
+        start = await client.post(f"/templates/{template['id']}/start", headers=auth_headers)
+        assert start.status_code == 201, start.text
+        assert start.json()["template_id"] == template["id"]
+        assert start.json()["targets"][0]["target_sets"] == 4
+
+        workout = await client.get(f"/workouts/{start.json()['workout_id']}", headers=auth_headers)
+        assert workout.status_code == 200, workout.text
+        assert workout.json()["template_id"] == template["id"]
+        assert workout.json()["sets"] == []
+        assert workout.json()["title"] == "Push A"
+
+    async def test_other_users_template_cannot_be_started(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        other_auth_headers: dict[str, str],
+    ) -> None:
+        program = await _create_program(client, other_auth_headers, name="Theirs")
+        template = await _create_template(client, other_auth_headers, program["id"])
+
+        response = await client.post(f"/templates/{template['id']}/start", headers=auth_headers)
+
+        assert response.status_code == 404, response.text
+
+    async def test_free_logging_without_a_template_is_unaffected(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        """The existing flow: POST /workouts with no template still works."""
+        response = await client.post("/workouts", headers=auth_headers, json={"title": "Freestyle"})
+
+        assert response.status_code == 201, response.text
+        assert response.json()["template_id"] is None

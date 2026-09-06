@@ -95,6 +95,10 @@ class WorkoutSummary(BaseModel):
     total_volume_kg: Decimal
     total_sets: int
     is_private: bool
+    # Which template this session was started from, if any. Free logging
+    # (no template) leaves this null; the client uses it to decide whether
+    # to fetch and display target goals alongside logged sets.
+    template_id: UUID | None
 
 
 class WorkoutDetail(WorkoutSummary):

@@ -21,6 +21,7 @@ from app.domains.programs.schemas import (
     ProgramSummary,
     ProgramUpdate,
     TemplateExercisesSet,
+    TemplateStart,
     WorkoutTemplateCreate,
     WorkoutTemplateRead,
     WorkoutTemplateUpdate,
@@ -149,3 +150,15 @@ async def set_template_exercises(
     db: DbSession,
 ) -> WorkoutTemplateRead:
     return await service.set_template_exercises(db, current_user.id, template_id, payload)
+
+
+@router.post(
+    "/templates/{template_id}/start",
+    response_model=TemplateStart,
+    status_code=status.HTTP_201_CREATED,
+    summary="Start an empty workout linked to this template",
+)
+async def start_workout_from_template(
+    template_id: UUID, current_user: CurrentUser, db: DbSession
+) -> TemplateStart:
+    return await service.start_workout_from_template(db, current_user.id, template_id)

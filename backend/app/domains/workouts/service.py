@@ -142,6 +142,7 @@ async def _to_detail(db: AsyncSession, workout: Workout) -> WorkoutDetail:
         performed_at=workout.performed_at,
         total_volume_kg=workout.total_volume_kg,
         total_sets=workout.total_sets,
+        template_id=workout.template_id,
         is_private=workout.is_private,
         sets=[_to_set_read(row) for row in rows],
     )

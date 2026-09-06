@@ -1,5 +1,6 @@
 """Request and response models for programs, templates and their exercise targets."""
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Self
 from uuid import UUID
@@ -109,3 +110,18 @@ class ProgramSummary(BaseModel):
 class ProgramDetail(ProgramSummary):
     notes: str | None
     templates: list[WorkoutTemplateRead]
+
+
+class TemplateStart(BaseModel):
+    """What starting a workout from a template hands back.
+
+    No sets are created — only an empty workout linked to the template.
+    Targets are returned too so the client can prefill goals on the spot;
+    on resume (app reopened mid-session) the client re-fetches them via
+    GET /templates/{id} instead of relying on this one-time response.
+    """
+
+    workout_id: UUID
+    template_id: UUID
+    performed_at: datetime
+    targets: list[TemplateExerciseRead]
