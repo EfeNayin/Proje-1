@@ -186,21 +186,23 @@ export default function TemplateEditor() {
   const handleSave = async () => {
     setSaving(true);
     setError(null);
+
+    const payload = exercises.map(toPayload);
+    if (payload.some((item) => item === null)) {
+      setError("Each exercise needs a valid number of sets.");
+      setSaving(false);
+      return;
+    }
+
     try {
-      const payload = exercises.map(toPayload);
-      if (payload.some((item) => item === null)) {
-        setError("Each exercise needs a valid number of sets.");
-        return;
-      }
-      const updated = await programsApi.setTemplateExercises(
-        id,
-        payload as NonNullable<(typeof payload)[number]>[],
-      );
-      setTemplate(updated);
-      setExercises(updated.exercises.map(toDraft));
+      await programsApi.setTemplateExercises(id, payload as NonNullable<(typeof payload)[number]>[]);
+      // Success is leaving: the program screen (refreshed on focus) is where
+      // the saved exercises become visible, which is the confirmation itself
+      // — a toast on top of a screen that is about to disappear would be
+      // easy to miss and adds nothing a returning screen doesn't already say.
+      router.back();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the exercises");
-    } finally {
       setSaving(false);
     }
   };

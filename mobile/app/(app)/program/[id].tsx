@@ -7,7 +7,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -64,20 +64,25 @@ export default function ProgramScreen() {
     setProgram(await programsApi.getProgram(id));
   }, [id]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    load()
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load program");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [load]);
+  // Re-run on every focus, not just on mount: returning from the template
+  // editor after a save is how this screen learns the exercise counts
+  // changed — that refresh IS the save's success confirmation.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      setLoading(true);
+      load()
+        .catch((err) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : "Could not load program");
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [load]),
+  );
 
   const handleSaveName = async (name: string) => {
     try {
