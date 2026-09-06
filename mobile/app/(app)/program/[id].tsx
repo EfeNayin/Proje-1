@@ -59,6 +59,7 @@ export default function ProgramScreen() {
   const [newTemplateName, setNewTemplateName] = useState("");
   const [addingTemplate, setAddingTemplate] = useState(false);
   const [activating, setActivating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setProgram(await programsApi.getProgram(id));
@@ -110,7 +111,14 @@ export default function ProgramScreen() {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          void programsApi.deleteProgram(id).then(() => router.back());
+          setDeleting(true);
+          programsApi
+            .deleteProgram(id)
+            .then(() => router.back())
+            .catch((err) => {
+              setDeleting(false);
+              setError(err instanceof Error ? err.message : "Could not delete the program");
+            });
         },
       },
     ]);
@@ -157,8 +165,12 @@ export default function ProgramScreen() {
         options={{
           title: program.name,
           headerRight: () => (
-            <Pressable onPress={handleDelete} hitSlop={8}>
-              <Ionicons name="trash-outline" size={20} color={colors.danger} />
+            <Pressable onPress={handleDelete} disabled={deleting} hitSlop={8}>
+              {deleting ? (
+                <ActivityIndicator size="small" color={colors.danger} />
+              ) : (
+                <Ionicons name="trash-outline" size={20} color={colors.danger} />
+              )}
             </Pressable>
           ),
         }}

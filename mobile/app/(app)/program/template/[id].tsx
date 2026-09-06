@@ -139,6 +139,7 @@ export default function TemplateEditor() {
   const [exercises, setExercises] = useState<DraftExercise[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -214,7 +215,14 @@ export default function TemplateEditor() {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          void programsApi.deleteTemplate(id).then(() => router.back());
+          setDeleting(true);
+          programsApi
+            .deleteTemplate(id)
+            .then(() => router.back())
+            .catch((err) => {
+              setDeleting(false);
+              setError(err instanceof Error ? err.message : "Could not delete the template");
+            });
         },
       },
     ]);
@@ -242,8 +250,12 @@ export default function TemplateEditor() {
         options={{
           title: template.name,
           headerRight: () => (
-            <Pressable onPress={handleDeleteTemplate} hitSlop={8}>
-              <Ionicons name="trash-outline" size={20} color={colors.danger} />
+            <Pressable onPress={handleDeleteTemplate} disabled={deleting} hitSlop={8}>
+              {deleting ? (
+                <ActivityIndicator size="small" color={colors.danger} />
+              ) : (
+                <Ionicons name="trash-outline" size={20} color={colors.danger} />
+              )}
             </Pressable>
           ),
         }}
