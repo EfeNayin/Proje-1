@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -23,7 +24,11 @@ import {
 } from "react-native";
 
 import * as programsApi from "../../../src/api/programs";
-import type { TemplateExerciseTarget } from "../../../src/api/programs";
+import type {
+  ProgramDetail,
+  TemplateExerciseInput,
+  TemplateExerciseTarget,
+} from "../../../src/api/programs";
 import * as workoutsApi from "../../../src/api/workouts";
 import type { LoggedSet, WorkoutDetail } from "../../../src/api/workouts";
 import { colors, radius, spacing } from "../../../src/theme";
@@ -82,6 +87,39 @@ function formatTarget(target: TemplateExerciseTarget): string {
 
   const rir = target.target_rir !== null ? ` @RIR${target.target_rir}` : "";
   return `${target.target_sets}×${reps}${rir}`;
+}
+
+/**
+ * Turns what was actually logged into template targets — a plan, not a
+ * record of this specific session. Warmups are excluded (target_sets counts
+ * working sets only), target_rir is always null (nothing logged implies an
+ * effort target; the user sets that later in the template editor), and
+ * exercise order follows the order sets were first logged in, same as the
+ * on-screen blocks.
+ */
+function buildTemplateExercisesFromWorkout(workout: WorkoutDetail): TemplateExerciseInput[] {
+  const order: string[] = [];
+  const repsByExercise = new Map<string, number[]>();
+
+  for (const set of workout.sets) {
+    if (set.is_warmup) continue;
+    if (!repsByExercise.has(set.exercise_id)) {
+      repsByExercise.set(set.exercise_id, []);
+      order.push(set.exercise_id);
+    }
+    repsByExercise.get(set.exercise_id)?.push(set.reps);
+  }
+
+  return order.map((exerciseId) => {
+    const reps = repsByExercise.get(exerciseId) ?? [];
+    return {
+      exercise_id: exerciseId,
+      target_sets: reps.length,
+      target_reps_min: Math.min(...reps),
+      target_reps_max: Math.max(...reps),
+      target_rir: null,
+    };
+  });
 }
 
 /**
@@ -422,6 +460,167 @@ function SetForm({
   );
 }
 
+/**
+ * "Finish and save as template" sub-flow: name it, pick a program, done.
+ *
+ * Loads full program details (not just the summary list) up front, small
+ * as that list is expected to be, so day_order for the new template — it
+ * goes at the end of whichever program is picked — is available the
+ * moment a program is selected rather than needing another round trip.
+ */
+function SaveAsTemplateModal({
+  visible,
+  workout,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  workout: WorkoutDetail;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const router = useRouter();
+  const [name, setName] = useState(workout.title ?? "");
+  const [programs, setPrograms] = useState<ProgramDetail[]>([]);
+  const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
+  const [loadingPrograms, setLoadingPrograms] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    setName(workout.title ?? "");
+    setError(null);
+
+    let cancelled = false;
+    setLoadingPrograms(true);
+    programsApi
+      .listPrograms()
+      .then((summaries) => Promise.all(summaries.map((p) => programsApi.getProgram(p.id))))
+      .then((details) => {
+        if (cancelled) return;
+        setPrograms(details);
+        setSelectedProgramId(details.find((p) => p.is_active)?.id ?? details[0]?.id ?? null);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load programs");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPrograms(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, workout.title]);
+
+  const handleSave = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Name the template first.");
+      return;
+    }
+    const program = programs.find((p) => p.id === selectedProgramId);
+    if (!program) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      const template = await programsApi.createTemplate(program.id, {
+        name: trimmed,
+        day_order: program.templates.length,
+      });
+
+      const exercises = buildTemplateExercisesFromWorkout(workout);
+      if (exercises.length > 0) {
+        await programsApi.setTemplateExercises(template.id, exercises);
+      }
+
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the template");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+        {/* A Pressable with its own onPress, even a no-op, is what keeps a
+            tap inside the sheet from also being read as a tap on the
+            backdrop behind it. */}
+        <Pressable style={styles.sheet} onPress={() => {}}>
+          <Text style={styles.sheetTitle}>Save as template</Text>
+
+          <TextInput
+            style={styles.sheetInput}
+            value={name}
+            onChangeText={setName}
+            placeholder="Template name"
+            placeholderTextColor={colors.textMuted}
+            autoFocus
+          />
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          {loadingPrograms ? (
+            <ActivityIndicator color={colors.accent} style={styles.sheetLoading} />
+          ) : programs.length === 0 ? (
+            <View>
+              <Text style={styles.sheetEmpty}>You don't have a program yet.</Text>
+              <Pressable
+                style={styles.sheetCreateProgram}
+                onPress={() => {
+                  onClose();
+                  router.push("/programs");
+                }}
+              >
+                <Text style={styles.sheetCreateProgramText}>Create a program</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.sheetLabel}>Program</Text>
+              {programs.map((program) => (
+                <Pressable
+                  key={program.id}
+                  style={styles.sheetRow}
+                  onPress={() => setSelectedProgramId(program.id)}
+                >
+                  <Text style={styles.sheetRowText}>{program.name}</Text>
+                  {selectedProgramId === program.id ? (
+                    <Ionicons name="checkmark" size={18} color={colors.accent} />
+                  ) : null}
+                </Pressable>
+              ))}
+            </>
+          )}
+
+          <View style={styles.modalActions}>
+            <Pressable
+              style={[styles.modalButton, styles.modalButtonSecondary]}
+              onPress={onClose}
+              disabled={saving}
+            >
+              <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modalButton, saving && styles.modalButtonDisabled]}
+              onPress={() => void handleSave()}
+              disabled={saving || loadingPrograms || programs.length === 0}
+            >
+              {saving ? (
+                <ActivityIndicator color={colors.accentText} />
+              ) : (
+                <Text style={styles.modalButtonText}>Save</Text>
+              )}
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 export default function ActiveWorkoutScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -433,6 +632,7 @@ export default function ActiveWorkoutScreen() {
   const [error, setError] = useState<string | null>(null);
   const [restSeconds, setRestSecondsState] = useState(DEFAULT_REST_SECONDS);
   const [targets, setTargets] = useState<TemplateExerciseTarget[]>([]);
+  const [saveAsTemplateVisible, setSaveAsTemplateVisible] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -579,6 +779,7 @@ export default function ActiveWorkoutScreen() {
       [
         { text: "Keep going", style: "cancel" },
         { text: "Finish", style: "default", onPress: () => void handleFinish() },
+        { text: "Finish and save as template", onPress: () => setSaveAsTemplateVisible(true) },
       ],
     );
   };
@@ -600,78 +801,90 @@ export default function ActiveWorkoutScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={90}
-    >
-      <Stack.Screen
-        options={{
-          title: workout.title ?? "Workout",
-          headerRight: () => (
-            <Pressable onPress={confirmFinish} hitSlop={8}>
-              <Text style={styles.finish}>Finish</Text>
-            </Pressable>
-          ),
+    <>
+      <KeyboardAvoidingView
+        style={styles.screen}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={90}
+      >
+        <Stack.Screen
+          options={{
+            title: workout.title ?? "Workout",
+            headerRight: () => (
+              <Pressable onPress={confirmFinish} hitSlop={8}>
+                <Text style={styles.finish}>Finish</Text>
+              </Pressable>
+            ),
+          }}
+        />
+
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <TitleField value={workout.title} onSave={(title) => void handleSaveTitle(title)} />
+
+          <View style={styles.summary}>
+            <View>
+              <Text style={styles.summaryValue}>{workout.total_sets}</Text>
+              <Text style={styles.summaryLabel}>working sets</Text>
+            </View>
+            <SessionDuration startedAt={workout.performed_at} />
+          </View>
+
+          <RestTimer seconds={restSeconds} onChangeSeconds={handleChangeRest} />
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          {blocks.map((block) => {
+            const target = targets.find((t) => t.exercise_id === block.exerciseId);
+            return (
+              <View key={block.exerciseId} style={styles.block}>
+                <Text style={styles.blockTitle}>{block.name}</Text>
+                {target ? (
+                  <Text style={styles.blockTarget}>Target: {formatTarget(target)}</Text>
+                ) : null}
+
+                {block.sets.map((set) => (
+                  <SetRow
+                    key={set.id}
+                    set={set}
+                    onSave={handleEditSet}
+                    onDelete={(setId) => void handleDeleteSet(setId)}
+                  />
+                ))}
+
+                <SetForm
+                  busy={busyExercise === block.exerciseId}
+                  lastSet={block.sets[block.sets.length - 1]}
+                  onSubmit={(weight, reps, isWarmup) =>
+                    void handleAddSet(block.exerciseId, weight, reps, isWarmup)
+                  }
+                />
+              </View>
+            );
+          })}
+
+          <Pressable style={styles.addExercise} onPress={openPicker}>
+            <Ionicons name="add" size={20} color={colors.accent} />
+            <Text style={styles.addExerciseText}>Add exercise</Text>
+          </Pressable>
+
+          {blocks.length === 0 ? (
+            <Text style={styles.hint}>Add an exercise to start logging sets.</Text>
+          ) : (
+            <Text style={styles.hint}>Tap a set to correct or delete it.</Text>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <SaveAsTemplateModal
+        visible={saveAsTemplateVisible}
+        workout={workout}
+        onClose={() => setSaveAsTemplateVisible(false)}
+        onSaved={() => {
+          setSaveAsTemplateVisible(false);
+          void handleFinish();
         }}
       />
-
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <TitleField value={workout.title} onSave={(title) => void handleSaveTitle(title)} />
-
-        <View style={styles.summary}>
-          <View>
-            <Text style={styles.summaryValue}>{workout.total_sets}</Text>
-            <Text style={styles.summaryLabel}>working sets</Text>
-          </View>
-          <SessionDuration startedAt={workout.performed_at} />
-        </View>
-
-        <RestTimer seconds={restSeconds} onChangeSeconds={handleChangeRest} />
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        {blocks.map((block) => {
-          const target = targets.find((t) => t.exercise_id === block.exerciseId);
-          return (
-            <View key={block.exerciseId} style={styles.block}>
-              <Text style={styles.blockTitle}>{block.name}</Text>
-              {target ? (
-                <Text style={styles.blockTarget}>Target: {formatTarget(target)}</Text>
-              ) : null}
-
-              {block.sets.map((set) => (
-                <SetRow
-                  key={set.id}
-                  set={set}
-                  onSave={handleEditSet}
-                  onDelete={(setId) => void handleDeleteSet(setId)}
-                />
-              ))}
-
-              <SetForm
-                busy={busyExercise === block.exerciseId}
-                lastSet={block.sets[block.sets.length - 1]}
-                onSubmit={(weight, reps, isWarmup) =>
-                  void handleAddSet(block.exerciseId, weight, reps, isWarmup)
-                }
-              />
-            </View>
-          );
-        })}
-
-        <Pressable style={styles.addExercise} onPress={openPicker}>
-          <Ionicons name="add" size={20} color={colors.accent} />
-          <Text style={styles.addExerciseText}>Add exercise</Text>
-        </Pressable>
-
-        {blocks.length === 0 ? (
-          <Text style={styles.hint}>Add an exercise to start logging sets.</Text>
-        ) : (
-          <Text style={styles.hint}>Tap a set to correct or delete it.</Text>
-        )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </>
   );
 }
 
@@ -831,4 +1044,74 @@ const styles = StyleSheet.create({
   },
   addExerciseText: { color: colors.accent, fontSize: 16, fontWeight: "600" },
   hint: { color: colors.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.md },
+
+  sheetBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.md,
+    borderTopRightRadius: radius.md,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  sheetTitle: { color: colors.text, fontSize: 18, fontWeight: "700", marginBottom: spacing.md },
+  sheetInput: {
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    color: colors.text,
+    fontSize: 16,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  sheetLabel: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: spacing.xs,
+  },
+  sheetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.sm,
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sheetRowText: { color: colors.text, fontSize: 16 },
+  sheetEmpty: { color: colors.textMuted, marginBottom: spacing.sm },
+  sheetLoading: { marginVertical: spacing.md },
+  sheetCreateProgram: {
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    alignItems: "center",
+  },
+  sheetCreateProgramText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
+
+  modalActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
+  modalButton: {
+    flex: 1,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    alignItems: "center",
+  },
+  modalButtonSecondary: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+  },
+  modalButtonDisabled: { opacity: 0.7 },
+  modalButtonText: { color: colors.accentText, fontSize: 16, fontWeight: "700" },
+  modalButtonSecondaryText: { color: colors.accent, fontSize: 16, fontWeight: "700" },
 });
