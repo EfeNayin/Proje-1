@@ -497,10 +497,15 @@ export default function ActiveWorkoutScreen() {
     };
   }, [workout?.template_id]);
 
-  const blocks = useMemo(
-    () => (workout ? groupByExercise(workout.sets, pending) : []),
-    [workout, pending],
-  );
+  // Template exercises come first (in template order) so a session started
+  // from a plan shows the whole plan immediately, not just what's logged so
+  // far — this is what makes an empty, just-started session show anything
+  // at all instead of a blank screen.
+  const blocks = useMemo(() => {
+    if (!workout) return [];
+    const targetExtras = targets.map((t) => ({ id: t.exercise_id, name: t.exercise_name }));
+    return groupByExercise(workout.sets, [...targetExtras, ...pending]);
+  }, [workout, pending, targets]);
 
   const handleSaveTitle = useCallback(
     async (title: string | null) => {
