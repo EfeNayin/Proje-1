@@ -28,6 +28,7 @@ from app.models.base import Base, created_at, updated_at
 
 if TYPE_CHECKING:
     from app.models.exercise import Exercise
+    from app.models.program import WorkoutTemplate
     from app.models.user import User
 
 
@@ -68,18 +69,24 @@ class Workout(Base):
         Numeric(10, 2), nullable=False, server_default=text("0")
     )
     # Number of working (non-warmup) sets. Denormalised.
-    total_sets: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0")
-    )
+    total_sets: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
 
-    is_private: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true")
+    is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+
+    # Which template this session was started from, if any. Nullable: free
+    # logging without a program is still fully supported and unaffected.
+    # ON DELETE SET NULL — deleting a template must never delete the
+    # workouts logged against it.
+    template_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("workout_templates.id", ondelete="SET NULL"),
     )
 
     created_at: Mapped[created_at]
     updated_at: Mapped[updated_at]
 
     user: Mapped["User"] = relationship(back_populates="workouts")
+    template: Mapped["WorkoutTemplate | None"] = relationship(back_populates="workouts")
     sets: Mapped[list["Set"]] = relationship(
         back_populates="workout",
         cascade="all, delete-orphan",
@@ -92,6 +99,9 @@ class Workout(Base):
     # order instead of sorting. Name matches schema_v1.sql.
     __table_args__ = (
         Index("idx_workouts_user_performed", "user_id", text("performed_at DESC")),
+        Index(
+            "idx_workouts_template", "template_id", postgresql_where=text("template_id IS NOT NULL")
+        ),
     )
 
     def __repr__(self) -> str:
@@ -138,9 +148,7 @@ class Set(Base):
     rpe: Mapped[Decimal | None] = mapped_column(Numeric(3, 1))
 
     # Warmup sets are excluded from volume analytics.
-    is_warmup: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
-    )
+    is_warmup: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
     created_at: Mapped[created_at]
 
