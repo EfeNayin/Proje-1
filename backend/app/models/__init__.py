@@ -6,6 +6,7 @@ tables, and a model that is never imported stays invisible to it.
 
 from app.models.base import Base
 from app.models.exercise import Exercise, ExerciseMuscleGroup, MuscleGroup
+from app.models.readiness import ReadinessLog
 from app.models.user import RefreshToken, User
 from app.models.workout import Set, Workout
 
@@ -14,6 +15,7 @@ __all__ = [
     "Exercise",
     "ExerciseMuscleGroup",
     "MuscleGroup",
+    "ReadinessLog",
     "RefreshToken",
     "Set",
     "User",
