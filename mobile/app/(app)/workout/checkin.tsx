@@ -107,9 +107,7 @@ export default function ReadinessCheckin() {
   const router = useRouter();
 
   const [sleepHours, setSleepHours] = useState("");
-  const [sleepQuality, setSleepQuality] = useState<number | null>(null);
   const [energy, setEnergy] = useState<number | null>(null);
-  const [mood, setMood] = useState<number | null>(null);
   const [soreness, setSoreness] = useState<Record<string, number>>({});
   const [muscles, setMuscles] = useState<MuscleGroupSummary[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -124,7 +122,7 @@ export default function ReadinessCheckin() {
       })
       .catch(() => {
         // Soreness becomes unavailable rather than blocking the rest of the
-        // check-in; sleep/energy/mood do not depend on this list.
+        // check-in; sleep and energy do not depend on this list.
       });
     return () => {
       cancelled = true;
@@ -163,9 +161,7 @@ export default function ReadinessCheckin() {
     try {
       await readinessApi.upsertTodayReadiness({
         sleep_hours: parseSleepHours(sleepHours),
-        sleep_quality: sleepQuality,
         energy,
-        mood,
         soreness: Object.keys(soreness).length > 0 ? soreness : null,
       });
     } catch {
@@ -205,9 +201,7 @@ export default function ReadinessCheckin() {
         />
       </View>
 
-      <RatingRow label="Sleep quality" value={sleepQuality} onChange={setSleepQuality} />
       <RatingRow label="Energy" value={energy} onChange={setEnergy} />
-      <RatingRow label="Mood" value={mood} onChange={setMood} />
 
       {muscles.length > 0 ? (
         <SorenessSection
