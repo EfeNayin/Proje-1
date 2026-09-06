@@ -84,7 +84,7 @@ async function extractError(response: Response): Promise<string> {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   /** Skip the Authorization header, for login and register. */
   anonymous?: boolean;

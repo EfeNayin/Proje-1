@@ -39,3 +39,17 @@ export function searchExercises(query: string, limit = 50): Promise<ExerciseList
 export function getExercise(id: string): Promise<ExerciseDetail> {
   return apiRequest<ExerciseDetail>(`/exercises/${id}`);
 }
+
+export type MuscleGroupSummary = {
+  id: number;
+  name: string;
+  name_tr: string;
+  region: "upper" | "lower" | "core";
+  mev: number | null;
+  mav: number | null;
+  mrv: number | null;
+};
+
+export function listMuscleGroups(): Promise<MuscleGroupSummary[]> {
+  return apiRequest<MuscleGroupSummary[]>("/muscle-groups");
+}
