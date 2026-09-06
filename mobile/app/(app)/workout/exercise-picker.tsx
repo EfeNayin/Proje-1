@@ -3,6 +3,11 @@
  *
  * Search is server-side and accent-insensitive, so "gogus" finds "Göğüs" —
  * on a phone most people do not switch to a Turkish keyboard mid-set.
+ *
+ * Shared by two callers: logging a set mid-workout (workoutId) and building
+ * a template (templateId). Either way the choice is handed back through
+ * route params to whichever screen opened the picker, the same pattern —
+ * a global store would be overkill for a value read exactly once, on mount.
  */
 
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -23,7 +28,10 @@ import { colors, radius, spacing } from "../../../src/theme";
 
 export default function ExercisePicker() {
   const router = useRouter();
-  const { workoutId } = useLocalSearchParams<{ workoutId: string }>();
+  const { workoutId, templateId } = useLocalSearchParams<{
+    workoutId?: string;
+    templateId?: string;
+  }>();
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ExerciseSummary[]>([]);
@@ -56,15 +64,17 @@ export default function ExercisePicker() {
   }, [query]);
 
   const choose = (exercise: ExerciseSummary) => {
-    // Hand the choice back through route params rather than a global store:
-    // the workout screen is the only consumer and it reads them on mount.
-    router.replace({
-      pathname: `/workout/${workoutId}`,
-      params: {
-        addExerciseId: exercise.id,
-        addExerciseName: exercise.name_tr ?? exercise.name,
-      },
-    });
+    const addParams = {
+      addExerciseId: exercise.id,
+      addExerciseName: exercise.name_tr ?? exercise.name,
+    };
+    if (templateId) {
+      router.replace({ pathname: "/program/template/[id]", params: { id: templateId, ...addParams } });
+      return;
+    }
+    if (workoutId) {
+      router.replace({ pathname: "/workout/[id]", params: { id: workoutId, ...addParams } });
+    }
   };
 
   return (

@@ -37,6 +37,8 @@ export default function AppLayout() {
         name="workout/checkin"
         options={{ title: "Check-in", presentation: "modal" }}
       />
+      <Stack.Screen name="program/[id]" options={{ title: "Program" }} />
+      <Stack.Screen name="program/template/[id]" options={{ title: "Template" }} />
     </Stack>
   );
 }

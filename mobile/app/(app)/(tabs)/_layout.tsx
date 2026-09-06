@@ -27,6 +27,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="programs"
+        options={{
+          title: "Programs",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="clipboard" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="volume"
         options={{
           title: "Volume",
