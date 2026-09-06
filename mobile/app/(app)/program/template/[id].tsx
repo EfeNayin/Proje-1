@@ -9,7 +9,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -24,6 +24,7 @@ import {
 import * as programsApi from "../../../../src/api/programs";
 import type { TemplateExerciseInput, WorkoutTemplate } from "../../../../src/api/programs";
 import { colors, radius, spacing } from "../../../../src/theme";
+import { usePickedExercise } from "../../../../src/workout/usePickedExercise";
 
 type DraftExercise = {
   exerciseId: string;
@@ -131,11 +132,7 @@ function ExerciseRow({
 
 export default function TemplateEditor() {
   const router = useRouter();
-  const { id, addExerciseId, addExerciseName } = useLocalSearchParams<{
-    id: string;
-    addExerciseId?: string;
-    addExerciseName?: string;
-  }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
 
   const [template, setTemplate] = useState<WorkoutTemplate | null>(null);
   const [draftName, setDraftName] = useState("");
@@ -165,19 +162,12 @@ export default function TemplateEditor() {
     };
   }, [id]);
 
-  // The picker navigates back with its choice in params; consume it once so
-  // a re-render does not keep re-adding the same exercise.
-  const consumedParam = useRef<string | null>(null);
-  useEffect(() => {
-    if (!addExerciseId || !addExerciseName) return;
-    if (consumedParam.current === addExerciseId) return;
-    consumedParam.current = addExerciseId;
-
+  const { openPicker } = usePickedExercise((exercise) => {
     setExercises((current) => [
       ...current,
-      { exerciseId: addExerciseId, exerciseName: addExerciseName, sets: "3", repsMin: "", repsMax: "", rir: "" },
+      { exerciseId: exercise.id, exerciseName: exercise.name, sets: "3", repsMin: "", repsMax: "", rir: "" },
     ]);
-  }, [addExerciseId, addExerciseName]);
+  });
 
   const handleRemove = (index: number) => {
     setExercises((current) => current.filter((_, i) => i !== index));
@@ -283,10 +273,7 @@ export default function TemplateEditor() {
         <Text style={styles.empty}>No exercises yet. Add one below.</Text>
       ) : null}
 
-      <Pressable
-        style={styles.addExercise}
-        onPress={() => router.push({ pathname: "/workout/exercise-picker", params: { templateId: id } })}
-      >
+      <Pressable style={styles.addExercise} onPress={openPicker}>
         <Ionicons name="add" size={20} color={colors.accent} />
         <Text style={styles.addExerciseText}>Add exercise</Text>
       </Pressable>
