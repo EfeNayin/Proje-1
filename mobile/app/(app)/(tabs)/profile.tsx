@@ -4,19 +4,24 @@
  * Read-only for now; editing lands here once the training loop is settled.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from "react-native";
 
 import { useAuth } from "../../../src/auth/AuthContext";
 import { colors, radius, spacing } from "../../../src/theme";
+import {
+  isReadinessCheckinEnabled,
+  setReadinessCheckinEnabled,
+} from "../../../src/workout/readinessPreference";
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -30,6 +35,22 @@ function Row({ label, value }: { label: string; value: string }) {
 export default function ProfileScreen() {
   const { user, signOut, refreshProfile } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+  const [checkinEnabled, setCheckinEnabled] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void isReadinessCheckinEnabled().then((value) => {
+      if (!cancelled) setCheckinEnabled(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleToggleCheckin = (value: boolean) => {
+    setCheckinEnabled(value);
+    void setReadinessCheckinEnabled(value);
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -69,6 +90,21 @@ export default function ProfileScreen() {
         <Row label="Visibility" value={user.is_private ? "Private" : "Public"} />
       </View>
 
+      <View style={[styles.card, styles.cardSpaced]}>
+        <View style={[styles.row, styles.rowNoBorder]}>
+          <View style={styles.rowText}>
+            <Text style={styles.rowLabel}>Readiness check-in</Text>
+            <Text style={styles.rowHint}>Ask about sleep and soreness before each workout</Text>
+          </View>
+          <Switch
+            value={checkinEnabled}
+            onValueChange={handleToggleCheckin}
+            trackColor={{ false: colors.border, true: colors.accent }}
+            thumbColor={colors.text}
+          />
+        </View>
+      </View>
+
       <Pressable style={styles.signOut} onPress={() => void signOut()}>
         <Text style={styles.signOutText}>Sign out</Text>
       </Pressable>
@@ -93,6 +129,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
   },
+  cardSpaced: { marginTop: spacing.lg },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -101,8 +138,11 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  rowNoBorder: { borderBottomWidth: 0 },
   rowLabel: { color: colors.textMuted, fontSize: 14 },
   rowValue: { color: colors.text, fontSize: 15, fontWeight: "500" },
+  rowText: { flex: 1, marginRight: spacing.md },
+  rowHint: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
   signOut: {
     marginTop: spacing.xl,
     padding: spacing.md,

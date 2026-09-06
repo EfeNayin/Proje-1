@@ -15,10 +15,12 @@ import {
   View,
 } from "react-native";
 
+import * as readinessApi from "../../../src/api/readiness";
 import * as workoutsApi from "../../../src/api/workouts";
 import type { WorkoutSummary } from "../../../src/api/workouts";
 import { colors, radius, spacing } from "../../../src/theme";
 import { clearActiveWorkout, getActiveWorkout, setActiveWorkout } from "../../../src/workout/activeWorkout";
+import { isReadinessCheckinEnabled } from "../../../src/workout/readinessPreference";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -82,6 +84,23 @@ export default function TrainingHome() {
   const handleStart = async () => {
     setStarting(true);
     try {
+      let showCheckin = false;
+      try {
+        if (await isReadinessCheckinEnabled()) {
+          const today = await readinessApi.getTodayReadiness();
+          showCheckin = today.id === null;
+        }
+      } catch {
+        // Fail open: a flaky check on whether today is already logged must
+        // never be the reason a workout cannot be started.
+        showCheckin = false;
+      }
+
+      if (showCheckin) {
+        router.push("/workout/checkin");
+        return;
+      }
+
       const workout = await workoutsApi.startWorkout();
       await setActiveWorkout(workout.id);
       router.push(`/workout/${workout.id}`);

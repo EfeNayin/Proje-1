@@ -33,6 +33,10 @@ export default function AppLayout() {
         name="workout/exercise-picker"
         options={{ title: "Add exercise", presentation: "modal" }}
       />
+      <Stack.Screen
+        name="workout/checkin"
+        options={{ title: "Check-in", presentation: "modal" }}
+      />
     </Stack>
   );
 }
