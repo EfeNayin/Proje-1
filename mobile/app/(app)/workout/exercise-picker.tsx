@@ -4,13 +4,13 @@
  * Search is server-side and accent-insensitive, so "gogus" finds "Göğüs" —
  * on a phone most people do not switch to a Turkish keyboard mid-set.
  *
- * Shared by two callers: logging a set mid-workout (workoutId) and building
- * a template (templateId). Either way the choice is handed back through
- * route params to whichever screen opened the picker, the same pattern —
- * a global store would be overkill for a value read exactly once, on mount.
+ * Caller-agnostic: it does not need to know who opened it or why. It
+ * deposits the choice for usePickedExercise() to collect and goes back,
+ * resuming whichever screen was open rather than recreating it — see
+ * usePickedExercise for why that distinction matters.
  */
 
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -25,13 +25,10 @@ import {
 import * as exercisesApi from "../../../src/api/exercises";
 import type { ExerciseSummary } from "../../../src/api/exercises";
 import { colors, radius, spacing } from "../../../src/theme";
+import { depositPickedExercise } from "../../../src/workout/usePickedExercise";
 
 export default function ExercisePicker() {
   const router = useRouter();
-  const { workoutId, templateId } = useLocalSearchParams<{
-    workoutId?: string;
-    templateId?: string;
-  }>();
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ExerciseSummary[]>([]);
@@ -64,17 +61,8 @@ export default function ExercisePicker() {
   }, [query]);
 
   const choose = (exercise: ExerciseSummary) => {
-    const addParams = {
-      addExerciseId: exercise.id,
-      addExerciseName: exercise.name_tr ?? exercise.name,
-    };
-    if (templateId) {
-      router.replace({ pathname: "/program/template/[id]", params: { id: templateId, ...addParams } });
-      return;
-    }
-    if (workoutId) {
-      router.replace({ pathname: "/workout/[id]", params: { id: workoutId, ...addParams } });
-    }
+    depositPickedExercise({ id: exercise.id, name: exercise.name_tr ?? exercise.name });
+    router.back();
   };
 
   return (
