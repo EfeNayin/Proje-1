@@ -24,6 +24,7 @@ import {
 import * as programsApi from "../../../../src/api/programs";
 import type { TemplateExerciseInput, WorkoutTemplate } from "../../../../src/api/programs";
 import { colors, radius, spacing } from "../../../../src/theme";
+import { setActiveWorkout } from "../../../../src/workout/activeWorkout";
 import { usePickedExercise } from "../../../../src/workout/usePickedExercise";
 
 type DraftExercise = {
@@ -139,6 +140,7 @@ export default function TemplateEditor() {
   const [exercises, setExercises] = useState<DraftExercise[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -184,27 +186,55 @@ export default function TemplateEditor() {
     }
   };
 
-  const handleSave = async () => {
-    setSaving(true);
+  /**
+   * Validates and persists the current draft. Shared by Save and Start
+   * workout: starting from a template whose latest edits were never sent
+   * would silently start the OLD version of it, so Start always saves
+   * first, exactly like tapping Save would.
+   */
+  const persistExercises = async (): Promise<boolean> => {
     setError(null);
 
     const payload = exercises.map(toPayload);
     if (payload.some((item) => item === null)) {
       setError("Each exercise needs a valid number of sets.");
-      setSaving(false);
-      return;
+      return false;
     }
 
     try {
       await programsApi.setTemplateExercises(id, payload as NonNullable<(typeof payload)[number]>[]);
-      // Success is leaving: the program screen (refreshed on focus) is where
-      // the saved exercises become visible, which is the confirmation itself
-      // — a toast on top of a screen that is about to disappear would be
-      // easy to miss and adds nothing a returning screen doesn't already say.
-      router.back();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the exercises");
-      setSaving(false);
+      return false;
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const ok = await persistExercises();
+    setSaving(false);
+    // Success is leaving: the program screen (refreshed on focus) is where
+    // the saved exercises become visible, which is the confirmation itself
+    // — a toast on top of a screen that is about to disappear would be
+    // easy to miss and adds nothing a returning screen doesn't already say.
+    if (ok) router.back();
+  };
+
+  const handleStartWorkout = async () => {
+    setStarting(true);
+    if (!(await persistExercises())) {
+      setStarting(false);
+      return;
+    }
+
+    try {
+      const { workout_id } = await programsApi.startWorkoutFromTemplate(id);
+      await setActiveWorkout(workout_id);
+      router.push(`/workout/${workout_id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start the workout");
+      setStarting(false);
     }
   };
 
@@ -292,13 +322,31 @@ export default function TemplateEditor() {
         <Text style={styles.addExerciseText}>Add exercise</Text>
       </Pressable>
 
-      <Pressable style={[styles.save, saving && styles.saveDisabled]} onPress={() => void handleSave()} disabled={saving}>
-        {saving ? (
-          <ActivityIndicator color={colors.accentText} />
-        ) : (
-          <Text style={styles.saveText}>Save</Text>
-        )}
-      </Pressable>
+      <View style={styles.actions}>
+        <Pressable
+          style={[styles.save, styles.saveSecondary, (saving || starting) && styles.saveDisabled]}
+          onPress={() => void handleSave()}
+          disabled={saving || starting}
+        >
+          {saving ? (
+            <ActivityIndicator color={colors.accent} />
+          ) : (
+            <Text style={styles.saveSecondaryText}>Save</Text>
+          )}
+        </Pressable>
+
+        <Pressable
+          style={[styles.save, (saving || starting) && styles.saveDisabled]}
+          onPress={() => void handleStartWorkout()}
+          disabled={saving || starting}
+        >
+          {starting ? (
+            <ActivityIndicator color={colors.accentText} />
+          ) : (
+            <Text style={styles.saveText}>Start workout</Text>
+          )}
+        </Pressable>
+      </View>
     </ScrollView>
   );
 }
@@ -366,12 +414,20 @@ const styles = StyleSheet.create({
   },
   addExerciseText: { color: colors.accent, fontSize: 16, fontWeight: "600" },
 
+  actions: { flexDirection: "row", gap: spacing.sm },
   save: {
+    flex: 1,
     backgroundColor: colors.accent,
     borderRadius: radius.md,
     padding: spacing.md,
     alignItems: "center",
   },
+  saveSecondary: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+  },
   saveDisabled: { opacity: 0.7 },
   saveText: { color: colors.accentText, fontSize: 17, fontWeight: "700" },
+  saveSecondaryText: { color: colors.accent, fontSize: 17, fontWeight: "700" },
 });
