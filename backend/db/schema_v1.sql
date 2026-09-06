@@ -253,6 +253,58 @@ CREATE INDEX idx_sets_workout ON sets(workout_id);
 CREATE INDEX idx_sets_exercise ON sets(exercise_id);
 
 
+-- ─────────────────────────────────────────────────────────────────────────
+--  readiness_logs  ·  Günlük durum kaydı (iç kullanım → BIGSERIAL)
+-- ─────────────────────────────────────────────────────────────────────────
+--  Amaç TEŞHİS: kullanıcı gelişemediğinde sebebi programda mı, toparlanmada
+--  mı, beslenmede mi görebilsin. Hacim analitiği "yeterli çalıştın mı"
+--  sorusunu yanıtlıyor; bu tablo "toparlanabildin mi" tarafını tutuyor.
+--
+--  GÜNLÜK, antrenman başına DEĞİL: uyku ve ruh hali güne aittir. Aynı gün
+--  iki antrenman yapan aynı cevabı iki kez girmemeli, ve dinlenme günlerinin
+--  kaydı da değerli ("dinlenme günlerinde bile 5 saat uyuyorsun").
+--  Bu yüzden workout_id yok, UNIQUE(user_id, log_date) var.
+--
+--  Tüm alanlar NULL olabilir: kayıt tamamen opsiyoneldir, kullanıcı sadece
+--  uykusunu girip gerisini boş bırakabilmeli. Her zorunlu alan, her antrenman
+--  öncesi tekrarlanan bir sürtünmedir.
+--
+--  log_date KULLANICININ YEREL tarihidir (users.timezone), UTC değil —
+--  haftalık hacimdeki aynı gerekçe: gece 01:00'de girilen kayıt o güne ait.
+CREATE TABLE readiness_logs (
+    id            BIGSERIAL    PRIMARY KEY,
+    user_id       UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    log_date      DATE         NOT NULL,
+
+    sleep_hours   NUMERIC(3,1) CHECK (sleep_hours >= 0 AND sleep_hours <= 24),
+    sleep_quality SMALLINT     CHECK (sleep_quality BETWEEN 1 AND 5),
+    energy        SMALLINT     CHECK (energy BETWEEN 1 AND 5),
+    mood          SMALLINT     CHECK (mood BETWEEN 1 AND 5),
+
+    -- Kas grubu → ağrı şiddeti (1-5), örn. {"chest": 3, "quads": 5}.
+    -- JSONB çünkü 17 kas için 17 kolon açmak anlamsız; kullanıcı genelde
+    -- birkaç kas işaretler. Anahtarların muscle_groups.name ile eşleştiği
+    -- ve değerlerin 1-5 olduğu uygulama katmanında doğrulanır (DB'de
+    -- zorlamak trigger gerektirir, o karmaşıklık bu veri için fazla).
+    soreness      JSONB,
+
+    notes         TEXT,
+
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+
+    -- Gün içinde tekrar girilirse yeni satır değil güncelleme olur.
+    UNIQUE (user_id, log_date)
+);
+
+-- "Son N günün kaydı, yeniden eskiye" — teşhis ekranının tek sorgusu.
+CREATE INDEX idx_readiness_user_date ON readiness_logs(user_id, log_date DESC);
+
+CREATE TRIGGER readiness_logs_set_updated_at
+    BEFORE UPDATE ON readiness_logs
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+
 -- ============================================================================
 --  SEED: muscle_groups — 17 kas grubu, MEV/MAV/MRV değerleriyle
 --  Değerler Renaissance Periodization'ın yayınladığı aralıkların orta noktaları;
@@ -516,9 +568,9 @@ SELECT e.id, m.id, 'secondary', 2 FROM exercises e, muscle_groups m
 WHERE e.name = 'Cable Fly' AND m.name = 'front_delts';
 
 -- ============================================================================
---  ŞEMA TAMAM — Katman 1: 7 tablo, seed dahil
+--  ŞEMA TAMAM — Katman 1: 8 tablo, seed dahil
 --  users, refresh_tokens, muscle_groups, exercises,
---  exercise_muscle_groups, workouts, sets
+--  exercise_muscle_groups, workouts, sets, readiness_logs
 --
 --  ULUSLARARASILAŞMA NOTLARI (bilinçli ertelenenler):
 --   • week_start_day → date_trunc('week') HER ZAMAN Pazartesi'den başlar (ISO
@@ -544,7 +596,9 @@ WHERE e.name = 'Cable Fly' AND m.name = 'front_delts';
 --   Faz 2 → follows, workout_likes, workout_comments, personal_records,
 --           notifications, body_measurements, progress_photos
 --   Faz 3 → mesocycles, workout_templates, program_recommendations,
---           readiness_logs, users.experience_level, users.primary_goal
+--           users.experience_level, users.primary_goal
+--           (readiness_logs bu listeden çıktı — erken teşhis değeri için
+--           Faz 3 beklenmeden şimdi eklendi, bkz. tablo yukarıda)
 --   Faz 4+ → set_videos, video_analyses (CV) · sensor_recordings (HAR)
 --   Ayrıca → sets.rest_seconds, sets.source, exercises.slug (gerekirse)
 
