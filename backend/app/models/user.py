@@ -53,7 +53,8 @@ class User(Base):
     # bcrypt hash. The plaintext password is never stored.
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
 
-    display_name: Mapped[str | None] = mapped_column(Text)
+    first_name: Mapped[str | None] = mapped_column(Text)
+    last_name: Mapped[str | None] = mapped_column(Text)
     bio: Mapped[str | None] = mapped_column(Text)
 
     # Privacy defaults to private: social features are opt-in.

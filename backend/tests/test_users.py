@@ -49,7 +49,7 @@ class TestUpdateMe:
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["bio"] == "Natural bodybuilder"
-        assert body["display_name"] == "Efe"  # untouched
+        assert body["first_name"] == "Efe"  # untouched
 
     async def test_explicit_null_clears_a_field(
         self, client: AsyncClient, auth_headers: dict[str, str]
@@ -100,3 +100,17 @@ class TestUpdateMe:
     async def test_requires_a_token(self, client: AsyncClient) -> None:
         response = await client.patch("/users/me", json={"bio": "anything"})
         assert response.status_code == 401
+
+    async def test_updates_first_and_last_name(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            "/users/me",
+            headers=auth_headers,
+            json={"first_name": "Efe", "last_name": "Nayın"},
+        )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["first_name"] == "Efe"
+        assert body["last_name"] == "Nayın"

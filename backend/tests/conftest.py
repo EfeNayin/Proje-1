@@ -154,7 +154,7 @@ def register_payload() -> dict[str, str]:
         "email": "efe@example.com",
         "username": "efe",
         "password": "supersecret123",
-        "display_name": "Efe",
+        "first_name": "Efe",
     }
 
 

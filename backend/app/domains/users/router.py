@@ -26,8 +26,8 @@ async def update_me(
     db: DbSession,
 ) -> UserProfile:
     # exclude_unset keeps omitted fields untouched, so a request that only
-    # sends {"bio": "..."} does not wipe display_name. Note this is different
-    # from exclude_none: sending {"bio": null} explicitly clears the bio.
+    # sends {"bio": "..."} does not wipe first_name. This is different from
+    # exclude_none: sending {"bio": null} explicitly clears the bio.
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(current_user, field, value)

@@ -16,7 +16,8 @@ class TestRegister:
         assert response.status_code == 201, response.text
         body = response.json()
         assert body["user"]["username"] == "efe"
-        assert body["user"]["display_name"] == "Efe"
+        assert body["user"]["first_name"] == "Efe"
+        assert body["user"]["last_name"] is None
         assert body["tokens"]["access_token"]
         assert body["tokens"]["refresh_token"]
         assert body["tokens"]["token_type"] == "bearer"

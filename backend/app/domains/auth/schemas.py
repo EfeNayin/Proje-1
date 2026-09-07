@@ -55,7 +55,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     username: Username
     password: Password
-    display_name: str | None = Field(default=None, max_length=100)
+    first_name: str | None = Field(default=None, max_length=100)
 
     # Clients should send the device's timezone. The default keeps signup
     # working if they do not, and matches the current primary market.
@@ -106,7 +106,8 @@ class UserProfile(BaseModel):
     id: UUID
     email: EmailStr
     username: str
-    display_name: str | None
+    first_name: str | None
+    last_name: str | None
     bio: str | None
     is_private: bool
     weight_unit: str

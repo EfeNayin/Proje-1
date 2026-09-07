@@ -18,7 +18,8 @@ class UserUpdate(BaseModel):
     verification flow, which is out of scope for now.
     """
 
-    display_name: str | None = Field(default=None, max_length=100)
+    first_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
     bio: str | None = Field(default=None, max_length=1000)
     is_private: bool | None = None
     weight_unit: Literal["kg", "lb"] | None = None

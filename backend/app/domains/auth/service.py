@@ -49,7 +49,7 @@ async def register(db: AsyncSession, payload: RegisterRequest) -> tuple[User, To
         email=payload.email,
         username=payload.username,
         password_hash=hash_password(payload.password),
-        display_name=payload.display_name,
+        first_name=payload.first_name,
         timezone=payload.timezone,
         locale=payload.locale,
     )
