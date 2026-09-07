@@ -13,6 +13,7 @@ export const colors = {
   text: "#f2f4f8",
   textMuted: "#8b93a3",
   accent: "#3ddc84",
+  accentDark: "#1f9d5c",
   accentText: "#0f1115",
   danger: "#ff6b6b",
 } as const;

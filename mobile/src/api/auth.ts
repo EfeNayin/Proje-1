@@ -12,7 +12,8 @@ export type UserProfile = {
   id: string;
   email: string;
   username: string;
-  display_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
   bio: string | null;
   is_private: boolean;
   weight_unit: "kg" | "lb";
@@ -26,11 +27,31 @@ type AuthResponse = {
   tokens: TokenPair;
 };
 
+/** "First Last", "First", or null if neither name is set. Never falls back
+ * to username itself — callers decide what to show instead. */
+export function fullName(user: Pick<UserProfile, "first_name" | "last_name">): string | null {
+  const parts = [user.first_name, user.last_name].filter(
+    (part): part is string => part != null && part.length > 0,
+  );
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+/** Avatar initials: first_name + last_name's first letters, or the first
+ * letter of username if no name is set. */
+export function initials(
+  user: Pick<UserProfile, "first_name" | "last_name" | "username">,
+): string {
+  if (user.first_name) {
+    return (user.first_name[0] + (user.last_name?.[0] ?? "")).toUpperCase();
+  }
+  return user.username[0]?.toUpperCase() ?? "?";
+}
+
 export type RegisterInput = {
   email: string;
   username: string;
   password: string;
-  display_name?: string;
+  first_name?: string;
   timezone?: string;
   locale?: string;
 };

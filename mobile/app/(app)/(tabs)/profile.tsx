@@ -1,9 +1,14 @@
 /**
  * Profile screen.
  *
- * Read-only for now; editing lands here once the training loop is settled.
+ * The header card is editable (taps through to /profile/edit); the info
+ * card and sign-out below it are read-only for now, pending the Personal
+ * Details / Preferences sections from a later task.
  */
 
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,6 +21,7 @@ import {
   View,
 } from "react-native";
 
+import { fullName, initials } from "../../../src/api/auth";
 import { useAuth } from "../../../src/auth/AuthContext";
 import { colors, radius, spacing } from "../../../src/theme";
 import {
@@ -34,6 +40,7 @@ function Row({ label, value }: { label: string; value: string }) {
 
 export default function ProfileScreen() {
   const { user, signOut, refreshProfile } = useAuth();
+  const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [checkinEnabled, setCheckinEnabled] = useState(true);
 
@@ -79,8 +86,22 @@ export default function ProfileScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
       }
     >
-      <Text style={styles.name}>{user.display_name ?? user.username}</Text>
-      <Text style={styles.username}>@{user.username}</Text>
+      <Pressable
+        style={({ pressed }) => [styles.headerCard, pressed && styles.headerCardPressed]}
+        onPress={() => router.push("/profile/edit")}
+      >
+        <LinearGradient
+          colors={[colors.accent, colors.accentDark]}
+          style={styles.avatar}
+        >
+          <Text style={styles.avatarText}>{initials(user)}</Text>
+        </LinearGradient>
+        <View style={styles.headerText}>
+          <Text style={styles.name}>{fullName(user) ?? user.username}</Text>
+          <Text style={styles.username}>@{user.username}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={22} color={colors.textMuted} />
+      </Pressable>
 
       <View style={styles.card}>
         <Row label="Email" value={user.email} />
@@ -120,8 +141,28 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   container: { padding: spacing.lg },
-  name: { color: colors.text, fontSize: 26, fontWeight: "700" },
-  username: { color: colors.textMuted, fontSize: 15, marginBottom: spacing.lg },
+  headerCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  headerCardPressed: { opacity: 0.7 },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { color: colors.accentText, fontSize: 22, fontWeight: "700" },
+  headerText: { flex: 1, marginLeft: spacing.md },
+  name: { color: colors.text, fontSize: 20, fontWeight: "700" },
+  username: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
   card: {
     backgroundColor: colors.surface,
     borderColor: colors.border,

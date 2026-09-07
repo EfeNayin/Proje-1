@@ -21,7 +21,7 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [firstName, setFirstName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -56,7 +56,7 @@ export default function RegisterScreen() {
         email: email.trim(),
         username: username.trim().toLowerCase(),
         password,
-        display_name: displayName.trim() || undefined,
+        first_name: firstName.trim() || undefined,
         // Sent at signup because it cannot be reconstructed later, and weekly
         // volume is sliced in the user's local week: a Monday 01:00 session in
         // Istanbul is Sunday 22:00 UTC and would otherwise land in the wrong
@@ -101,10 +101,10 @@ export default function RegisterScreen() {
 
         <TextInput
           style={styles.input}
-          placeholder="Display name (optional)"
+          placeholder="First name (optional)"
           placeholderTextColor={colors.textMuted}
-          value={displayName}
-          onChangeText={setDisplayName}
+          value={firstName}
+          onChangeText={setFirstName}
         />
 
         <TextInput

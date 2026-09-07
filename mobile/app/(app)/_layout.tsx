@@ -39,6 +39,10 @@ export default function AppLayout() {
       />
       <Stack.Screen name="program/[id]" options={{ title: "Program" }} />
       <Stack.Screen name="program/template/[id]" options={{ title: "Template" }} />
+      <Stack.Screen
+        name="profile/edit"
+        options={{ title: "Edit Profile", presentation: "modal" }}
+      />
     </Stack>
   );
 }
