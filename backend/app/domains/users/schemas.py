@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 
 # Re-exported so callers have a single obvious place to import the profile
 # shape from, even though it is defined alongside the auth responses.
-from app.domains.auth.schemas import SupportedLocale, UserProfile, validate_timezone
+from app.domains.auth.schemas import SupportedLocale, Username, UserProfile, validate_timezone
 
 __all__ = ["UserProfile", "UserUpdate"]
 
@@ -14,12 +14,15 @@ __all__ = ["UserProfile", "UserUpdate"]
 class UserUpdate(BaseModel):
     """Partial profile update. Every field is optional.
 
-    email and username are deliberately excluded: changing them needs a
-    verification flow, which is out of scope for now.
+    email is deliberately excluded: changing it needs a verification flow,
+    which is out of scope for now. username IS changeable here — see
+    app.domains.users.service.update_profile for the uniqueness check, since
+    a Pydantic field alone cannot query the database.
     """
 
     first_name: str | None = Field(default=None, max_length=100)
     last_name: str | None = Field(default=None, max_length=100)
+    username: Username | None = None
     bio: str | None = Field(default=None, max_length=1000)
     is_private: bool | None = None
     weight_unit: Literal["kg", "lb"] | None = None

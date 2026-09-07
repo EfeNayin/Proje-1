@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.domains.auth.dependencies import CurrentUser
+from app.domains.users import service
 from app.domains.users.schemas import UserProfile, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -25,13 +26,5 @@ async def update_me(
     current_user: CurrentUser,
     db: DbSession,
 ) -> UserProfile:
-    # exclude_unset keeps omitted fields untouched, so a request that only
-    # sends {"bio": "..."} does not wipe first_name. This is different from
-    # exclude_none: sending {"bio": null} explicitly clears the bio.
-    changes = payload.model_dump(exclude_unset=True)
-    for field, value in changes.items():
-        setattr(current_user, field, value)
-
-    await db.commit()
-    await db.refresh(current_user)
-    return UserProfile.model_validate(current_user)
+    user = await service.update_profile(db, current_user, payload)
+    return UserProfile.model_validate(user)

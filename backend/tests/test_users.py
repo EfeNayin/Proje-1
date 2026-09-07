@@ -114,3 +114,62 @@ class TestUpdateMe:
         body = response.json()
         assert body["first_name"] == "Efe"
         assert body["last_name"] == "Nayın"
+
+
+class TestUsernameChange:
+    """username used to be fixed at registration; PATCH /users/me can now
+    change it. CITEXT makes uniqueness case-insensitive at the DB level, so
+    the conflict check has to account for that too."""
+
+    async def test_username_can_be_changed(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            "/users/me", headers=auth_headers, json={"username": "efe_new"}
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["username"] == "efe_new"
+
+    async def test_taken_username_is_rejected(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        other_auth_headers: dict[str, str],
+    ) -> None:
+        """auth_headers is "efe", other_auth_headers is "intruder" (see
+        conftest.py). Trying to steal the other account's username must 409."""
+        response = await client.patch(
+            "/users/me", headers=other_auth_headers, json={"username": "efe"}
+        )
+
+        assert response.status_code == 409
+
+    async def test_taken_username_is_rejected_case_insensitively(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        other_auth_headers: dict[str, str],
+    ) -> None:
+        response = await client.patch(
+            "/users/me", headers=other_auth_headers, json={"username": "EFE"}
+        )
+
+        assert response.status_code == 409
+
+    async def test_resending_your_own_username_is_not_a_conflict(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            "/users/me", headers=auth_headers, json={"username": "efe"}
+        )
+
+        assert response.status_code == 200, response.text
+
+    async def test_rejects_invalid_username_format(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            "/users/me", headers=auth_headers, json={"username": "ge çersiz!"}
+        )
+        assert response.status_code == 422
