@@ -686,6 +686,7 @@ export default function ActiveWorkoutScreen() {
   // A past session opens read-only by default (see isFinished/readOnly
   // below); this is the escape hatch that lets it become editable again.
   const [editing, setEditing] = useState(false);
+  const [finishing, setFinishing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -817,12 +818,17 @@ export default function ActiveWorkoutScreen() {
   );
 
   const handleFinish = useCallback(async () => {
+    // Guards against a double-tap firing this twice while the request is in
+    // flight — finish is idempotent server-side, but there is no reason to
+    // rely on that when a disabled button is just as easy.
+    setFinishing(true);
     // Write to the server first: if it fails, the device keeps its active
     // workout pointer and the session is not lost, just not marked done yet.
     try {
       await workoutsApi.finishWorkout(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not finish the workout");
+      setFinishing(false);
       return;
     }
     await clearActiveWorkout();
@@ -895,8 +901,12 @@ export default function ActiveWorkoutScreen() {
                 );
               }
               return (
-                <Pressable onPress={confirmFinish} hitSlop={8}>
-                  <Text style={styles.finish}>Finish</Text>
+                <Pressable onPress={confirmFinish} disabled={finishing} hitSlop={8}>
+                  {finishing ? (
+                    <ActivityIndicator size="small" color={colors.accent} />
+                  ) : (
+                    <Text style={styles.finish}>Finish</Text>
+                  )}
                 </Pressable>
               );
             },
