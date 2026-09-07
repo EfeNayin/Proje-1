@@ -7,10 +7,10 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Modal,
   Pressable,
   RefreshControl,
+  SectionList,
   StyleSheet,
   Text,
   View,
@@ -33,6 +33,72 @@ function formatDate(iso: string): string {
   });
 }
 
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/**
+ * "Today" / "Yesterday" / a full date — grouping is by the device's LOCAL
+ * calendar day, same reasoning as the server's per-user-timezone weekly
+ * volume cutoff: a workout performed_at close to midnight UTC must land in
+ * the day it actually happened in for the person doing it, not in UTC's.
+ */
+function sectionTitleFor(performedAt: string): string {
+  const day = new Date(performedAt);
+  const today = new Date();
+  if (isSameLocalDay(day, today)) return "Today";
+
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (isSameLocalDay(day, yesterday)) return "Yesterday";
+
+  return formatDate(performedAt);
+}
+
+/** For a session still in progress, shown instead of a duration it doesn't have yet. */
+function formatTimeOfDay(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Fixed session length, for a finished workout only — nothing to show for one still in progress. */
+function formatCardDuration(performedAt: string, finishedAt: string): string {
+  const seconds = Math.max(
+    0,
+    Math.floor((new Date(finishedAt).getTime() - new Date(performedAt).getTime()) / 1000),
+  );
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+type HistorySection = { title: string; data: WorkoutSummary[] };
+
+/**
+ * Workouts already arrive most-recent-first from the server, so grouping is
+ * a single linear pass — no re-sorting, no bucketing into a map first.
+ */
+function groupByDay(workouts: WorkoutSummary[]): HistorySection[] {
+  const sections: HistorySection[] = [];
+  let currentDay: string | null = null;
+
+  for (const workout of workouts) {
+    const day = new Date(workout.performed_at);
+    const key = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
+    if (key !== currentDay) {
+      sections.push({ title: sectionTitleFor(workout.performed_at), data: [] });
+      currentDay = key;
+    }
+    sections[sections.length - 1].data.push(workout);
+  }
+
+  return sections;
+}
+
 export default function TrainingHome() {
   const router = useRouter();
   const [workouts, setWorkouts] = useState<WorkoutSummary[]>([]);
@@ -46,18 +112,38 @@ export default function TrainingHome() {
   const load = useCallback(async () => {
     const stored = await getActiveWorkout();
 
-    // The stored id could point at a workout deleted from another device, so
-    // confirm it still exists rather than routing into a dead screen.
+    // The stored id could point at a workout deleted from another device, or
+    // one finished from another device since this device last saw it, so
+    // confirm it still exists AND is still unfinished rather than routing
+    // into a dead or already-closed screen.
     if (stored) {
       try {
-        await workoutsApi.getWorkout(stored);
-        setActiveId(stored);
+        const workout = await workoutsApi.getWorkout(stored);
+        if (workout.finished_at) {
+          await clearActiveWorkout();
+          setActiveId(null);
+        } else {
+          setActiveId(stored);
+        }
       } catch {
         await clearActiveWorkout();
         setActiveId(null);
       }
     } else {
-      setActiveId(null);
+      // No local pointer — the server's copy is the backup for exactly this
+      // case (new phone, reinstall), so check it before assuming there is
+      // nothing in progress.
+      try {
+        const active = await workoutsApi.getActiveWorkout();
+        if (active) {
+          await setActiveWorkout(active.id);
+          setActiveId(active.id);
+        } else {
+          setActiveId(null);
+        }
+      } catch {
+        setActiveId(null);
+      }
     }
 
     const list = await workoutsApi.listWorkouts();
@@ -142,13 +228,16 @@ export default function TrainingHome() {
     );
   }
 
+  const sections = groupByDay(workouts);
+
   return (
     <>
-      <FlatList
+      <SectionList
         style={styles.screen}
         contentContainerStyle={styles.content}
-        data={workouts}
+        sections={sections}
         keyExtractor={(item) => item.id}
+        stickySectionHeadersEnabled={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
         }
@@ -192,11 +281,21 @@ export default function TrainingHome() {
         ListEmptyComponent={
           <Text style={styles.empty}>No workouts yet. Start one and it will show up here.</Text>
         }
+        renderSectionHeader={({ section }) => (
+          <Text style={styles.dayHeader}>{section.title}</Text>
+        )}
         renderItem={({ item }) => (
           <Pressable style={styles.card} onPress={() => router.push(`/workout/${item.id}`)}>
             <View style={styles.cardMain}>
               <Text style={styles.cardTitle}>{item.title ?? "Workout"}</Text>
-              <Text style={styles.cardMeta}>{formatDate(item.performed_at)}</Text>
+              {/* The day is already the section header above; each row adds
+                  what the header can't — its duration once finished, or its
+                  start time while it's the one still in progress. */}
+              <Text style={styles.cardMeta}>
+                {item.finished_at
+                  ? formatCardDuration(item.performed_at, item.finished_at)
+                  : formatTimeOfDay(item.performed_at)}
+              </Text>
             </View>
             <View style={styles.cardStats}>
               {/* Working sets, not tonnage: tonnage is dominated by whichever
@@ -325,6 +424,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   empty: { color: colors.textMuted, textAlign: "center", marginTop: spacing.lg },
+  dayHeader: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
   card: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
