@@ -126,6 +126,13 @@ profil. Uçtan uca telefonda çalışıyor.
 - Bitmiş antrenmana yazma engeli backend'de YOK; salt-okunurluk yalnızca
   istemcide. Kasıtlı, çünkü Düzenle akışı aynı endpoint'leri kullanıyor.
   İleride ayrı bir reopen/unfinish adımı ile sunucu tarafında da korunabilir.
+- Profil "Premium" rozeti/taç → abonelik sistemi (ödeme, App Store IAP,
+  entitlement kontrolü) kurulmadan EKLENMEYECEK. Referans tasarımda var ama
+  sabit "Premium" yazmak kullanıcıya yalan söylemek olur.
+- Profil "Change Photo" / fotoğraf yükleme → dosya depolama altyapısı (S3/
+  MinIO) yok. Tek avatar için o altyapıyı kurmak orantısız; şimdilik baş
+  harfler kullanılıyor (bkz. profile.tsx, initials()). Altyapı kurulunca
+  gelecek.
 
 ## FAZ PLANI
 - Faz 1 (TAMAM): loglama + hacim analitiği MVP
