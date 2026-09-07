@@ -8,7 +8,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -523,6 +523,7 @@ function SaveAsTemplateModal({
   const [loadingPrograms, setLoadingPrograms] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const nameInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -580,7 +581,19 @@ function SaveAsTemplateModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      // autoFocus on the TextInput below is not reliable here: on Android in
+      // particular, a TextInput can request focus before this Modal's native
+      // window actually exists, so the keyboard opens but keystrokes still
+      // go to whatever was focused underneath — it looks like typing is
+      // silently ignored. Focusing from onShow, once the window is real,
+      // fixes it on both platforms.
+      onShow={() => nameInputRef.current?.focus()}
+    >
       <Pressable style={styles.sheetBackdrop} onPress={onClose}>
         {/* A Pressable with its own onPress, even a no-op, is what keeps a
             tap inside the sheet from also being read as a tap on the
@@ -589,12 +602,12 @@ function SaveAsTemplateModal({
           <Text style={styles.sheetTitle}>Save as template</Text>
 
           <TextInput
+            ref={nameInputRef}
             style={styles.sheetInput}
             value={name}
             onChangeText={setName}
             placeholder="Template name"
             placeholderTextColor={colors.textMuted}
-            autoFocus
           />
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
