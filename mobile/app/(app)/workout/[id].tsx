@@ -594,79 +594,104 @@ function SaveAsTemplateModal({
       // fixes it on both platforms.
       onShow={() => nameInputRef.current?.focus()}
     >
-      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
-        {/* A Pressable with its own onPress, even a no-op, is what keeps a
-            tap inside the sheet from also being read as a tap on the
-            backdrop behind it. */}
-        <Pressable style={styles.sheet} onPress={() => {}}>
-          <Text style={styles.sheetTitle}>Save as template</Text>
+      {/* flex: 1 (not just wrapping the sheet) is what lets "padding" behavior
+          shrink the space available to the flex-end backdrop below, instead
+          of just padding an already content-sized box — that's what actually
+          pushes the sheet up above the keyboard rather than letting the
+          keyboard cover it. */}
+      <KeyboardAvoidingView
+        style={styles.sheetAvoider}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+          {/* A Pressable with its own onPress, even a no-op, is what keeps a
+              tap inside the sheet from also being read as a tap on the
+              backdrop behind it. */}
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            {/* maxHeight on `sheet` plus flexShrink here is what makes this
+                actually scroll instead of just growing off the top of the
+                screen: a program list long enough to exceed maxHeight forces
+                the ScrollView to shrink to the remaining space, and content
+                past that becomes scrollable rather than clipped or hidden
+                behind the keyboard. */}
+            <ScrollView
+              style={styles.sheetScroll}
+              contentContainerStyle={styles.sheetScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={styles.sheetTitle}>Save as template</Text>
 
-          <TextInput
-            ref={nameInputRef}
-            style={styles.sheetInput}
-            value={name}
-            onChangeText={setName}
-            placeholder="Template name"
-            placeholderTextColor={colors.textMuted}
-          />
+              <TextInput
+                ref={nameInputRef}
+                style={styles.sheetInput}
+                value={name}
+                onChangeText={setName}
+                placeholder="Template name"
+                placeholderTextColor={colors.textMuted}
+              />
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+              {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          {loadingPrograms ? (
-            <ActivityIndicator color={colors.accent} style={styles.sheetLoading} />
-          ) : programs.length === 0 ? (
-            <View>
-              <Text style={styles.sheetEmpty}>You don't have a program yet.</Text>
+              {loadingPrograms ? (
+                <ActivityIndicator color={colors.accent} style={styles.sheetLoading} />
+              ) : programs.length === 0 ? (
+                <View>
+                  <Text style={styles.sheetEmpty}>You don't have a program yet.</Text>
+                  <Pressable
+                    style={styles.sheetCreateProgram}
+                    onPress={() => {
+                      onClose();
+                      router.push("/programs");
+                    }}
+                  >
+                    <Text style={styles.sheetCreateProgramText}>Create a program</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.sheetLabel}>Program</Text>
+                  {programs.map((program) => (
+                    <Pressable
+                      key={program.id}
+                      style={styles.sheetRow}
+                      onPress={() => setSelectedProgramId(program.id)}
+                    >
+                      <Text style={styles.sheetRowText}>{program.name}</Text>
+                      {selectedProgramId === program.id ? (
+                        <Ionicons name="checkmark" size={18} color={colors.accent} />
+                      ) : null}
+                    </Pressable>
+                  ))}
+                </>
+              )}
+            </ScrollView>
+
+            {/* Outside the ScrollView, not the last thing scrolled to: these
+                stay visible and reachable no matter how long the program
+                list is or whether the keyboard is open. */}
+            <View style={styles.modalActions}>
               <Pressable
-                style={styles.sheetCreateProgram}
-                onPress={() => {
-                  onClose();
-                  router.push("/programs");
-                }}
+                style={[styles.modalButton, styles.modalButtonSecondary]}
+                onPress={onClose}
+                disabled={saving}
               >
-                <Text style={styles.sheetCreateProgramText}>Create a program</Text>
+                <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, saving && styles.modalButtonDisabled]}
+                onPress={() => void handleSave()}
+                disabled={saving || loadingPrograms || programs.length === 0}
+              >
+                {saving ? (
+                  <ActivityIndicator color={colors.accentText} />
+                ) : (
+                  <Text style={styles.modalButtonText}>Save</Text>
+                )}
               </Pressable>
             </View>
-          ) : (
-            <>
-              <Text style={styles.sheetLabel}>Program</Text>
-              {programs.map((program) => (
-                <Pressable
-                  key={program.id}
-                  style={styles.sheetRow}
-                  onPress={() => setSelectedProgramId(program.id)}
-                >
-                  <Text style={styles.sheetRowText}>{program.name}</Text>
-                  {selectedProgramId === program.id ? (
-                    <Ionicons name="checkmark" size={18} color={colors.accent} />
-                  ) : null}
-                </Pressable>
-              ))}
-            </>
-          )}
-
-          <View style={styles.modalActions}>
-            <Pressable
-              style={[styles.modalButton, styles.modalButtonSecondary]}
-              onPress={onClose}
-              disabled={saving}
-            >
-              <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.modalButton, saving && styles.modalButtonDisabled]}
-              onPress={() => void handleSave()}
-              disabled={saving || loadingPrograms || programs.length === 0}
-            >
-              {saving ? (
-                <ActivityIndicator color={colors.accentText} />
-              ) : (
-                <Text style={styles.modalButtonText}>Save</Text>
-              )}
-            </Pressable>
-          </View>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -1163,18 +1188,21 @@ const styles = StyleSheet.create({
   addExerciseText: { color: colors.accent, fontSize: 16, fontWeight: "600" },
   hint: { color: colors.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.md },
 
+  sheetAvoider: { flex: 1 },
   sheetBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
     backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
   sheet: {
+    maxHeight: "80%",
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.md,
     borderTopRightRadius: radius.md,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
+    paddingTop: spacing.lg,
   },
+  sheetScroll: { flexShrink: 1 },
+  sheetScrollContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
   sheetTitle: { color: colors.text, fontSize: 18, fontWeight: "700", marginBottom: spacing.md },
   sheetInput: {
     backgroundColor: colors.background,
@@ -1216,7 +1244,13 @@ const styles = StyleSheet.create({
   },
   sheetCreateProgramText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
 
-  modalActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
+  modalActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+  },
   modalButton: {
     flex: 1,
     backgroundColor: colors.accent,
