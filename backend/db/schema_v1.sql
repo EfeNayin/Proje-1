@@ -1,6 +1,19 @@
 -- ============================================================================
---  BodyTrack — schema_v1.sql  ·  KATMAN 1 (Çekirdek) — FİNAL
+--  BodyTrack — schema_v1.sql  ·  KATMAN 1 (Çekirdek) — DONDURULMUŞ / TARİHSEL
 -- ============================================================================
+--  ⚠ BU DOSYAYI ARTIK ELLE DÜZENLEME. Tek gerçek kaynak Alembic migration'ları
+--  (backend/alembic/versions/). Bu dosya sadece backend/alembic/versions/
+--  e272543ef2bb_baseline_initial_schema_schema_v1_sql.py'nin çalışma zamanında
+--  okuduğu, dondurulmuş bir GİRDİ — o migration'ın upgrade()'i bu dosyanın
+--  içeriğini olduğu gibi çalıştırır. Şemayı değiştirmek için yeni bir Alembic
+--  migration'ı yaz (bkz. CLAUDE.md "Şema değiştirme prosedürü"). Bu dosyayı
+--  değiştirmek geçmişteki baseline'ı bozar ve sıfırdan kurulumla mevcut
+--  veritabanlarının farklı şemalara sahip olmasına yol açar.
+--
+--  Neden hâlâ duruyor, silinmedi: baseline migration bu dosyayı path üzerinden
+--  okuyor (734 satırlık SQL'i migration dosyasının içine gömmek yerine).
+--  Silersen o migration bozulur.
+--
 --  Bu dosya Faz 1 MVP'sinin veri temelidir: manuel antrenman loglama +
 --  kas grubu hacim analizi (MEV/MAV/MRV). Katman 2-5 (sosyal, mezocycle,
 --  vücut ölçüleri, video) ihtiyaç geldikçe Alembic migration'larıyla eklenecek.

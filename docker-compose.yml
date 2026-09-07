@@ -28,11 +28,13 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # İlk başlangıçta (boş volume'de) bu dosya otomatik çalıştırılır ve
-      # tabloları + seed verisini (17 kas grubu, 20 egzersiz) yükler.
-      # NOT: sadece volume BOŞKEN çalışır. Şemayı değiştirdiysen ve yeniden
-      # yüklemek istiyorsan önce `docker compose down -v` ile volume'ü sil.
-      - ./backend/db/schema_v1.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      # NOT: db burada boş başlar. Tabloları + seed verisini (17 kas grubu,
+      # 20 egzersiz) backend servisinin başlangıç komutu (`alembic upgrade
+      # head`, bkz. backend/Dockerfile) kurar — artık tek gerçek kaynak
+      # Alembic migration'ları, db/schema_v1.sql değil (bkz. CLAUDE.md
+      # "Şema değiştirme prosedürü"). Şemayı sıfırdan kurmak istersen
+      # `docker compose down -v` ile volume'ü sil, backend yeniden başlarken
+      # migration'ları otomatik uygular.
     healthcheck:
       # backend, db "healthy" olana kadar beklesin (aşağıdaki depends_on)
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bodytrack}"]

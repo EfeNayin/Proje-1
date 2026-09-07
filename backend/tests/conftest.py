@@ -5,9 +5,10 @@ relies on PostgreSQL-specific features (CITEXT, gen_random_uuid, triggers,
 AT TIME ZONE), so testing against anything else would prove very little.
 
 A dedicated `bodytrack_test` database is dropped and recreated once per test
-session, then loaded from db/schema_v1.sql — the exact file production uses.
-That means every run also verifies the schema file itself still applies
-cleanly.
+session, then brought to the latest schema with `alembic upgrade head` — the
+exact same migrations production applies. That means every run also verifies
+the migration chain itself still applies cleanly, the same value the old
+schema_v1.sql-loading setup had.
 
 Run them with:
     docker compose exec backend pytest
@@ -29,12 +30,15 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from alembic import command
+from alembic.config import Config
 from app.core.config import settings
 from app.core.database import get_db
 from app.main import app
 
 TEST_DB_NAME = "bodytrack_test"
-SCHEMA_PATH = Path(__file__).resolve().parent.parent / "db" / "schema_v1.sql"
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+ALEMBIC_INI_PATH = BACKEND_ROOT / "alembic.ini"
 
 _base_url = make_url(settings.DATABASE_URL)
 _test_url = _base_url.set(database=TEST_DB_NAME)
@@ -43,9 +47,8 @@ _test_url = _base_url.set(database=TEST_DB_NAME)
 def _asyncpg_kwargs(database: str) -> dict[str, object]:
     """Connection arguments for a raw asyncpg connect().
 
-    SQLAlchemy is bypassed for setup because CREATE DATABASE cannot run inside
-    a transaction, and because loading a multi-statement .sql file needs
-    asyncpg's simple-query protocol rather than prepared statements.
+    SQLAlchemy is bypassed here because CREATE DATABASE cannot run inside a
+    transaction, which SQLAlchemy's engine would otherwise wrap it in.
     """
     return {
         "user": _base_url.username,
@@ -58,16 +61,16 @@ def _asyncpg_kwargs(database: str) -> dict[str, object]:
 
 @pytest.fixture(scope="session")
 def _database_ready() -> None:
-    """Create the test database and load the schema. Runs once per session.
+    """Create the test database and migrate it to head. Runs once per session.
 
-    Deliberately a *sync* fixture that opens its own short-lived event loop.
-    A session-scoped async fixture would be bound to a session-scoped event
-    loop, while the tests themselves run in per-function loops, and asyncpg
-    connections cannot be shared across loops. Doing the setup in an isolated
-    loop sidesteps that entirely.
+    Deliberately a *sync* fixture that opens its own short-lived event loop
+    for database creation. A session-scoped async fixture would be bound to
+    a session-scoped event loop, while the tests themselves run in
+    per-function loops, and asyncpg connections cannot be shared across
+    loops. Doing the setup in an isolated loop sidesteps that entirely.
     """
 
-    async def _setup() -> None:
+    async def _create_database() -> None:
         # "postgres" is the maintenance database; you cannot drop the database
         # you are currently connected to.
         admin = await asyncpg.connect(**_asyncpg_kwargs("postgres"))
@@ -83,15 +86,17 @@ def _database_ready() -> None:
         finally:
             await admin.close()
 
-        conn = await asyncpg.connect(**_asyncpg_kwargs(TEST_DB_NAME))
-        try:
-            # asyncpg's simple-query protocol runs a whole multi-statement
-            # script, including the $$-quoted trigger function, in one call.
-            await conn.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
-        finally:
-            await conn.close()
+    asyncio.run(_create_database())
 
-    asyncio.run(_setup())
+    # alembic/env.py reads settings.DATABASE_URL by default (the real app
+    # database) unless the Config already carries a url — set it explicitly
+    # here so migrations land on bodytrack_test, not the dev database.
+    alembic_cfg = Config(str(ALEMBIC_INI_PATH))
+    # str(_test_url) would render the password as "***" (SQLAlchemy's default
+    # URL repr masks it) and alembic would then try to connect with a literal
+    # "***" password — must opt out of masking explicitly.
+    alembic_cfg.set_main_option("sqlalchemy.url", _test_url.render_as_string(hide_password=False))
+    command.upgrade(alembic_cfg, "head")
 
 
 @pytest.fixture

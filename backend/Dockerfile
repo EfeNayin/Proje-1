@@ -22,9 +22,15 @@ COPY . .
 
 EXPOSE 8000
 
+# Önce şemayı güncel migration'a getir (alembic upgrade head — zaten
+# uygulanmış migration'lar no-op'tur, boş bir veritabanında ise şemayı
+# sıfırdan kurar), sonra uygulamayı başlat. Böylece db/schema_v1.sql'e
+# ayrıca bağımlı kalmadan hem taze volume hem mevcut veritabanı aynı
+# komutla ayağa kalkar.
+#
 # Geliştirme: --reload ile kod değişince otomatik yeniden başlar.
 # Üretimde --reload kaldırılır, worker sayısı ayarlanır.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
 
 
 # ── Geliştirme imajı ──
