@@ -418,3 +418,19 @@ class TestStartWorkoutFromTemplate:
 
         assert response.status_code == 201, response.text
         assert response.json()["template_id"] is None
+
+    async def test_starting_from_a_template_finishes_a_dangling_workout(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        """A forgotten open session must not linger forever once a new one starts."""
+        dangling = await client.post(
+            "/workouts", headers=auth_headers, json={"title": "Forgotten"}
+        )
+        assert dangling.status_code == 201, dangling.text
+
+        program = await _create_program(client, auth_headers, name="PPL")
+        template = await _create_template(client, auth_headers, program["id"], name="Push A")
+        await client.post(f"/templates/{template['id']}/start", headers=auth_headers)
+
+        response = await client.get(f"/workouts/{dangling.json()['id']}", headers=auth_headers)
+        assert response.json()["finished_at"] is not None

@@ -643,3 +643,34 @@ class TestActive:
     async def test_requires_authentication(self, client: AsyncClient) -> None:
         response = await client.get("/workouts/active")
         assert response.status_code == 401
+
+
+class TestClosesDanglingWorkouts:
+    """Starting a new session must not leave an old one open forever.
+
+    The device-local active-workout id can be lost (reinstall, a second
+    device), and nothing else ever closes a workout it can't point at — so
+    starting fresh is the one moment the server can be sure the old one is
+    over.
+    """
+
+    async def test_starting_a_workout_finishes_the_previous_one(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        forgotten = await _create_workout(client, auth_headers, title="Forgotten")
+
+        await _create_workout(client, auth_headers, title="New session")
+
+        response = await client.get(f"/workouts/{forgotten['id']}", headers=auth_headers)
+        assert response.json()["finished_at"] is not None
+
+    async def test_active_returns_only_the_new_workout(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        await _create_workout(client, auth_headers, title="Forgotten")
+        new_session = await _create_workout(client, auth_headers, title="New session")
+
+        response = await client.get("/workouts/active", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert response.json()["id"] == new_session["id"]

@@ -152,11 +152,32 @@ async def _to_detail(db: AsyncSession, workout: Workout) -> WorkoutDetail:
 # ── Workouts ─────────────────────────────────────────────────────────────
 
 
+async def close_dangling_workouts(db: AsyncSession, user_id: UUID) -> None:
+    """Auto-finish any of this user's workouts still stuck open.
+
+    Starting a new session is the one moment the system can be sure an old
+    one is over. Without this, a lost device-local active-workout id (app
+    reinstalled, a second device) leaves the old session as a ghost that
+    stays finished_at IS NULL forever — nothing else ever closes it, since
+    normally closing happens through that very id. Called in the same
+    transaction as creating the new workout (no commit here) so a failure
+    partway through never finishes an old session without also creating the
+    new one.
+    """
+    dangling = await db.scalars(
+        select(Workout).where(Workout.user_id == user_id, Workout.finished_at.is_(None))
+    )
+    now = datetime.now(UTC)
+    for workout in dangling:
+        workout.finished_at = now
+
+
 async def create_workout(
     db: AsyncSession, user_id: UUID, payload: WorkoutCreate
 ) -> WorkoutDetail:
     """Log a session, optionally with all of its sets in one request."""
     await _assert_exercises_exist(db, {s.exercise_id for s in payload.sets})
+    await close_dangling_workouts(db, user_id)
 
     workout = Workout(
         user_id=user_id,

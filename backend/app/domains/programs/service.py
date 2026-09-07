@@ -35,6 +35,7 @@ from app.domains.programs.schemas import (
     WorkoutTemplateRead,
     WorkoutTemplateUpdate,
 )
+from app.domains.workouts.service import close_dangling_workouts
 from app.models import Exercise, Program, TemplateExercise, Workout, WorkoutTemplate
 
 
@@ -323,6 +324,8 @@ async def start_workout_from_template(
     """
     template = await _load_owned_template(db, template_id, user_id)
     targets = await _load_exercises(db, template.id)
+
+    await close_dangling_workouts(db, user_id)
 
     workout = Workout(
         user_id=user_id,
