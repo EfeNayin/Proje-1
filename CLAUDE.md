@@ -86,6 +86,9 @@ profil. Uçtan uca telefonda çalışıyor.
 - exercises.instructions_tr/en → şu an boş, info ekranı için doldurulacak.
 - exercises.thumbnail_url/demo_video_url → görsel için (telif dikkat: Hevy'nin
   görselleri lisanslı; kendi çekimimiz veya CC-lisanslı kaynak gerekir).
+- Bitmiş antrenmana yazma engeli backend'de YOK; salt-okunurluk yalnızca
+  istemcide. Kasıtlı, çünkü Düzenle akışı aynı endpoint'leri kullanıyor.
+  İleride ayrı bir reopen/unfinish adımı ile sunucu tarafında da korunabilir.
 
 ## FAZ PLANI
 - Faz 1 (TAMAM): loglama + hacim analitiği MVP
