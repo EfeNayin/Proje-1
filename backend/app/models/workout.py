@@ -82,6 +82,12 @@ class Workout(Base):
         ForeignKey("workout_templates.id", ondelete="SET NULL"),
     )
 
+    # When the session was finished. NULL = still in progress. Device-only
+    # "finished" state used to mean a lost device made every workout look
+    # unfinished forever; this also makes real session duration computable
+    # (finished_at - performed_at).
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     created_at: Mapped[created_at]
     updated_at: Mapped[updated_at]
 
@@ -101,6 +107,9 @@ class Workout(Base):
         Index("idx_workouts_user_performed", "user_id", text("performed_at DESC")),
         Index(
             "idx_workouts_template", "template_id", postgresql_where=text("template_id IS NOT NULL")
+        ),
+        Index(
+            "idx_workouts_unfinished", "user_id", postgresql_where=text("finished_at IS NULL")
         ),
     )
 

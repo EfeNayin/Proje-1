@@ -409,6 +409,19 @@ ALTER TABLE workouts
 CREATE INDEX idx_workouts_template ON workouts(template_id)
     WHERE template_id IS NOT NULL;
 
+-- ─────────────────────────────────────────────────────────────────────────
+--  workouts tablosuna bağlantı: antrenman bitti mi?
+-- ─────────────────────────────────────────────────────────────────────────
+--  Antrenmanın bitirildiği an. NULL = hâlâ devam ediyor. Daha önce "bitmiş"
+--  bilgisi yalnızca cihazda tutuluyordu; cihaz değişince veya uygulama
+--  silinince her antrenman "devam ediyor" görünüyordu. Bu kolon ayrıca
+--  gerçek seans süresini (finished_at - performed_at) mümkün kılar.
+ALTER TABLE workouts ADD COLUMN finished_at TIMESTAMPTZ;
+
+-- Devam eden antrenmanı bulmak: kullanıcı başına en fazla bir tane olur,
+-- kısmi indeks tam bu sorgu için.
+CREATE INDEX idx_workouts_unfinished ON workouts(user_id) WHERE finished_at IS NULL;
+
 
 -- ============================================================================
 --  SEED: muscle_groups — 17 kas grubu, MEV/MAV/MRV değerleriyle
