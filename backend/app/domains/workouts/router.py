@@ -61,6 +61,18 @@ async def list_workouts(
 
 
 @router.get(
+    "/active",
+    response_model=WorkoutDetail | None,
+    summary="Get the caller's in-progress workout, if any",
+)
+async def get_active_workout(
+    current_user: CurrentUser,
+    db: DbSession,
+) -> WorkoutDetail | None:
+    return await service.get_active_workout(db, current_user.id)
+
+
+@router.get(
     "/{workout_id}",
     response_model=WorkoutDetail,
     summary="Get one workout with its sets",
@@ -98,6 +110,19 @@ async def delete_workout(
     db: DbSession,
 ) -> None:
     await service.delete_workout(db, current_user.id, workout_id)
+
+
+@router.post(
+    "/{workout_id}/finish",
+    response_model=WorkoutDetail,
+    summary="Mark a workout finished",
+)
+async def finish_workout(
+    workout_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> WorkoutDetail:
+    return await service.finish_workout(db, current_user.id, workout_id)
 
 
 @router.post(

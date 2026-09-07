@@ -143,6 +143,7 @@ async def _to_detail(db: AsyncSession, workout: Workout) -> WorkoutDetail:
         total_volume_kg=workout.total_volume_kg,
         total_sets=workout.total_sets,
         template_id=workout.template_id,
+        finished_at=workout.finished_at,
         is_private=workout.is_private,
         sets=[_to_set_read(row) for row in rows],
     )
@@ -240,6 +241,46 @@ async def delete_workout(db: AsyncSession, user_id: UUID, workout_id: UUID) -> N
     workout = await _load_owned_workout(db, workout_id, user_id)
     await db.delete(workout)
     await db.commit()
+
+
+async def finish_workout(db: AsyncSession, user_id: UUID, workout_id: UUID) -> WorkoutDetail:
+    """Mark a session finished.
+
+    Idempotent: calling this on an already-finished workout is not an error
+    (the client may retry after a dropped response) and does not move
+    finished_at, so the original end time — and the duration derived from
+    it — never changes on a retry.
+    """
+    workout = await _load_owned_workout(db, workout_id, user_id)
+
+    if workout.finished_at is None:
+        workout.finished_at = datetime.now(UTC)
+        await db.commit()
+
+    return await _to_detail(db, workout)
+
+
+async def get_active_workout(db: AsyncSession, user_id: UUID) -> WorkoutDetail | None:
+    """The user's one in-progress session, if any.
+
+    A backup for the device-local "active workout" pointer, not a
+    replacement: if the device's own record is lost (new phone, reinstall),
+    the client can recover the unfinished session from here instead of it
+    silently vanishing.
+    """
+    # Nothing stops a client from starting a new session without finishing
+    # the last one (e.g. the app was killed), so more than one unfinished
+    # row is possible even though the normal flow keeps it to one — pick the
+    # most recently started if that happens, rather than an arbitrary row.
+    workout = await db.scalar(
+        select(Workout)
+        .where(Workout.user_id == user_id, Workout.finished_at.is_(None))
+        .order_by(Workout.performed_at.desc())
+        .limit(1)
+    )
+    if workout is None:
+        return None
+    return await _to_detail(db, workout)
 
 
 # ── Sets ─────────────────────────────────────────────────────────────────

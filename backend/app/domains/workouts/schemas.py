@@ -99,6 +99,10 @@ class WorkoutSummary(BaseModel):
     # (no template) leaves this null; the client uses it to decide whether
     # to fetch and display target goals alongside logged sets.
     template_id: UUID | None
+    # When the session was finished. NULL = still in progress; the client
+    # uses this (not a device-local flag) to decide whether to open a
+    # session read-only.
+    finished_at: datetime | None
 
 
 class WorkoutDetail(WorkoutSummary):

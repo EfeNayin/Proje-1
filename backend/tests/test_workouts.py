@@ -554,3 +554,92 @@ class TestListing:
     async def test_requires_authentication(self, client: AsyncClient) -> None:
         response = await client.get("/workouts")
         assert response.status_code == 401
+
+
+class TestFinish:
+    async def test_finish_sets_finished_at(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        workout = await _create_workout(client, auth_headers)
+        assert workout["finished_at"] is None
+
+        response = await client.post(
+            f"/workouts/{workout['id']}/finish", headers=auth_headers
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["finished_at"] is not None
+
+    async def test_finish_is_idempotent(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        """A retried finish call must not move the end time forward."""
+        workout = await _create_workout(client, auth_headers)
+
+        first = await client.post(f"/workouts/{workout['id']}/finish", headers=auth_headers)
+        second = await client.post(f"/workouts/{workout['id']}/finish", headers=auth_headers)
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["finished_at"] == second.json()["finished_at"]
+
+    async def test_cannot_finish_another_users_workout(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        other_auth_headers: dict[str, str],
+    ) -> None:
+        workout = await _create_workout(client, auth_headers)
+
+        response = await client.post(
+            f"/workouts/{workout['id']}/finish", headers=other_auth_headers
+        )
+
+        assert response.status_code == 404
+
+
+class TestActive:
+    async def test_returns_the_unfinished_workout(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        workout = await _create_workout(client, auth_headers, title="In progress")
+
+        response = await client.get("/workouts/active", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert response.json()["id"] == workout["id"]
+
+    async def test_returns_null_after_finishing(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        workout = await _create_workout(client, auth_headers)
+        await client.post(f"/workouts/{workout['id']}/finish", headers=auth_headers)
+
+        response = await client.get("/workouts/active", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert response.json() is None
+
+    async def test_returns_null_when_no_workouts_exist(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        response = await client.get("/workouts/active", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert response.json() is None
+
+    async def test_only_sees_your_own(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        other_auth_headers: dict[str, str],
+    ) -> None:
+        await _create_workout(client, other_auth_headers, title="Theirs")
+
+        response = await client.get("/workouts/active", headers=auth_headers)
+
+        assert response.json() is None
+
+    async def test_requires_authentication(self, client: AsyncClient) -> None:
+        response = await client.get("/workouts/active")
+        assert response.status_code == 401
