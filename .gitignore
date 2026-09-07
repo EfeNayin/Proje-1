@@ -30,3 +30,7 @@ node_modules/
 
 # ── Docker ──
 # (named volume kullanıyoruz; yerel veri klasörü tutmuyoruz)
+
+# Görev tarifleri — Claude Code'a girdi olarak veriliyor, kod değil.
+# Repoya girmemeli: bir kez uygulanınca değersizler ve geçmişi kirletirler.
+TASK_*.md
