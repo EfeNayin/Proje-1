@@ -152,12 +152,35 @@ function formatDuration(totalSeconds: number): string {
   return `${minutes}m`;
 }
 
+function formatSessionDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
 function SessionDuration({ startedAt }: { startedAt: string }) {
   const elapsed = useElapsedSeconds(new Date(startedAt).getTime());
 
   return (
     <View>
       <Text style={styles.summaryValue}>{formatDuration(elapsed)}</Text>
+      <Text style={styles.summaryLabel}>duration</Text>
+    </View>
+  );
+}
+
+/** Real, fixed duration of a finished session — not a ticking counter. */
+function FinishedDuration({ startedAt, endedAt }: { startedAt: string; endedAt: string }) {
+  const seconds = Math.max(
+    0,
+    Math.floor((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000),
+  );
+
+  return (
+    <View>
+      <Text style={styles.summaryValue}>{formatDuration(seconds)}</Text>
       <Text style={styles.summaryLabel}>duration</Text>
     </View>
   );
@@ -380,6 +403,20 @@ function SetRow({
         {Number(set.weight_kg)} kg × {set.reps}
       </Text>
     </Pressable>
+  );
+}
+
+/** A logged set in a finished, read-only session — no tap-to-edit, no delete. */
+function ReadOnlySetRow({ set }: { set: LoggedSet }) {
+  return (
+    <View style={styles.setRow}>
+      <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
+        {set.is_warmup ? "W" : set.set_number}
+      </Text>
+      <Text style={styles.setDetail}>
+        {Number(set.weight_kg)} kg × {set.reps}
+      </Text>
+    </View>
   );
 }
 
@@ -633,6 +670,9 @@ export default function ActiveWorkoutScreen() {
   const [restSeconds, setRestSecondsState] = useState(DEFAULT_REST_SECONDS);
   const [targets, setTargets] = useState<TemplateExerciseTarget[]>([]);
   const [saveAsTemplateVisible, setSaveAsTemplateVisible] = useState(false);
+  // A past session opens read-only by default (see isFinished/readOnly
+  // below); this is the escape hatch that lets it become editable again.
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -764,10 +804,18 @@ export default function ActiveWorkoutScreen() {
   );
 
   const handleFinish = useCallback(async () => {
+    // Write to the server first: if it fails, the device keeps its active
+    // workout pointer and the session is not lost, just not marked done yet.
+    try {
+      await workoutsApi.finishWorkout(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not finish the workout");
+      return;
+    }
     await clearActiveWorkout();
     router.dismissAll();
     router.replace("/");
-  }, [router]);
+  }, [id, router]);
 
   const confirmFinish = () => {
     const empty = (workout?.sets.length ?? 0) === 0;
@@ -800,6 +848,12 @@ export default function ActiveWorkoutScreen() {
     );
   }
 
+  // A finished session opens read-only unless the user explicitly asks to
+  // edit it. An in-progress one is always editable — isFinished is false, so
+  // readOnly is false regardless of the (unused, in that case) editing flag.
+  const isFinished = workout.finished_at !== null;
+  const readOnly = isFinished && !editing;
+
   return (
     <>
       <KeyboardAvoidingView
@@ -810,26 +864,54 @@ export default function ActiveWorkoutScreen() {
         <Stack.Screen
           options={{
             title: workout.title ?? "Workout",
-            headerRight: () => (
-              <Pressable onPress={confirmFinish} hitSlop={8}>
-                <Text style={styles.finish}>Finish</Text>
-              </Pressable>
-            ),
+            headerRight: () => {
+              if (readOnly) {
+                return (
+                  <Pressable onPress={() => setEditing(true)} hitSlop={8}>
+                    <Text style={styles.finish}>Edit</Text>
+                  </Pressable>
+                );
+              }
+              if (isFinished) {
+                // Editing an already-finished workout: exit just leaves edit
+                // mode, it must not call finish again.
+                return (
+                  <Pressable onPress={() => setEditing(false)} hitSlop={8}>
+                    <Text style={styles.finish}>Done</Text>
+                  </Pressable>
+                );
+              }
+              return (
+                <Pressable onPress={confirmFinish} hitSlop={8}>
+                  <Text style={styles.finish}>Finish</Text>
+                </Pressable>
+              );
+            },
           }}
         />
 
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <TitleField value={workout.title} onSave={(title) => void handleSaveTitle(title)} />
+          {readOnly ? (
+            <Text style={styles.titleReadOnly}>{workout.title ?? "Workout"}</Text>
+          ) : (
+            <TitleField value={workout.title} onSave={(title) => void handleSaveTitle(title)} />
+          )}
+
+          {readOnly ? <Text style={styles.sessionDate}>{formatSessionDate(workout.performed_at)}</Text> : null}
 
           <View style={styles.summary}>
             <View>
               <Text style={styles.summaryValue}>{workout.total_sets}</Text>
               <Text style={styles.summaryLabel}>working sets</Text>
             </View>
-            <SessionDuration startedAt={workout.performed_at} />
+            {isFinished && workout.finished_at ? (
+              <FinishedDuration startedAt={workout.performed_at} endedAt={workout.finished_at} />
+            ) : (
+              <SessionDuration startedAt={workout.performed_at} />
+            )}
           </View>
 
-          <RestTimer seconds={restSeconds} onChangeSeconds={handleChangeRest} />
+          {readOnly ? null : <RestTimer seconds={restSeconds} onChangeSeconds={handleChangeRest} />}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -842,32 +924,38 @@ export default function ActiveWorkoutScreen() {
                   <Text style={styles.blockTarget}>Target: {formatTarget(target)}</Text>
                 ) : null}
 
-                {block.sets.map((set) => (
-                  <SetRow
-                    key={set.id}
-                    set={set}
-                    onSave={handleEditSet}
-                    onDelete={(setId) => void handleDeleteSet(setId)}
-                  />
-                ))}
+                {readOnly
+                  ? block.sets.map((set) => <ReadOnlySetRow key={set.id} set={set} />)
+                  : block.sets.map((set) => (
+                      <SetRow
+                        key={set.id}
+                        set={set}
+                        onSave={handleEditSet}
+                        onDelete={(setId) => void handleDeleteSet(setId)}
+                      />
+                    ))}
 
-                <SetForm
-                  busy={busyExercise === block.exerciseId}
-                  lastSet={block.sets[block.sets.length - 1]}
-                  onSubmit={(weight, reps, isWarmup) =>
-                    void handleAddSet(block.exerciseId, weight, reps, isWarmup)
-                  }
-                />
+                {readOnly ? null : (
+                  <SetForm
+                    busy={busyExercise === block.exerciseId}
+                    lastSet={block.sets[block.sets.length - 1]}
+                    onSubmit={(weight, reps, isWarmup) =>
+                      void handleAddSet(block.exerciseId, weight, reps, isWarmup)
+                    }
+                  />
+                )}
               </View>
             );
           })}
 
-          <Pressable style={styles.addExercise} onPress={openPicker}>
-            <Ionicons name="add" size={20} color={colors.accent} />
-            <Text style={styles.addExerciseText}>Add exercise</Text>
-          </Pressable>
+          {readOnly ? null : (
+            <Pressable style={styles.addExercise} onPress={openPicker}>
+              <Ionicons name="add" size={20} color={colors.accent} />
+              <Text style={styles.addExerciseText}>Add exercise</Text>
+            </Pressable>
+          )}
 
-          {blocks.length === 0 ? (
+          {readOnly ? null : blocks.length === 0 ? (
             <Text style={styles.hint}>Add an exercise to start logging sets.</Text>
           ) : (
             <Text style={styles.hint}>Tap a set to correct or delete it.</Text>
@@ -906,6 +994,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     marginBottom: spacing.sm,
   },
+  titleReadOnly: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "700",
+    paddingVertical: spacing.sm,
+  },
+  sessionDate: { color: colors.textMuted, fontSize: 13, marginBottom: spacing.sm },
 
   summary: {
     flexDirection: "row",

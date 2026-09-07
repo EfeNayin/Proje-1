@@ -29,6 +29,8 @@ export type WorkoutSummary = {
   is_private: boolean;
   /** Which template this session was started from, if any. */
   template_id: string | null;
+  /** When the session was finished. Null means it is still in progress. */
+  finished_at: string | null;
 };
 
 export type WorkoutDetail = WorkoutSummary & {
@@ -75,6 +77,22 @@ export function updateWorkout(
 
 export function deleteWorkout(id: string): Promise<void> {
   return apiRequest<void>(`/workouts/${id}`, { method: "DELETE" });
+}
+
+/** Idempotent: finishing an already-finished workout just returns it unchanged. */
+export function finishWorkout(id: string): Promise<WorkoutDetail> {
+  return apiRequest<WorkoutDetail>(`/workouts/${id}/finish`, { method: "POST" });
+}
+
+/**
+ * The caller's in-progress workout, if any.
+ *
+ * A backup for the device-local active-workout id, not a replacement: if a
+ * new device or a reinstall lost that id, this recovers the session instead
+ * of it silently vanishing.
+ */
+export function getActiveWorkout(): Promise<WorkoutDetail | null> {
+  return apiRequest<WorkoutDetail | null>("/workouts/active");
 }
 
 export function addSet(workoutId: string, set: NewSet): Promise<WorkoutDetail> {

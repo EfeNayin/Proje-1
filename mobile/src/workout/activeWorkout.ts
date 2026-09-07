@@ -1,13 +1,11 @@
 /**
- * Which workout is currently in progress.
+ * Which workout is currently in progress, on this device.
  *
- * The backend has no "finished" flag: a workout exists from the moment it is
- * created, and finishing is simply the client letting go of it. That keeps
- * the schema smaller, and it also means an abandoned session still keeps
- * whatever sets were logged rather than vanishing.
- *
- * The id lives on the device so that closing the app mid-session — which
- * happens constantly, phones lock between sets — resumes where it left off.
+ * The backend also tracks this now (workouts.finished_at, GET
+ * /workouts/active), so a lost or reinstalled device can recover an
+ * unfinished session. This local pointer stays anyway: it is what resumes a
+ * session instantly on app relaunch without a round trip, which happens
+ * constantly since phones lock between sets.
  * SecureStore rather than AsyncStorage only to avoid pulling in another
  * dependency for one short string; nothing here is secret.
  */
