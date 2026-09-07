@@ -35,6 +35,43 @@ sonra Avrupa. Ana farklılaşma: kas grubu bazlı haftalık hacim analitiği
   Pzt 01:00 antrenmanı UTC'de Paz 22:00; UTC ile hesaplanırsa önceki haftaya
   düşer. users.timezone kayıtta cihazdan alınır, sonradan türetilemez.
 
+## VERİTABANI ŞEMASI — Alembic tek gerçek kaynak
+2026-09-07'de yaşanan olay: schema_v1.sql'e `finished_at` kolonu eklendi ama
+Postgres init script'i (docker-entrypoint-initdb.d) sadece BOŞ volume'de
+çalışıyor — dolu volume onu sessizce atladı, kolon veritabanına hiç girmedi.
+Uygulama "column workouts.finished_at does not exist" ile 500 verdi, programlar
+kaybolmuş gibi göründü, kullanıcı elle ALTER TABLE çalıştırmak zorunda kaldı.
+"Şema dosyasına ekledim, tamam" YETERLİ DEĞİL — Postgres'e gerçekten uygulanmış
+olması gerekir. Bunun için artık Alembic var, bu yüzden bir daha olmamalı.
+
+Tek gerçek kaynak artık **backend/alembic/versions/** — schema_v1.sql
+DONDURULDU (bkz. dosyanın başındaki uyarı), bir daha ELLE DÜZENLENMEYECEK.
+Baseline migration (e272543ef2bb) onu path üzerinden okuyup çalıştırıyor;
+dosyayı değiştirmek o migration'ı bozar.
+
+Şema nasıl kurulur (ikisi de otomatik):
+- **Sıfırdan** (`docker compose down -v && docker compose up --build`): db boş
+  başlar, backend container'ı ayağa kalkarken `alembic upgrade head` çalışır
+  (bkz. backend/Dockerfile CMD) — baseline migration şemayı + seed'i sıfırdan
+  kurar.
+- **Mevcut/dolu veritabanı**: aynı `alembic upgrade head`, zaten uygulanmış
+  migration'ları atlar (no-op). docker init script'i artık YOK, dolayısıyla
+  bu tek yol.
+
+Şemayı DEĞİŞTİRMEK istediğinde:
+1. İlgili SQLAlchemy modelini güncelle (backend/app/models/).
+2. `docker compose exec backend alembic revision --autogenerate -m "kısa açıklama"`
+   ile taslak migration üret.
+3. Taslağı MUTLAKA elle gözden geçir — autogenerate CREATE EXTENSION,
+   fonksiyon/trigger, ifade indeksi (GIN + immutable_unaccent gibi) ve seed
+   veri YAKALAMAZ; bunlar gerekiyorsa migration'a elle eklenmeli.
+4. `docker compose exec backend alembic upgrade head` ile kendi ortamına uygula.
+5. `docker compose exec backend alembic check` ile model-DB farkının SIFIR
+   olduğunu doğrula.
+6. `docker compose exec backend pytest` — tests/conftest.py test veritabanını
+   artık schema_v1.sql'den değil, aynı migration zincirinden kuruyor; bu da
+   migration'ların gerçekten uygulandığını her test koşusunda doğruluyor.
+
 ## HİPERTROFİ MODELİ (önemli — yüzde DEĞİL)
 exercise_muscle_groups tablosu iki BAĞIMSIZ boyut tutar:
 - role ('primary'/'secondary'): haftalık set sayımı yalnızca primary'yi sayar.
