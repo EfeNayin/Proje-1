@@ -8,6 +8,8 @@
 import { apiRequest } from "./client";
 import type { TokenPair } from "./tokens";
 
+export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
+
 export type UserProfile = {
   id: string;
   email: string;
@@ -19,6 +21,11 @@ export type UserProfile = {
   weight_unit: "kg" | "lb";
   timezone: string;
   locale: string;
+  /** cm. Also the calorie/macro feature's prerequisite (a later task). */
+  height_cm: string | null;
+  date_of_birth: string | null;
+  gender: Gender | null;
+  goal_weight_kg: string | null;
   created_at: string;
 };
 
@@ -76,7 +83,20 @@ export function fetchMe(): Promise<UserProfile> {
   return apiRequest<UserProfile>("/users/me");
 }
 
-export function updateMe(changes: Partial<UserProfile>): Promise<UserProfile> {
+/**
+ * height_cm and goal_weight_kg are numbers here even though UserProfile
+ * returns them as strings: Pydantic's Decimal fields accept a JSON number on
+ * the way in but always serialise back out as a string, to avoid floating
+ * point surprises on values people compare exactly.
+ */
+export type UserUpdateInput = Partial<
+  Omit<UserProfile, "height_cm" | "goal_weight_kg">
+> & {
+  height_cm?: number | null;
+  goal_weight_kg?: number | null;
+};
+
+export function updateMe(changes: UserUpdateInput): Promise<UserProfile> {
   // Only the fields present are sent, matching the backend's PATCH semantics:
   // omitted fields keep their value, an explicit null clears one.
   return apiRequest<UserProfile>("/users/me", { method: "PATCH", body: changes });

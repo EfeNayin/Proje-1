@@ -1,9 +1,10 @@
 /**
  * Profile screen.
  *
- * The header card is editable (taps through to /profile/edit); the info
- * card and sign-out below it are read-only for now, pending the Personal
- * Details / Preferences sections from a later task.
+ * The header card is editable (taps through to /profile/edit). Below it, a
+ * menu section starts with Personal Details; Email/Units/Timezone/Language/
+ * Visibility used to be shown directly here as read-only rows and will move
+ * into a Preferences entry in this same menu once one exists.
  */
 
 import { Ionicons } from "@expo/vector-icons";
@@ -29,12 +30,12 @@ import {
   setReadinessCheckinEnabled,
 } from "../../../src/workout/readinessPreference";
 
-function Row({ label, value }: { label: string; value: string }) {
+function MenuRow({ label, onPress }: { label: string; onPress: () => void }) {
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
-    </View>
+    <Pressable style={[styles.row, styles.rowNoBorder]} onPress={onPress}>
+      <Text style={styles.rowValue}>{label}</Text>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+    </Pressable>
   );
 }
 
@@ -104,11 +105,7 @@ export default function ProfileScreen() {
       </Pressable>
 
       <View style={styles.card}>
-        <Row label="Email" value={user.email} />
-        <Row label="Units" value={user.weight_unit} />
-        <Row label="Timezone" value={user.timezone} />
-        <Row label="Language" value={user.locale} />
-        <Row label="Visibility" value={user.is_private ? "Private" : "Public"} />
+        <MenuRow label="Personal Details" onPress={() => router.push("/profile/personal-details")} />
       </View>
 
       <View style={[styles.card, styles.cardSpaced]}>

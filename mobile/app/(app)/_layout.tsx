@@ -43,6 +43,7 @@ export default function AppLayout() {
         name="profile/edit"
         options={{ title: "Edit Profile", presentation: "modal" }}
       />
+      <Stack.Screen name="profile/personal-details" options={{ title: "Personal Details" }} />
     </Stack>
   );
 }
