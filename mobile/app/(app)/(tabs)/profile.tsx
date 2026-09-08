@@ -88,6 +88,15 @@ export default function ProfileScreen() {
         <MenuRow label="Preferences" onPress={() => router.push("/profile/preferences")} last />
       </View>
 
+      <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>Goals & Tracking</Text>
+      <View style={styles.card}>
+        <MenuRow
+          label="Nutrition Goals"
+          onPress={() => router.push("/profile/nutrition-goals")}
+          last
+        />
+      </View>
+
       <Pressable style={styles.signOut} onPress={() => void signOut()}>
         <Text style={styles.signOutText}>Sign out</Text>
       </Pressable>
@@ -133,6 +142,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: spacing.sm,
   },
+  sectionLabelSpaced: { marginTop: spacing.lg },
   card: {
     backgroundColor: colors.surface,
     borderColor: colors.border,

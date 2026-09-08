@@ -10,6 +10,12 @@ import type { TokenPair } from "./tokens";
 
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
 
+// Inputs to the nutrition goal formula. Defined here, alongside Gender,
+// because they are directly editable through PATCH /users/me — the
+// nutrition API module re-exports them rather than redefining them.
+export type ActivityLevel = "sedentary" | "light" | "moderate" | "active" | "very_active";
+export type NutritionGoalKind = "cut" | "maintain" | "bulk";
+
 export type UserProfile = {
   id: string;
   email: string;
@@ -26,6 +32,8 @@ export type UserProfile = {
   date_of_birth: string | null;
   gender: Gender | null;
   goal_weight_kg: string | null;
+  activity_level: ActivityLevel | null;
+  nutrition_goal: NutritionGoalKind | null;
   created_at: string;
 };
 
