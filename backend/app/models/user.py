@@ -2,7 +2,9 @@
 
 Maps to schema_v1.sql -> users, refresh_tokens
 Personal fields (height_cm, date_of_birth, gender, goal_weight_kg) added by
-body_measurements_schema.sql via a later migration.
+body_measurements_schema.sql via a later migration. Nutrition goal fields
+(activity_level, nutrition_goal, calorie_goal, protein/carb/fat_goal_g) added
+by nutrition_goals_schema.sql via a later migration still.
 """
 
 from datetime import date, datetime
@@ -18,7 +20,9 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
+    SmallInteger,
     Text,
     text,
 )
@@ -95,6 +99,20 @@ class User(Base):
     gender: Mapped[str | None] = mapped_column(Text)
     goal_weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
 
+    # Nutrition goals (calorie/macro targets). All nullable: a user who never
+    # opens the Nutrition Goals screen still has a working account. Stored
+    # rather than always-derived because the formula only produces a
+    # SUGGESTION — the user can overwrite it, and that override must survive
+    # until they explicitly regenerate it. activity_level and nutrition_goal
+    # double as both a profile preference (also settable via PATCH /users/me)
+    # and required inputs to the calorie formula.
+    activity_level: Mapped[str | None] = mapped_column(Text)
+    nutrition_goal: Mapped[str | None] = mapped_column(Text)
+    calorie_goal: Mapped[int | None] = mapped_column(Integer)
+    protein_goal_g: Mapped[int | None] = mapped_column(SmallInteger)
+    carb_goal_g: Mapped[int | None] = mapped_column(SmallInteger)
+    fat_goal_g: Mapped[int | None] = mapped_column(SmallInteger)
+
     created_at: Mapped[created_at]
     updated_at: Mapped[updated_at]
 
@@ -120,6 +138,19 @@ class User(Base):
         CheckConstraint(
             "goal_weight_kg BETWEEN 20 AND 400", name="users_goal_weight_kg_check"
         ),
+        CheckConstraint(
+            "activity_level IN ('sedentary','light','moderate','active','very_active')",
+            name="users_activity_level_check",
+        ),
+        CheckConstraint(
+            "nutrition_goal IN ('cut','maintain','bulk')", name="users_nutrition_goal_check"
+        ),
+        CheckConstraint("calorie_goal BETWEEN 800 AND 8000", name="users_calorie_goal_check"),
+        CheckConstraint(
+            "protein_goal_g BETWEEN 0 AND 500", name="users_protein_goal_g_check"
+        ),
+        CheckConstraint("carb_goal_g BETWEEN 0 AND 1000", name="users_carb_goal_g_check"),
+        CheckConstraint("fat_goal_g BETWEEN 0 AND 400", name="users_fat_goal_g_check"),
     )
 
     def __repr__(self) -> str:
