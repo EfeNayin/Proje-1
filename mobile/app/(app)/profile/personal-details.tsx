@@ -11,6 +11,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -130,6 +131,7 @@ function Row({
 
 export default function PersonalDetailsScreen() {
   const { user, refreshProfile } = useAuth();
+  const router = useRouter();
 
   const [summary, setSummary] = useState<BodySummary | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(true);
@@ -387,6 +389,12 @@ export default function PersonalDetailsScreen() {
           </View>
         </Row>
       </View>
+
+      <Pressable style={styles.historyLink} onPress={() => router.push("/profile/weight-history")}>
+        <Ionicons name="trending-up" size={18} color={colors.accent} />
+        <Text style={styles.historyLinkText}>View weight history</Text>
+        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      </Pressable>
     </ScrollView>
   );
 }
@@ -485,4 +493,17 @@ const styles = StyleSheet.create({
   genderChipText: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
   genderChipTextActive: { color: colors.accentText },
   genderCancel: { marginLeft: "auto", padding: spacing.xs },
+
+  historyLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+  },
+  historyLinkText: { flex: 1, color: colors.text, fontSize: 15, fontWeight: "600" },
 });

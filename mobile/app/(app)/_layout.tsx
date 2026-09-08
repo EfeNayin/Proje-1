@@ -44,6 +44,7 @@ export default function AppLayout() {
         options={{ title: "Edit Profile", presentation: "modal" }}
       />
       <Stack.Screen name="profile/personal-details" options={{ title: "Personal Details" }} />
+      <Stack.Screen name="profile/weight-history" options={{ title: "Weight History" }} />
     </Stack>
   );
 }
