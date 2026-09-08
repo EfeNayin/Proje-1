@@ -1,12 +1,20 @@
 """Request and response models for the user endpoints."""
 
+from datetime import date
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 # Re-exported so callers have a single obvious place to import the profile
 # shape from, even though it is defined alongside the auth responses.
-from app.domains.auth.schemas import SupportedLocale, Username, UserProfile, validate_timezone
+from app.domains.auth.schemas import (
+    Gender,
+    SupportedLocale,
+    Username,
+    UserProfile,
+    validate_timezone,
+)
 
 __all__ = ["UserProfile", "UserUpdate"]
 
@@ -33,6 +41,14 @@ class UserUpdate(BaseModel):
     # where the user is now.
     timezone: str | None = None
     locale: SupportedLocale | None = None
+
+    # Personal details (Personal Details screen). Current weight is
+    # deliberately NOT here — it is set through PUT /body/measurements, which
+    # appends a new history row instead of overwriting a single field.
+    height_cm: Decimal | None = Field(default=None, ge=50, le=300, decimal_places=1)
+    date_of_birth: date | None = None
+    gender: Gender | None = None
+    goal_weight_kg: Decimal | None = Field(default=None, ge=20, le=400, decimal_places=1)
 
     @field_validator("timezone")
     @classmethod

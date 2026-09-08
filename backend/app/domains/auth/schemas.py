@@ -1,6 +1,7 @@
 """Request and response models for the auth endpoints."""
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 from zoneinfo import available_timezones
@@ -16,6 +17,8 @@ BCRYPT_MAX_BYTES = 72
 # the translations anyway), which is why this lives here and not as a database
 # CHECK constraint that would force a migration.
 SupportedLocale = Literal["tr", "en"]
+
+Gender = Literal["male", "female", "other", "prefer_not_to_say"]
 
 # Every name in Python's IANA database is also known to PostgreSQL, so a value
 # that passes this check is safe to use in `AT TIME ZONE` later. Computed once
@@ -113,6 +116,10 @@ class UserProfile(BaseModel):
     weight_unit: str
     timezone: str
     locale: str
+    height_cm: Decimal | None
+    date_of_birth: date | None
+    gender: Gender | None
+    goal_weight_kg: Decimal | None
     created_at: datetime
 
 

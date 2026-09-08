@@ -173,3 +173,47 @@ class TestUsernameChange:
             "/users/me", headers=auth_headers, json={"username": "ge çersiz!"}
         )
         assert response.status_code == 422
+
+
+class TestPersonalDetails:
+    """height_cm, date_of_birth, gender, goal_weight_kg — the Personal
+    Details screen's fields, updated through the existing PATCH endpoint
+    rather than a dedicated one. Current weight is deliberately excluded:
+    it lives in body_measurements (see test_body.py), not here."""
+
+    async def test_updates_height_dob_gender_and_goal_weight(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            "/users/me",
+            headers=auth_headers,
+            json={
+                "height_cm": 178.5,
+                "date_of_birth": "2002-05-14",
+                "gender": "male",
+                "goal_weight_kg": 85.0,
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["height_cm"] == "178.5"
+        assert body["date_of_birth"] == "2002-05-14"
+        assert body["gender"] == "male"
+        assert body["goal_weight_kg"] == "85.0"
+
+    async def test_rejects_out_of_range_height(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            "/users/me", headers=auth_headers, json={"height_cm": 400}
+        )
+        assert response.status_code == 422
+
+    async def test_rejects_unknown_gender(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            "/users/me", headers=auth_headers, json={"gender": "robot"}
+        )
+        assert response.status_code == 422
