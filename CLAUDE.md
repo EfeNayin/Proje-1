@@ -133,6 +133,20 @@ profil. Uçtan uca telefonda çalışıyor.
   MinIO) yok. Tek avatar için o altyapıyı kurmak orantısız; şimdilik baş
   harfler kullanılıyor (bkz. profile.tsx, initials()). Altyapı kurulunca
   gelecek.
+- weight_unit SADECE bir gösterim etiketi (bkz. profile/preferences.tsx) —
+  lb seçilince kg değerleri DÖNÜŞTÜRÜLMÜYOR. Gerçek lb desteği için gösterim
+  katmanında (ve muhtemelen girişte) dönüşüm gerekir.
+- Preferences ekranı referansında (foto 3) olup karşılığı olmadığı için
+  EKLENMEYENLER:
+  - Tema (System/Light/Dark): uygulama şu an sadece koyu tema, theme.ts'te
+    renkler sabit, ~15 ekranın StyleSheet'i çalışma zamanında tema
+    değiştiremiyor. Aydınlık tema ayrı ve büyük bir refactor.
+  - Badge celebrations: rozet sistemi yok.
+  - Live activity: iOS kilit ekranı widget'ı, native modül + kalori verisi
+    gerektiriyor.
+  - Add burned / Rollover calories / Auto adjust macros: kalori sistemi yok.
+  - Marketing emails: e-posta altyapısı hiç yok (kayıt doğrulama, şifre
+    sıfırlama dahil).
 
 ## FAZ PLANI
 - Faz 1 (TAMAM): loglama + hacim analitiği MVP
