@@ -1,9 +1,12 @@
 """User account and JWT refresh token models.
 
 Maps to schema_v1.sql -> users, refresh_tokens
+Personal fields (height_cm, date_of_birth, gender, goal_weight_kg) added by
+body_measurements_schema.sql via a later migration.
 """
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -11,9 +14,11 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
+    Numeric,
     Text,
     text,
 )
@@ -82,6 +87,14 @@ class User(Base):
         Text, nullable=False, server_default=text("'tr'")
     )
 
+    # Personal details. All nullable: a user who never opens Personal Details
+    # still has a working account. height_cm and date_of_birth are also the
+    # calorie/macro feature's prerequisite (a later, separate task).
+    height_cm: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    date_of_birth: Mapped[date | None] = mapped_column(Date)
+    gender: Mapped[str | None] = mapped_column(Text)
+    goal_weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+
     created_at: Mapped[created_at]
     updated_at: Mapped[updated_at]
 
@@ -99,6 +112,14 @@ class User(Base):
 
     __table_args__ = (
         CheckConstraint("weight_unit IN ('kg', 'lb')", name="users_weight_unit_check"),
+        CheckConstraint("height_cm BETWEEN 50 AND 300", name="users_height_cm_check"),
+        CheckConstraint(
+            "gender IN ('male', 'female', 'other', 'prefer_not_to_say')",
+            name="users_gender_check",
+        ),
+        CheckConstraint(
+            "goal_weight_kg BETWEEN 20 AND 400", name="users_goal_weight_kg_check"
+        ),
     )
 
     def __repr__(self) -> str:
