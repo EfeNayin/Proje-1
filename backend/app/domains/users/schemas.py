@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field, field_validator
 # Re-exported so callers have a single obvious place to import the profile
 # shape from, even though it is defined alongside the auth responses.
 from app.domains.auth.schemas import (
+    ActivityLevel,
     Gender,
+    NutritionGoalKind,
     SupportedLocale,
     Username,
     UserProfile,
@@ -49,6 +51,13 @@ class UserUpdate(BaseModel):
     date_of_birth: date | None = None
     gender: Gender | None = None
     goal_weight_kg: Decimal | None = Field(default=None, ge=20, le=400, decimal_places=1)
+
+    # Nutrition goal inputs. calorie_goal/protein_goal_g/carb_goal_g/
+    # fat_goal_g are deliberately NOT here — those go through
+    # PATCH /nutrition/goals or POST /nutrition/goals/generate, which return
+    # the missing-data diagnostics this endpoint has no room for.
+    activity_level: ActivityLevel | None = None
+    nutrition_goal: NutritionGoalKind | None = None
 
     @field_validator("timezone")
     @classmethod

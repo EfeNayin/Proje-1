@@ -15,6 +15,7 @@ from app.domains.analytics.router import router as analytics_router
 from app.domains.auth.router import router as auth_router
 from app.domains.body.router import router as body_router
 from app.domains.exercises.router import router as exercises_router
+from app.domains.nutrition.router import router as nutrition_router
 from app.domains.programs.router import router as programs_router
 from app.domains.readiness.router import router as readiness_router
 from app.domains.users.router import router as users_router
@@ -46,6 +47,7 @@ app.include_router(analytics_router, prefix=API_PREFIX)
 app.include_router(auth_router, prefix=API_PREFIX)
 app.include_router(body_router, prefix=API_PREFIX)
 app.include_router(exercises_router, prefix=API_PREFIX)
+app.include_router(nutrition_router, prefix=API_PREFIX)
 app.include_router(programs_router, prefix=API_PREFIX)
 app.include_router(readiness_router, prefix=API_PREFIX)
 app.include_router(users_router, prefix=API_PREFIX)

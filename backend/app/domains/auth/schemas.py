@@ -20,6 +20,13 @@ SupportedLocale = Literal["tr", "en"]
 
 Gender = Literal["male", "female", "other", "prefer_not_to_say"]
 
+# Inputs to the nutrition goal formula (Mifflin-St Jeor + activity multiplier).
+# Defined here, alongside Gender, since UserProfile needs both — they are
+# also directly editable through PATCH /users/me, not just through the
+# nutrition domain.
+ActivityLevel = Literal["sedentary", "light", "moderate", "active", "very_active"]
+NutritionGoalKind = Literal["cut", "maintain", "bulk"]
+
 # Every name in Python's IANA database is also known to PostgreSQL, so a value
 # that passes this check is safe to use in `AT TIME ZONE` later. Computed once
 # at import: the set has ~600 entries and never changes at runtime.
@@ -120,6 +127,8 @@ class UserProfile(BaseModel):
     date_of_birth: date | None
     gender: Gender | None
     goal_weight_kg: Decimal | None
+    activity_level: ActivityLevel | None
+    nutrition_goal: NutritionGoalKind | None
     created_at: datetime
 
 
