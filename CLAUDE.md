@@ -147,6 +147,15 @@ profil. Uçtan uca telefonda çalışıyor.
   - Add burned / Rollover calories / Auto adjust macros: kalori sistemi yok.
   - Marketing emails: e-posta altyapısı hiç yok (kayıt doğrulama, şifre
     sıfırlama dahil).
+- Beslenme TAKİBİ yok — sadece HEDEF belirleme var (bkz.
+  app/domains/nutrition/, profile/nutrition-goals.tsx). "Bugün ne yedin"
+  kaydı, yemek veritabanı, barkod tarama — hiçbiri yok. Kullanıcı bunu
+  açıkça istedi ("beslenme takibi olmayacak şimdilik").
+- Mikro besinler (referanstaki "View micronutrients") → yok, takip
+  olmadan mikro besin hedefi anlamsız.
+- Halka renkleri / ana sayfa besin halkaları (foto 10) → kalori TAKİBİ
+  olmadan (bugün ne yenildi bilinmeden) gösterilecek bir ilerleme yok.
+  Takip eklenmeden yapılamaz.
 
 ## FAZ PLANI
 - Faz 1 (TAMAM): loglama + hacim analitiği MVP
