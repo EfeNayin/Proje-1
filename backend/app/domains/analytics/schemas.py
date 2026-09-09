@@ -2,7 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -72,3 +72,55 @@ class WeeklyVolumeQuery(BaseModel):
         le=52,
         description="How many weeks back to include, counting the current one.",
     )
+
+
+FindingCode = Literal[
+    "volume_below_mev",
+    "volume_above_mrv",
+    "muscles_untrained",
+    "sleep_low",
+    "sleep_very_low",
+    "readiness_no_data",
+    "weight_stalled_bulk",
+    "weight_stalled_cut",
+    "weight_on_track",
+    "weight_no_data",
+    "training_infrequent",
+    "training_consistent",
+]
+
+FindingSeverity = Literal["critical", "warning", "good", "info"]
+
+
+class Finding(BaseModel):
+    """One diagnosis finding.
+
+    `data` is a plain object rather than a per-code typed model on purpose:
+    the client renders the message text (translation is coming later and
+    must not force a rewrite of this endpoint), so the server's only job is
+    to hand over the code plus whatever numbers that code's message needs.
+    """
+
+    code: FindingCode
+    severity: FindingSeverity
+    data: dict[str, Any]
+
+
+class DiagnosisQuery(BaseModel):
+    weeks: int = Field(
+        default=4,
+        ge=1,
+        le=52,
+        description="How many weeks back to evaluate, counting the current one.",
+    )
+
+
+class DiagnosisResponse(BaseModel):
+    """Structural findings across volume, recovery, weight trend and
+    consistency. Capped at a handful of findings — see analytics/service.py's
+    diagnosis() for why: showing everything is the same as showing nothing.
+    """
+
+    period_weeks: int
+    has_enough_data: bool
+    findings: list[Finding]
