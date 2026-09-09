@@ -51,3 +51,44 @@ export type WeeklyVolumeResponse = {
 export function fetchWeeklyVolume(weeks = 4): Promise<WeeklyVolumeResponse> {
   return apiRequest<WeeklyVolumeResponse>(`/analytics/weekly-volume?weeks=${weeks}`);
 }
+
+/**
+ * "Why am I not growing" — ranked findings across volume, recovery and
+ * weight trend. See src/diagnosis/messages.ts for how a Finding becomes the
+ * text shown on screen: the server sends code + data, never a message,
+ * because translation is coming later and this endpoint should not need to
+ * change when it does.
+ */
+export type FindingSeverity = "critical" | "warning" | "good" | "info";
+
+export type FindingCode =
+  | "volume_below_mev"
+  | "volume_above_mrv"
+  | "muscles_untrained"
+  | "sleep_low"
+  | "sleep_very_low"
+  | "readiness_no_data"
+  | "weight_stalled_bulk"
+  | "weight_stalled_cut"
+  | "weight_on_track"
+  | "weight_no_data"
+  | "training_infrequent"
+  | "training_consistent";
+
+export type Finding = {
+  code: FindingCode;
+  severity: FindingSeverity;
+  /** Shape depends on `code` — see messages.ts for the field list per code. */
+  data: Record<string, unknown>;
+};
+
+export type DiagnosisResponse = {
+  period_weeks: number;
+  /** False before ~2 weeks of history exist; `findings` is empty in that case. */
+  has_enough_data: boolean;
+  findings: Finding[];
+};
+
+export function fetchDiagnosis(weeks = 4): Promise<DiagnosisResponse> {
+  return apiRequest<DiagnosisResponse>(`/analytics/diagnosis?weeks=${weeks}`);
+}

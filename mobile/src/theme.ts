@@ -40,6 +40,20 @@ export const statusLabels = {
   above_mrv: "Over MRV",
 } as const;
 
+/**
+ * Colours for diagnosis findings, by severity. Reuses the same tokens as
+ * statusColors above rather than inventing a second palette: "critical" is
+ * the same red as "above_mrv", "warning" the same amber as "below_mev",
+ * "good" the same green as "optimal". "info" (not enough data yet) gets the
+ * neutral muted tone — it isn't good or bad, just missing.
+ */
+export const findingSeverityColors = {
+  critical: statusColors.above_mrv,
+  warning: statusColors.below_mev,
+  good: statusColors.optimal,
+  info: colors.textMuted,
+} as const;
+
 export const spacing = {
   xs: 4,
   sm: 8,

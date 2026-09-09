@@ -6,7 +6,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -112,6 +112,7 @@ function MuscleRow({ muscle }: { muscle: MuscleWeeklyVolume }) {
 }
 
 export default function VolumeScreen() {
+  const router = useRouter();
   const [weeks, setWeeks] = useState<WeeklyVolume[]>([]);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -186,6 +187,16 @@ export default function VolumeScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
       }
     >
+      <Pressable style={styles.diagnosisEntry} onPress={() => router.push("/diagnosis")}>
+        <View style={styles.diagnosisEntryText}>
+          <Text style={styles.diagnosisEntryTitle}>Why am I not growing?</Text>
+          <Text style={styles.diagnosisEntrySubtitle}>
+            Volume, recovery and weight trend, combined
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+      </Pressable>
+
       <View style={styles.weekBar}>
         <Pressable
           onPress={() => setOffset((value) => Math.min(weeks.length - 1, value + 1))}
@@ -241,6 +252,21 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   error: { color: colors.danger, textAlign: "center" },
+
+  diagnosisEntry: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surface,
+    borderColor: colors.accentDark,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  diagnosisEntryText: { flex: 1 },
+  diagnosisEntryTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  diagnosisEntrySubtitle: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
 
   weekBar: {
     flexDirection: "row",
