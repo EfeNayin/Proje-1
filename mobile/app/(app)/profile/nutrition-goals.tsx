@@ -7,6 +7,18 @@
  * (see src/api/auth.ts): they directly feed the calculation, and putting them
  * on a separate screen would send the user back and forth for no reason.
  *
+ * Auto-adjust (see src/nutrition/macroAutoAdjustPreference.ts) keeps
+ * calories and macros mathematically linked (P*4 + C*4 + F*9 = calories)
+ * while the user edits by hand, entirely client-side — no request per
+ * keystroke, only Save/Generate hit the network. Two rules, and one trap:
+ *   - Editing a MACRO recomputes calories from all three macros; the other
+ *     two macros are left untouched.
+ *   - Editing CALORIES scales all three macros by newCalories/oldCalories.
+ *     Calories themselves are NEVER recomputed back from the (rounded)
+ *     scaled macros afterward — typing 2400 must show 2400, not drift to
+ *     2398 from rounding. The macros are the approximation here, not the
+ *     number the user just typed.
+ *
  * No nutrition TRACKING here by design (see CLAUDE.md backlog) — this screen
  * only ever sets a target, never logs what was eaten against it.
  */
@@ -19,6 +31,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -34,20 +47,24 @@ import {
   updateNutritionGoals,
 } from "../../../src/api/nutrition";
 import { useAuth } from "../../../src/auth/AuthContext";
+import {
+  isMacroAutoAdjustEnabled,
+  setMacroAutoAdjustEnabled,
+} from "../../../src/nutrition/macroAutoAdjustPreference";
 import { colors, radius, spacing } from "../../../src/theme";
 
-const ACTIVITY_LEVELS: { value: ActivityLevel; label: string }[] = [
-  { value: "sedentary", label: "Sedentary" },
-  { value: "light", label: "Light" },
-  { value: "moderate", label: "Moderate" },
-  { value: "active", label: "Active" },
-  { value: "very_active", label: "Very Active" },
+const ACTIVITY_LEVELS: { value: ActivityLevel; label: string; description: string }[] = [
+  { value: "sedentary", label: "Sedentary", description: "Desk job, no regular exercise" },
+  { value: "light", label: "Light", description: "Training 1-3 days a week" },
+  { value: "moderate", label: "Moderate", description: "Training 3-5 days a week" },
+  { value: "active", label: "Active", description: "Training 6-7 days a week" },
+  { value: "very_active", label: "Very Active", description: "Two workouts a day, or a physical job" },
 ];
 
-const GOALS: { value: NutritionGoalKind; label: string }[] = [
-  { value: "cut", label: "Cut" },
-  { value: "maintain", label: "Maintain" },
-  { value: "bulk", label: "Bulk" },
+const GOALS: { value: NutritionGoalKind; label: string; description: string }[] = [
+  { value: "cut", label: "Cut", description: "Fat loss, calorie deficit" },
+  { value: "maintain", label: "Maintain", description: "Hold your current weight" },
+  { value: "bulk", label: "Bulk", description: "Muscle gain, calorie surplus" },
 ];
 
 // Everything the calculation needs that only Personal Details can supply —
@@ -55,6 +72,16 @@ const GOALS: { value: NutritionGoalKind; label: string }[] = [
 const PHYSICAL_DATA_FIELDS = new Set(["weight", "height", "date_of_birth", "gender"]);
 
 type GoalField = "calorie_goal" | "protein_goal_g" | "carb_goal_g" | "fat_goal_g";
+
+/** Lenient, non-throwing parse for live auto-adjust math: an in-progress or
+ * blank field just contributes nothing rather than blocking the other
+ * fields from updating. Distinct from parseGoalField below, which is
+ * intentionally strict because it gates the network call on Save. */
+function toNumber(text: string): number | null {
+  if (text.trim() === "") return null;
+  const parsed = Number(text.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 /** "" means "leave blank" (null). Anything else must parse, or the field is
  * rejected before a network call is made. */
@@ -94,6 +121,38 @@ function GoalInput({
   );
 }
 
+/** A single choice in a vertical, described option list — used for both
+ * activity level and goal. Stacked rather than side-by-side chips because
+ * the description needs room to actually be readable. */
+function OptionRow({
+  label,
+  description,
+  selected,
+  onPress,
+  last,
+}: {
+  label: string;
+  description: string;
+  selected: boolean;
+  onPress: () => void;
+  last?: boolean;
+}) {
+  return (
+    <Pressable
+      style={[styles.optionRow, last && styles.optionRowNoBorder]}
+      onPress={onPress}
+    >
+      <View style={[styles.optionRadio, selected && styles.optionRadioActive]}>
+        {selected ? <View style={styles.optionRadioDot} /> : null}
+      </View>
+      <View style={styles.optionText}>
+        <Text style={styles.optionLabel}>{label}</Text>
+        <Text style={styles.optionDescription}>{description}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 export default function NutritionGoalsScreen() {
   const { user, refreshProfile } = useAuth();
   const router = useRouter();
@@ -106,6 +165,7 @@ export default function NutritionGoalsScreen() {
   const [fatText, setFatText] = useState("");
   const [activityLevel, setActivityLevel] = useState<ActivityLevel | null>(null);
   const [nutritionGoal, setNutritionGoal] = useState<NutritionGoalKind | null>(null);
+  const [autoAdjust, setAutoAdjust] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,6 +192,9 @@ export default function NutritionGoalsScreen() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    void isMacroAutoAdjustEnabled().then((value) => {
+      if (!cancelled) setAutoAdjust(value);
+    });
     return () => {
       cancelled = true;
     };
@@ -150,10 +213,62 @@ export default function NutritionGoalsScreen() {
   );
   const canGenerate = !physicalDataMissing && activityLevel !== null && nutritionGoal !== null;
 
+  const handleToggleAutoAdjust = (value: boolean) => {
+    setAutoAdjust(value);
+    void setMacroAutoAdjustEnabled(value);
+  };
+
+  /** Rule A: a macro changed, so calories follow. The other two macros are
+   * deliberately left alone. */
+  const recomputeCalorieFromMacros = (protein: string, carb: string, fat: string) => {
+    const p = toNumber(protein) ?? 0;
+    const c = toNumber(carb) ?? 0;
+    const f = toNumber(fat) ?? 0;
+    setCalorieText(String(Math.round(p * 4 + c * 4 + f * 9)));
+  };
+
+  const handleProteinChange = (text: string) => {
+    setProteinText(text);
+    if (autoAdjust) recomputeCalorieFromMacros(text, carbText, fatText);
+  };
+
+  const handleCarbChange = (text: string) => {
+    setCarbText(text);
+    if (autoAdjust) recomputeCalorieFromMacros(proteinText, text, fatText);
+  };
+
+  const handleFatChange = (text: string) => {
+    setFatText(text);
+    if (autoAdjust) recomputeCalorieFromMacros(proteinText, carbText, text);
+  };
+
+  /** Rule B: calories changed, so all three macros scale by the ratio.
+   * calorieText is set to exactly what was typed and nothing here ever
+   * overwrites it again — see the trap warning in the file header. */
+  const handleCalorieChange = (text: string) => {
+    const previousCalorie = toNumber(calorieText);
+    setCalorieText(text);
+    if (!autoAdjust) return;
+
+    const newCalorie = toNumber(text);
+    if (newCalorie === null || previousCalorie === null || previousCalorie === 0) return;
+
+    const ratio = newCalorie / previousCalorie;
+    const p = toNumber(proteinText);
+    const c = toNumber(carbText);
+    const f = toNumber(fatText);
+    if (p !== null) setProteinText(String(Math.round(p * ratio)));
+    if (c !== null) setCarbText(String(Math.round(c * ratio)));
+    if (f !== null) setFatText(String(Math.round(f * ratio)));
+  };
+
   // Only touches the account when the selection actually changed, so a
   // Save/Generate tap with unrelated fields does not spuriously re-save it.
   const syncActivityAndGoalIfChanged = async () => {
-    if (activityLevel === (goals?.activity_level ?? null) && nutritionGoal === (goals?.nutrition_goal ?? null)) {
+    if (
+      activityLevel === (goals?.activity_level ?? null) &&
+      nutritionGoal === (goals?.nutrition_goal ?? null)
+    ) {
       return;
     }
     await updateMe({ activity_level: activityLevel, nutrition_goal: nutritionGoal });
@@ -167,9 +282,7 @@ export default function NutritionGoalsScreen() {
       await syncActivityAndGoalIfChanged();
       applyGoals(await generateNutritionGoals());
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Could not calculate goals. Try again.",
-      );
+      setError(err instanceof ApiError ? err.message : "Could not calculate goals. Try again.");
     } finally {
       setGenerating(false);
     }
@@ -205,40 +318,53 @@ export default function NutritionGoalsScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
+      <View style={styles.autoAdjustRow}>
+        <View style={styles.autoAdjustText}>
+          <Text style={styles.rowLabel}>Auto-adjust macros</Text>
+          <Text style={styles.rowHint}>
+            Editing one field updates the others to keep the math consistent
+          </Text>
+        </View>
+        <Switch
+          value={autoAdjust}
+          onValueChange={handleToggleAutoAdjust}
+          trackColor={{ false: colors.border, true: colors.accent }}
+          thumbColor={colors.text}
+        />
+      </View>
+
       <View style={styles.grid}>
-        <GoalInput label="Calories" unit="kcal" value={calorieText} onChangeText={setCalorieText} />
-        <GoalInput label="Protein" unit="g" value={proteinText} onChangeText={setProteinText} />
-        <GoalInput label="Carbs" unit="g" value={carbText} onChangeText={setCarbText} />
-        <GoalInput label="Fat" unit="g" value={fatText} onChangeText={setFatText} />
+        <GoalInput label="Calories" unit="kcal" value={calorieText} onChangeText={handleCalorieChange} />
+        <GoalInput label="Protein" unit="g" value={proteinText} onChangeText={handleProteinChange} />
+        <GoalInput label="Carbs" unit="g" value={carbText} onChangeText={handleCarbChange} />
+        <GoalInput label="Fat" unit="g" value={fatText} onChangeText={handleFatChange} />
       </View>
 
       <Text style={styles.sectionLabel}>Activity level</Text>
-      <View style={styles.chipGroup}>
-        {ACTIVITY_LEVELS.map((option) => (
-          <Pressable
+      <View style={styles.optionsCard}>
+        {ACTIVITY_LEVELS.map((option, index) => (
+          <OptionRow
             key={option.value}
-            style={[styles.chip, activityLevel === option.value && styles.chipActive]}
+            label={option.label}
+            description={option.description}
+            selected={activityLevel === option.value}
             onPress={() => setActivityLevel(option.value)}
-          >
-            <Text style={[styles.chipText, activityLevel === option.value && styles.chipTextActive]}>
-              {option.label}
-            </Text>
-          </Pressable>
+            last={index === ACTIVITY_LEVELS.length - 1}
+          />
         ))}
       </View>
 
       <Text style={styles.sectionLabel}>Goal</Text>
-      <View style={styles.chipGroup}>
-        {GOALS.map((option) => (
-          <Pressable
+      <View style={styles.optionsCard}>
+        {GOALS.map((option, index) => (
+          <OptionRow
             key={option.value}
-            style={[styles.chip, nutritionGoal === option.value && styles.chipActive]}
+            label={option.label}
+            description={option.description}
+            selected={nutritionGoal === option.value}
             onPress={() => setNutritionGoal(option.value)}
-          >
-            <Text style={[styles.chipText, nutritionGoal === option.value && styles.chipTextActive]}>
-              {option.label}
-            </Text>
-          </Pressable>
+            last={index === GOALS.length - 1}
+          />
         ))}
       </View>
 
@@ -292,6 +418,20 @@ const styles = StyleSheet.create({
   },
   error: { color: colors.danger, marginBottom: spacing.md },
 
+  autoAdjustRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  autoAdjustText: { flex: 1, marginRight: spacing.md },
+  rowLabel: { color: colors.text, fontSize: 15, fontWeight: "500" },
+  rowHint: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.md },
   goalField: {
     flexBasis: "47%",
@@ -322,17 +462,43 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     marginTop: spacing.md,
   },
-  chipGroup: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
-  chip: {
+
+  optionsCard: {
+    backgroundColor: colors.surface,
     borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
     paddingHorizontal: spacing.md,
   },
-  chipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipText: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
-  chipTextActive: { color: colors.accentText },
+  optionRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  optionRowNoBorder: { borderBottomWidth: 0 },
+  optionRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderColor: colors.border,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  optionRadioActive: { borderColor: colors.accent },
+  optionRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.accent,
+  },
+  optionText: { flex: 1 },
+  optionLabel: { color: colors.text, fontSize: 15, fontWeight: "600" },
+  optionDescription: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
 
   warning: {
     backgroundColor: colors.surface,
