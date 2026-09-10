@@ -150,13 +150,16 @@ class TestVolumeCandidates:
 
 
 async def _old_workout(db: AsyncSession, user: User, days_ago: int) -> None:
-    """A bare workout, old enough to satisfy the has_enough_data gate."""
-    db.add(
-        Workout(
-            user_id=user.id,
-            performed_at=datetime.now(UTC) - timedelta(days=days_ago),
-        )
+    """Actual recorded work, old enough to satisfy the history-age gate."""
+    exercise = await db.scalar(select(Exercise).where(Exercise.name == "Barbell Bench Press"))
+    assert exercise is not None
+    workout = Workout(
+        user_id=user.id, performed_at=datetime.now(UTC) - timedelta(days=days_ago)
     )
+    db.add(workout)
+    await db.flush()
+    db.add(Set(workout_id=workout.id, exercise_id=exercise.id, set_number=1,
+               weight_kg=Decimal("40"), reps=8))
     await db.commit()
 
 

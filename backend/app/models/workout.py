@@ -87,6 +87,9 @@ class Workout(Base):
     # unfinished forever; this also makes real session duration computable
     # (finished_at - performed_at).
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # NULL: unknown for older records (or not finished). False: explicit
+    # finish action. True: closed when the next workout was started.
+    finished_automatically: Mapped[bool | None] = mapped_column(Boolean)
 
     created_at: Mapped[created_at]
     updated_at: Mapped[updated_at]

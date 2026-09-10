@@ -25,11 +25,28 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 ### Sıradaki adımlar
 
 1. Antrenman geçmişindeki ilk 20 kayıt sınırı kaldırıldı; Adım 2 aşağıda.
-2. Boş, açık ve otomatik kapanan seansların analizde nasıl sayılacağını netleştirmek.
+2. Boş, açık ve otomatik kapanan seans kuralları uygulandı; Adım 3 aşağıda.
 3. Egzersiz kataloğunun doğrudan kas kapsamını tamamlamak.
 4. Dönem, veri yeterliliği ve gerçek kilo ölçüm aralığına dayalı değerlendirmeyi düzeltmek.
 
-2–4 numaralı adımlar henüz uygulanmadı; her biri ayrı, gözden geçirilebilir değişiklik olarak ilerleyecek.
+3–4 numaralı adımlar henüz uygulanmadı; her biri ayrı, gözden geçirilebilir değişiklik olarak ilerleyecek.
+
+### Adım 3: Gerçek çalışma ile boş seansın ayrılması
+
+- Antrenman sıklığına girmek için en az bir ısınma dışı ve pozitif tekrar içeren set gerekiyor. Sıfır dış ağırlık geçerli; vücut ağırlığı egzersizleri dışlanmıyor.
+- Seans açık kalsa da kaydedilmiş çalışma sayılıyor. Bir seansta çok sayıda set olması seans sıklığını çoğaltmıyor.
+- Boş, yalnızca ısınma veya sıfır tekrar içeren eski kayıtlar değerlendirmedeki 14 günlük geçmiş kapısını açmıyor. Kontrol, saklanan toplam yerine gerçek setlere bakıyor.
+- Haftalık hacim de sıfır tekrarlı setleri dışlıyor. Devam eden seansın gerçek çalışma setleri haftalık ekranda görünmeye devam ediyor.
+- Gelecek tarihli seanslar bugünkü antrenman sıklığına dahil edilmiyor.
+- `finished_automatically` alanı eklendi: yeni kullanıcı bitirişleri false, otomatik kapanışlar true, eski/bilinmeyen kayıtlar null.
+- Otomatik kapanış zamanı gerçek egzersiz bitişi gibi gösterilmiyor. Geçmiş ve detay ekranları bu durumda süreyi bilinmiyor olarak gösteriyor.
+- Eski kayıtların kapanış türü geriye dönük güvenilir biçimde çıkarılamadığından, süreleri “unavailable” görünüyor. Setleri, tarihleri ve geçmiş kayıtları korunuyor. Sonradan yeniden “Bitir” çağrılması bu bilgiyi değiştirmiyor.
+
+Şema değişikliği `9d30c8f721ab_workout_completion_source.py` migration'ında; baseline SQL değiştirilmedi. Yeni alan nullable olduğu için mevcut satırlar için kapanış türü uydurulmuyor. Backend ve mobil birlikte güncellenmeli; şema değişikliği backend kodundan önce uygulanmalı.
+
+Bu adımda 12 parametrizasyon dahil backend test vakası eklendi. Tamamlanmış hafta, kayıt kapsamı ve kilo döneminin yeniden tanımlanması sonraki analiz adımına ait. Açık seanslarda gösterilen sayaç hâlâ başlangıçtan geçen zamanı anlatıyor; aktif egzersiz süresini ölçen duraklatma sistemi eklenmedi.
+
+Doğrulama: Temiz proje kopyasında gerçek PostgreSQL ile 240 backend testi geçti; yeni migration test veritabanının kuruluşunda uygulandı. Backend Ruff ve mypy kontrolleri geçti. Mobilde yeni TypeScript hatası yok; önceden mevcut beş hata sürüyor. Yeni süre etiketleri telefonda henüz denenmedi.
 
 ### Adım 2: Antrenman geçmişinin sayfalanması
 

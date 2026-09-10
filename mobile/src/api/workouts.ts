@@ -31,6 +31,8 @@ export type WorkoutSummary = {
   template_id: string | null;
   /** When the session was finished. Null means it is still in progress. */
   finished_at: string | null;
+  /** null means the closure source was not recorded (legacy history). */
+  finished_automatically: boolean | null;
 };
 
 export type WorkoutDetail = WorkoutSummary & {

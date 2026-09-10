@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.domains.analytics.schemas import (
     DiagnosisQuery,
@@ -43,6 +44,19 @@ from app.models import (
 )
 
 _PRIMARY = "primary"
+
+
+def _has_working_set() -> ColumnElement[bool]:
+    """Actual recorded work, independent of the finish button or cached totals.
+
+    Zero external weight is valid (bodyweight exercises); zero repetitions
+    and warmups do not establish a training session.
+    """
+    return (
+        select(Set.id)
+        .where(Set.workout_id == Workout.id, Set.is_warmup.is_(False), Set.reps > 0)
+        .exists()
+    )
 
 # (direct_sets, involved_sets, avg_effectiveness, volume_kg) per (week, muscle).
 _WeekMuscleAggregates = dict[date, dict[int, tuple[int, int, float | None, Decimal]]]
@@ -120,6 +134,7 @@ async def _week_muscle_aggregates(
             Workout.user_id == user.id,
             # Warmups would inflate every count and trigger false "over MRV".
             Set.is_warmup.is_(False),
+            Set.reps > 0,
             func.date_trunc("week", local_time) >= earliest_week,
         )
         .group_by(week_start, ExerciseMuscleGroup.muscle_group_id)
@@ -240,7 +255,9 @@ async def _has_enough_data(db: AsyncSession, user: User) -> bool:
     flip a fresh account into "enough data".
     """
     earliest = await db.scalar(
-        select(func.min(Workout.performed_at)).where(Workout.user_id == user.id)
+        select(func.min(Workout.performed_at)).where(
+            Workout.user_id == user.id, _has_working_set()
+        )
     )
     if earliest is None:
         return False
@@ -422,8 +439,7 @@ async def _weight_finding(db: AsyncSession, user: User, weeks: int) -> Finding |
 
 
 async def _consistency_finding(db: AsyncSession, user: User, weeks: int) -> Finding | None:
-    """How often the user actually shows up, independent of what they do
-    once they're there."""
+    """Sessions with actual work, including unfinished sessions, counted once."""
     current_week = _week_start_in(user.timezone)
     earliest_week = current_week - timedelta(weeks=weeks - 1)
     local_day = func.timezone(user.timezone, Workout.performed_at)
@@ -434,6 +450,8 @@ async def _consistency_finding(db: AsyncSession, user: User, weeks: int) -> Find
         .where(
             Workout.user_id == user.id,
             func.date_trunc("week", local_day) >= earliest_week,
+            Workout.performed_at <= datetime.now(UTC),
+            _has_working_set(),
         )
     )
     avg_per_week = (count or 0) / weeks

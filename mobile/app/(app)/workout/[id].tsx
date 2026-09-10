@@ -953,7 +953,16 @@ export default function ActiveWorkoutScreen() {
               <Text style={styles.summaryLabel}>working sets</Text>
             </View>
             {isFinished && workout.finished_at ? (
-              <FinishedDuration startedAt={workout.performed_at} endedAt={workout.finished_at} />
+              workout.finished_automatically === false ? (
+                <FinishedDuration startedAt={workout.performed_at} endedAt={workout.finished_at} />
+              ) : (
+                <View>
+                  <Text style={styles.summaryValue}>—</Text>
+                  <Text style={styles.summaryLabel}>
+                    {workout.finished_automatically ? "auto-closed" : "duration unavailable"}
+                  </Text>
+                </View>
+              )
             ) : (
               <SessionDuration startedAt={workout.performed_at} />
             )}

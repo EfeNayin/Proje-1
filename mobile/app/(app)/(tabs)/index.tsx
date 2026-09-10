@@ -312,7 +312,9 @@ export default function TrainingHome() {
                   start time while it's the one still in progress. */}
               <Text style={styles.cardMeta}>
                 {item.finished_at
-                  ? formatCardDuration(item.performed_at, item.finished_at)
+                  ? item.finished_automatically === false
+                    ? formatCardDuration(item.performed_at, item.finished_at)
+                    : item.finished_automatically ? "Auto-closed · duration unknown" : "Duration unavailable"
                   : formatTimeOfDay(item.performed_at)}
               </Text>
             </View>

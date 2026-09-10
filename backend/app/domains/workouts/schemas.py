@@ -103,6 +103,7 @@ class WorkoutSummary(BaseModel):
     # uses this (not a device-local flag) to decide whether to open a
     # session read-only.
     finished_at: datetime | None
+    finished_automatically: bool | None
 
 
 class WorkoutDetail(WorkoutSummary):

@@ -144,6 +144,7 @@ async def _to_detail(db: AsyncSession, workout: Workout) -> WorkoutDetail:
         total_sets=workout.total_sets,
         template_id=workout.template_id,
         finished_at=workout.finished_at,
+        finished_automatically=workout.finished_automatically,
         is_private=workout.is_private,
         sets=[_to_set_read(row) for row in rows],
     )
@@ -170,6 +171,7 @@ async def close_dangling_workouts(db: AsyncSession, user_id: UUID) -> None:
     now = datetime.now(UTC)
     for workout in dangling:
         workout.finished_at = now
+        workout.finished_automatically = True
 
 
 async def create_workout(
@@ -276,6 +278,7 @@ async def finish_workout(db: AsyncSession, user_id: UUID, workout_id: UUID) -> W
 
     if workout.finished_at is None:
         workout.finished_at = datetime.now(UTC)
+        workout.finished_automatically = False
         await db.commit()
 
     return await _to_detail(db, workout)
