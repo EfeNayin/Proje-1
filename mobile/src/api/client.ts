@@ -39,26 +39,35 @@ async function performRefresh(): Promise<boolean> {
   const refreshToken = await getRefreshToken();
   if (!refreshToken) return false;
 
-  try {
-    const response = await fetch(`${API_URL}${API_PREFIX}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
+  const response = await fetchWithNetworkError(`${API_URL}${API_PREFIX}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
 
-    if (!response.ok) {
-      await clearTokens();
-      return false;
-    }
-
-    await saveTokens(await response.json());
-    return true;
-  } catch {
-    // Network failure: keep the tokens. They may still be valid once the
-    // connection is back, and wiping them would sign the user out over a
-    // flaky gym wifi.
-    return false;
+  // Only an explicit authentication rejection proves the session invalid.
+  // Network errors, rate limits and server failures must preserve tokens.
+  if (response.status === 401) return false;
+  if (!response.ok) {
+    throw new ApiError(response.status, await extractError(response));
   }
+
+  await saveTokens(await response.json());
+  return true;
+}
+
+async function fetchWithNetworkError(url: string, options: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, options);
+  } catch {
+    throw new ApiError(0, "Cannot connect right now. Check your connection and try again.");
+  }
+}
+
+async function expireSession(): Promise<never> {
+  await clearTokens();
+  onSessionExpired?.();
+  throw new ApiError(401, "Your session has expired. Please sign in again.");
 }
 
 async function refreshSession(): Promise<boolean> {
@@ -101,31 +110,23 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       if (token) headers.Authorization = `Bearer ${token}`;
     }
 
-    return fetch(`${API_URL}${API_PREFIX}${path}`, {
+    return fetchWithNetworkError(`${API_URL}${API_PREFIX}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   };
 
-  let response: Response;
-  try {
-    response = await send();
-  } catch {
-    // Naming the address turns the most common setup mistake — a stale or
-    // wrong LAN IP in .env — into something the user can act on.
-    throw new ApiError(0, `Cannot reach ${API_URL}. Check the server and your .env.`);
-  }
+  let response = await send();
 
   // Access tokens are short-lived, so a 401 usually just means "expired".
   if (response.status === 401 && !anonymous) {
     const recovered = await refreshSession();
     if (!recovered) {
-      await clearTokens();
-      onSessionExpired?.();
-      throw new ApiError(401, "Your session has expired. Please sign in again.");
+      return expireSession();
     }
     response = await send();
+    if (response.status === 401) return expireSession();
   }
 
   if (!response.ok) {

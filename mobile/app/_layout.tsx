@@ -8,18 +8,33 @@
 
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AuthProvider, useAuth } from "../src/auth/AuthContext";
 import { colors } from "../src/theme";
 
 function RootNavigator() {
-  const { status } = useAuth();
+  const { status, retryRestore } = useAuth();
 
   if (status === "loading") {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (status === "unavailable") {
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.title}>Unable to connect</Text>
+        <Text style={styles.message}>
+          We could not check your session. Your sign-in details are still saved.
+          Check your connection and try again.
+        </Text>
+        <Pressable accessibilityRole="button" style={styles.retry} onPress={retryRestore}>
+          <Text style={styles.retryText}>Try again</Text>
+        </Pressable>
       </View>
     );
   }
@@ -44,10 +59,21 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  title: { color: colors.text, fontSize: 20, fontWeight: "600" },
+  message: { color: colors.textMuted, textAlign: "center", marginTop: 12, maxWidth: 340 },
+  retry: {
+    backgroundColor: colors.accent,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 24,
+  },
+  retryText: { color: colors.accentText, fontWeight: "600" },
   loading: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.background,
+    padding: 24,
   },
 });

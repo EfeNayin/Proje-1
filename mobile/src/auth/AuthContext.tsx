@@ -12,9 +12,10 @@ import type { ReactNode } from "react";
 import * as authApi from "../api/auth";
 import type { RegisterInput, UserProfile } from "../api/auth";
 import { setOnSessionExpired } from "../api/client";
-import { clearTokens, getAccessToken, saveTokens } from "../api/tokens";
+import { clearTokens, saveTokens } from "../api/tokens";
+import { restoreSession } from "./restoreSession";
 
-type AuthStatus = "loading" | "signedIn" | "signedOut";
+type AuthStatus = "loading" | "signedIn" | "signedOut" | "unavailable";
 
 type AuthContextValue = {
   status: AuthStatus;
@@ -23,6 +24,7 @@ type AuthContextValue = {
   signUp: (input: RegisterInput) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  retryRestore: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -30,6 +32,11 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const retryRestore = useCallback(() => {
+    setStatus("loading");
+    setRestoreAttempt((attempt) => attempt + 1);
+  }, []);
 
   const signOut = useCallback(async () => {
     await clearTokens();
@@ -41,35 +48,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // back here when a refresh fails and the session is unrecoverable.
   useEffect(() => {
     setOnSessionExpired(() => {
-      void signOut();
+      // The client has already cleared tokens before notifying us.
+      setUser(null);
+      setStatus("signedOut");
     });
     return () => setOnSessionExpired(null);
-  }, [signOut]);
+  }, []);
 
   // Restore the session on launch.
   useEffect(() => {
     let cancelled = false;
 
     const restore = async () => {
-      const token = await getAccessToken();
-      if (!token) {
-        if (!cancelled) setStatus("signedOut");
-        return;
-      }
-
-      try {
-        // If the access token has expired, the client refreshes transparently
-        // here; only a genuinely dead session throws.
-        const profile = await authApi.fetchMe();
-        if (!cancelled) {
-          setUser(profile);
-          setStatus("signedIn");
-        }
-      } catch {
-        if (!cancelled) {
-          await clearTokens();
-          setStatus("signedOut");
-        }
+      const restored = await restoreSession();
+      if (!cancelled) {
+        setUser(restored.user);
+        setStatus(restored.status);
       }
     };
 
@@ -77,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [restoreAttempt]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const result = await authApi.login(email, password);
@@ -98,8 +92,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ status, user, signIn, signUp, signOut, refreshProfile }),
-    [status, user, signIn, signUp, signOut, refreshProfile],
+    () => ({ status, user, signIn, signUp, signOut, refreshProfile, retryRestore }),
+    [status, user, signIn, signUp, signOut, refreshProfile, retryRestore],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
