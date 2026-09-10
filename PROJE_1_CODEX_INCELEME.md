@@ -24,12 +24,25 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 
 ### Sıradaki adımlar
 
-1. Antrenman geçmişindeki ilk 20 kayıt sınırını, mevcut API sayfalamasını kullanarak kaldırmak.
+1. Antrenman geçmişindeki ilk 20 kayıt sınırı kaldırıldı; Adım 2 aşağıda.
 2. Boş, açık ve otomatik kapanan seansların analizde nasıl sayılacağını netleştirmek.
 3. Egzersiz kataloğunun doğrudan kas kapsamını tamamlamak.
 4. Dönem, veri yeterliliği ve gerçek kilo ölçüm aralığına dayalı değerlendirmeyi düzeltmek.
 
-Bu adımlar henüz uygulanmadı; her biri ayrı, gözden geçirilebilir değişiklik olarak ilerleyecek.
+2–4 numaralı adımlar henüz uygulanmadı; her biri ayrı, gözden geçirilebilir değişiklik olarak ilerleyecek.
+
+### Adım 2: Antrenman geçmişinin sayfalanması
+
+- Kayıtlar mevcut API üzerinden 20'şerli sayfalar halinde yükleniyor. Aşağı kaydırma ve “Load older workouts” düğmesi eski kayıtlara erişim sağlıyor.
+- Sayfa yüklenirken gösterge, hata halinde mevcut kayıtları koruyan “Try again”, son kayıtta “All workouts loaded” durumu var.
+- İlk yüklemenin hatası artık “hiç antrenmanın yok” mesajıyla karışmıyor.
+- Yenileme ilk sayfadan başlıyor. Eski istek yanıtları ve ekrandan ayrıldıktan sonra gelen geçmiş yanıtları geçersiz sayılıyor.
+- Eşzamanlı sonraki sayfa istekleri engelleniyor. Örtüşen sayfalardaki aynı kayıtlar tekrar gösterilmiyor.
+- Sayfalama davranışı için 10 test eklendi: `mobile` içinde `npm run test:history`.
+
+Doğrulama: 10 sayfalama testi geçti. TypeScript kontrolünde yalnızca önceden mevcut beş hata bulunuyor. Telefon üzerinde 20'den fazla kayıtla kaydırma ve bağlantı kesilmesi denemesi henüz yapılmadı. Önceki adımın bağlantı ekranı kullanıcı tarafından telefonda denenip doğrulandı.
+
+Sınır: Mevcut offset tabanlı API kullanılıyor. Başka cihazda araya kayıt ekleme/silme sırasında bütün sayfaların tek bir veri anını temsil etmesi garanti edilmez; yenileme görünümü yeniden başlatır. Kesintisiz tutarlı bir tarihçe için ileride cursor tabanlı API değerlendirilebilir. Backend ve veri şeması bu adımda değiştirilmedi.
 
 ## 1. Bu belgenin kapsamı
 

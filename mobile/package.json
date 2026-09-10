@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
+    "test:history": "node --test tests/history.test.cjs",
     "test:session": "node --test tests/session.test.cjs",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",

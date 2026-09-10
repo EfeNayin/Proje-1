@@ -4,7 +4,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -24,6 +24,7 @@ import type { WorkoutSummary } from "../../../src/api/workouts";
 import { colors, radius, spacing } from "../../../src/theme";
 import { clearActiveWorkout, getActiveWorkout, setActiveWorkout } from "../../../src/workout/activeWorkout";
 import { isReadinessCheckinEnabled } from "../../../src/workout/readinessPreference";
+import { createWorkoutHistory } from "../../../src/workout/workoutHistory";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -101,12 +102,13 @@ function groupByDay(workouts: WorkoutSummary[]): HistorySection[] {
 
 export default function TrainingHome() {
   const router = useRouter();
-  const [workouts, setWorkouts] = useState<WorkoutSummary[]>([]);
+  const [history] = useState(() => createWorkoutHistory(workoutsApi.listWorkouts));
+  const { items: workouts, loading, loadingMore, hasMore, error } = useSyncExternalStore(
+    history.subscribe, history.getSnapshot,
+  );
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeProgram, setActiveProgram] = useState<ProgramDetail | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [starting, setStarting] = useState(false);
 
   const load = useCallback(async () => {
@@ -146,9 +148,6 @@ export default function TrainingHome() {
       }
     }
 
-    const list = await workoutsApi.listWorkouts();
-    setWorkouts(list.items);
-
     // The active program offers a quick way to start a planned session.
     // Isolated in its own try/catch: a programs-API hiccup must not take
     // down the workout history this screen exists to show.
@@ -164,23 +163,17 @@ export default function TrainingHome() {
   // Re-run on every focus so finishing a workout is reflected on return.
   useFocusEffect(
     useCallback(() => {
-      let cancelled = false;
-      setLoading(true);
-      load()
-        .catch(() => undefined)
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
+      void history.refresh();
+      void load().catch(() => undefined);
       return () => {
-        cancelled = true;
+        history.cancel();
       };
-    }, [load]),
+    }, [history, load]),
   );
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await load().catch(() => undefined);
-    setRefreshing(false);
+  const handleRefresh = () => {
+    void history.refresh();
+    void load().catch(() => undefined);
   };
 
   /** templateId omitted starts a free session; given, starts from that template. */
@@ -220,7 +213,7 @@ export default function TrainingHome() {
     }
   };
 
-  if (loading) {
+  if (loading && workouts.length === 0) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={colors.accent} />
@@ -238,8 +231,10 @@ export default function TrainingHome() {
         sections={sections}
         keyExtractor={(item) => item.id}
         stickySectionHeadersEnabled={false}
+        onEndReached={() => { void history.loadMore(); }}
+        onEndReachedThreshold={0.4}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
+          <RefreshControl refreshing={loading} onRefresh={handleRefresh} tintColor={colors.accent} />
         }
         ListHeaderComponent={
           <View>
@@ -279,7 +274,31 @@ export default function TrainingHome() {
           </View>
         }
         ListEmptyComponent={
-          <Text style={styles.empty}>No workouts yet. Start one and it will show up here.</Text>
+          !error ? <Text style={styles.empty}>No workouts yet. Start one and it will show up here.</Text> : null
+        }
+        ListFooterComponent={
+          <View style={styles.historyFooter}>
+            {error ? (
+              <>
+                <Text style={styles.historyError}>
+                  {error === "more" ? "Could not load older workouts." : "Could not refresh your history."}
+                </Text>
+                <Pressable accessibilityRole="button" style={styles.historyRetry}
+                  onPress={() => { if (error === "refresh") handleRefresh(); else void history.loadMore(true); }}>
+                  <Text style={styles.historyRetryText}>Try again</Text>
+                </Pressable>
+              </>
+            ) : loadingMore ? (
+              <ActivityIndicator color={colors.accent} />
+            ) : !loading && hasMore ? (
+              <Pressable accessibilityRole="button" style={styles.historyRetry}
+                onPress={() => { void history.loadMore(); }}>
+                <Text style={styles.historyRetryText}>Load older workouts</Text>
+              </Pressable>
+            ) : !loading && workouts.length > 0 ? (
+              <Text style={styles.cardMeta}>All workouts loaded</Text>
+            ) : null}
+          </View>
         }
         renderSectionHeader={({ section }) => (
           <Text style={styles.dayHeader}>{section.title}</Text>
@@ -344,6 +363,10 @@ export default function TrainingHome() {
 }
 
 const styles = StyleSheet.create({
+  historyFooter: { alignItems: "center", paddingVertical: spacing.lg, gap: spacing.sm },
+  historyError: { color: colors.danger, textAlign: "center" },
+  historyRetry: { padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surface },
+  historyRetryText: { color: colors.accent, fontWeight: "600" },
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.md, paddingBottom: spacing.xl },
   centered: {
