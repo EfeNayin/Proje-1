@@ -227,6 +227,7 @@ _CONSISTENT_WEEKLY_AVG = 3.0
 _LOW_SLEEP_HOURS = Decimal("7")
 _VERY_LOW_SLEEP_HOURS = Decimal("6")
 _MIN_READINESS_NIGHTS = 3
+_MAX_SLEEP_AGE_DAYS = 7  # Product recency rule, not a medical threshold.
 _MIN_WEIGHT_MEASUREMENTS = 2
 # Product sufficiency rules, not clinical thresholds or a prescribed rate of change.
 _MIN_WEIGHT_SPAN_DAYS = 14
@@ -375,26 +376,41 @@ def _volume_candidates(
 async def _readiness_finding(db: AsyncSession, user: User, weeks: int) -> Finding | None:
     """Recovery signal: average sleep over the period, or a call-out that
     there is not enough check-in data to say anything at all."""
-    window_start = _today_in(user.timezone) - timedelta(days=weeks * 7 - 1)
+    today = _today_in(user.timezone)
+    window_start = today - timedelta(days=weeks * 7 - 1)
 
     raw_nights = (
         await db.scalars(
-            select(ReadinessLog.sleep_hours).where(
+            select(ReadinessLog).where(
                 ReadinessLog.user_id == user.id,
                 ReadinessLog.log_date >= window_start,
+                ReadinessLog.log_date <= today,
                 ReadinessLog.sleep_hours.is_not(None),
-            )
+            ).order_by(ReadinessLog.log_date)
         )
     ).all()
     # The IS NOT NULL filter above already guarantees this, but the column's
     # static type is still Decimal | None — narrow it so sum() type-checks.
-    nights = [hours for hours in raw_nights if hours is not None]
+    nights = [row.sleep_hours for row in raw_nights if row.sleep_hours is not None]
+    latest_age = (today - raw_nights[-1].log_date).days if raw_nights else None
+    coverage = {
+        "nights_total": len(nights),
+        "days_total": weeks * 7,
+        "period_start": window_start.isoformat(),
+        "period_end": today.isoformat(),
+        "first_logged_on": raw_nights[0].log_date.isoformat() if raw_nights else None,
+        "last_logged_on": raw_nights[-1].log_date.isoformat() if raw_nights else None,
+        "latest_age_days": latest_age,
+    }
 
-    if len(nights) < _MIN_READINESS_NIGHTS:
+    if len(nights) < _MIN_READINESS_NIGHTS or (
+        latest_age is not None and latest_age > _MAX_SLEEP_AGE_DAYS
+    ):
         return Finding(
             code="readiness_no_data",
             severity="info",
-            data={"nights_total": len(nights)},
+            data={**coverage, "reason": "too_few_nights" if len(nights) < _MIN_READINESS_NIGHTS
+                  else "stale_records"},
         )
 
     avg_hours = sum(nights, start=Decimal("0")) / len(nights)
@@ -402,7 +418,7 @@ async def _readiness_finding(db: AsyncSession, user: User, weeks: int) -> Findin
     sleep_data = {
         "avg_hours": float(round(avg_hours, 1)),
         "nights_under_7": nights_under_7,
-        "nights_total": len(nights),
+        **coverage,
     }
 
     if avg_hours < _VERY_LOW_SLEEP_HOURS:

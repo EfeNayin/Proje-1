@@ -13,6 +13,41 @@ const loaded = { exports: {} };
 vm.runInNewContext(code, { module: loaded, exports: loaded.exports });
 const { describeFinding } = loaded.exports;
 const { describeTrainingCoverage } = loaded.exports;
+const sleepData = { nights_total: 3, days_total: 84, avg_hours: 5,
+  nights_under_7: 3, period_start: '2026-06-20', period_end: '2026-09-11',
+  first_logged_on: '2026-09-09', last_logged_on: '2026-09-11', latest_age_days: 0 };
+
+test('sleep average explicitly describes the recorded sample, not all 84 days', () => {
+  for (const code of ['sleep_low', 'sleep_very_low']) {
+    const copy = describeFinding({ code, data: sleepData });
+    assert.match(copy.description, /Recorded-night average: 5h/);
+    assert.match(copy.description, /3 of 84 days/);
+    assert.match(copy.description, /2026-09-09 to 2026-09-11/);
+    assert.match(copy.description, /Missing nights are unknown/);
+    assert.doesNotMatch(copy.action, /will blunt/);
+  }
+});
+
+test('stale sleep records ask for current data instead of giving a sleep verdict', () => {
+  const copy = describeFinding({ code: 'readiness_no_data', data: { ...sleepData,
+    reason: 'stale_records', latest_age_days: 8 } });
+  assert.match(copy.description, /8 days ago/);
+  assert.match(copy.title, /Recent sleep records/);
+});
+
+test('empty sleep coverage does not display null record dates', () => {
+  const copy = describeFinding({ code: 'readiness_no_data', data: { ...sleepData,
+    reason: 'too_few_nights', nights_total: 0, first_logged_on: null, last_logged_on: null } });
+  assert.match(copy.description, /0 of 84 days/);
+  assert.doesNotMatch(copy.description, /null|undefined/);
+});
+
+test('legacy sleep payload does not invent coverage', () => {
+  const copy = describeFinding({ code: 'sleep_low',
+    data: { avg_hours: 6, nights_total: 3, nights_under_7: 3 } });
+  assert.match(copy.description, /recorded nights only/);
+  assert.doesNotMatch(copy.description, /undefined|NaN/);
+});
 const coverage = { weeks: 12, first_measured_on: '2026-08-28', last_measured_on: '2026-09-11',
   span_days: 14, measurement_count: 3, required_span_days: 14, latest_age_days: 0 };
 

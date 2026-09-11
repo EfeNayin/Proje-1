@@ -274,6 +274,12 @@ class TestReadiness:
             "avg_hours": 6.5,
             "nights_under_7": 4,
             "nights_total": 4,
+            "days_total": 28,
+            "period_start": (datetime.now(_ISTANBUL).date() - timedelta(days=27)).isoformat(),
+            "period_end": datetime.now(_ISTANBUL).date().isoformat(),
+            "first_logged_on": (datetime.now(_ISTANBUL).date() - timedelta(days=7)).isoformat(),
+            "last_logged_on": (datetime.now(_ISTANBUL).date() - timedelta(days=1)).isoformat(),
+            "latest_age_days": 1,
         }
 
     async def test_very_low_average_sleep_is_critical(

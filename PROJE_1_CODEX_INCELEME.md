@@ -29,7 +29,19 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 3. Egzersiz kataloğunun doğrudan kas kapsamı tamamlandı; Adım 4 aşağıda.
 4. Dönem, veri yeterliliği ve gerçek kilo ölçüm aralığına dayalı değerlendirmeyi düzeltmek.
 
-Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları ve dönem içi kayıt yeterliliği Adım 6'da ele alındı. Uyku kayıtlarının dönem kapsamı ve farklı dönem isteklerinin ekranda tutarlı gösterimi sonraki inceleme başlıkları.
+Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de ele alındı. Farklı dönem isteklerinin ekranda tutarlı gösterimi sıradaki inceleme başlığı.
+
+### Adım 7: Uyku yorumunda kayıt kapsamı — 11 Eylül 2026
+
+- Uyku kartında seçilen tarih aralığı, toplam gün sayısı, uyku kaydı bulunan gün sayısı ve ilk/son uyku kaydı tarihi gösteriliyor. Ortalama yalnızca kayıtlı gecelerin ortalaması olarak adlandırılıyor.
+- En az üç uyku kaydı şartı korunuyor. Son uyku kaydı 7 günden eskiyse düşük uyku yorumu yerine güncel kayıt eksikliği gösteriliyor. 7 gün ürünün güncellik kuralıdır; klinik eşik değildir.
+- Gelecek tarihli, dönem dışındaki ve başka kullanıcıya ait kayıtlar dışlanıyor. Uyku süresi boş olan günlük kontrol kaydı uyku kapsamına sayılmıyor; eksik gecelere sıfır saat atanmadığı gibi ortalamanın paydasına da eklenmiyor.
+- Üç kayıt 12 haftanın tamamını temsil eder sayılmıyor: örneğin “84 günün 3'ünde kayıt var” ifadesi gösteriliyor. Yeni bir istatistiksel güven yüzdesi veya dönem genelini temsil etme eşiği eklenmedi. Seyrek kayıtlar için yorum yalnızca örneklenen gecelere aittir.
+- Mevcut 6/7 saat karşılaştırmaları ve bulgu kodları korunuyor. Metinden gelişimin nedenini kesin olarak uykuya bağlayan ifade kaldırıldı. Dinlenme günlerinde de kayıt tutma hatırlatılıyor.
+- Eski backend yanıtında yeni kapsam alanları yoksa tarih uydurulmuyor; yorumun yalnızca kayıtlı gecelere ait olduğu söyleniyor. Backend ve mobil birlikte güncellenmeli; migration gerekmiyor.
+- Yeterli ve güncel kayıtlarda ortalama 7 saat veya üzerindeyse eskisi gibi uyku bulgusu üretilmiyor; bu, tüm dönemin veya toparlanmanın uygun olduğunu kanıtlamaz. Antrenman kapsamı yetersizse genel bulgu kapısı önceki adımdaki gibi kapalı kalır.
+
+Doğrulama: Gerçek PostgreSQL üzerinde 285 backend testi ve 40 mobil test geçti. Dokuz yeni backend vakası ve dört mobil metin testi eklendi. Backend Ruff/mypy ve değişen mobil dosyaların ESLint kontrolü geçti. Tam mobil TypeScript kontrolünde önceki beş hata sürüyor; yeni hata yok. Telefonda görsel kontrol henüz yapılmadı.
 
 ### Adım 6: Tamamlanmış antrenman haftaları ve kayıt kapsamı — 11 Eylül 2026
 

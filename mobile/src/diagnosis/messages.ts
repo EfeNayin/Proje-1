@@ -36,6 +36,17 @@ function signed(value: number): string {
   return value > 0 ? `+${value}` : `${value}`;
 }
 
+function sleepCoverage(data: Finding["data"]): string {
+  if (typeof data.days_total !== "number" || typeof data.period_start !== "string" ||
+      typeof data.period_end !== "string") {
+    return "This describes recorded nights only; missing nights are unknown.";
+  }
+  const dates = typeof data.first_logged_on === "string" && typeof data.last_logged_on === "string"
+    ? ` Sleep records: ${data.first_logged_on} to ${data.last_logged_on}.` : "";
+  return `${data.nights_total} of ${data.days_total} days have sleep records in ` +
+    `${data.period_start} to ${data.period_end}.${dates} Missing nights are unknown.`;
+}
+
 function weightInterval(data: Finding["data"]): string {
   const { first_measured_on: first, last_measured_on: last, span_days: days,
     measurement_count: count } = data;
@@ -95,20 +106,25 @@ export function describeFinding(finding: Finding): FindingCopy {
       const nightsTotal = data.nights_total as number;
       const critical = finding.code === "sleep_very_low";
       return {
-        title: critical ? "Sleep is critically low" : "Sleep is running low",
-        description: `Averaging ${avgHours}h a night (${nightsUnder7}/${nightsTotal} nights under 7h).`,
-        action: critical
-          ? "This will blunt recovery and progress. Prioritise sleep before adding more volume."
-          : "Recovery matters as much as volume — aim for 7+ hours.",
+        title: critical ? "Very low sleep in recorded nights" : "Low sleep in recorded nights",
+        description: `Recorded-night average: ${avgHours}h (${nightsUnder7}/${nightsTotal} recorded nights under 7h). ` + sleepCoverage(data),
+        action: "Log sleep on rest days too. Missing nights are unknown; these records alone do not establish the cause of your progress.",
       };
     }
 
     case "readiness_no_data": {
       const nightsTotal = data.nights_total as number;
+      if (data.reason === "stale_records") {
+        return {
+          title: "Recent sleep records are needed",
+          description: `${sleepCoverage(data)} The latest sleep record was ${data.latest_age_days} days ago.`,
+          action: "Add current sleep records before interpreting this as your current recovery.",
+        };
+      }
       return {
         title: "Not enough check-in data",
-        description: `Only ${nightsTotal} night${nightsTotal === 1 ? "" : "s"} logged in this period — too few to read a trend.`,
-        action: "Log a check-in before your next few sessions.",
+        description: `${nightsTotal} recorded night${nightsTotal === 1 ? "" : "s"}; at least 3 are needed for a recorded-night comparison. ${sleepCoverage(data)}`,
+        action: "Log sleep on training and rest days, including a record from the past 7 days.",
       };
     }
 
