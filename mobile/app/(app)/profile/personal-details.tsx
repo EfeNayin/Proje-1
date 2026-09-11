@@ -155,7 +155,14 @@ export default function PersonalDetailsScreen() {
       .finally(() => setLoadingSummary(false));
   };
 
-  useEffect(loadSummary, []);
+  useEffect(() => {
+    let cancelled = false;
+    bodyApi.fetchBodySummary()
+      .then((data) => { if (!cancelled) setSummary(data); })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setLoadingSummary(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   if (!user) return null;
 

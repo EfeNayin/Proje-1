@@ -152,7 +152,7 @@ export default function VolumeScreen() {
 
   const byRegion = useMemo(() => {
     if (!week) return [];
-    const order: Array<MuscleWeeklyVolume["region"]> = ["upper", "lower", "core"];
+    const order: MuscleWeeklyVolume["region"][] = ["upper", "lower", "core"];
     return order
       .map((region) => ({
         region,

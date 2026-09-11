@@ -8,7 +8,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -27,8 +27,6 @@ import { colors, radius, spacing } from "../../../src/theme";
 /** The program's name, edited in place. Saved on blur, matching the workout title field. */
 function NameField({ value, onSave }: { value: string; onSave: (name: string) => void }) {
   const [draft, setDraft] = useState(value);
-
-  useEffect(() => setDraft(value), [value]);
 
   const commit = () => {
     const trimmed = draft.trim();
@@ -176,7 +174,7 @@ export default function ProgramScreen() {
         }}
       />
 
-      <NameField value={program.name} onSave={(name) => void handleSaveName(name)} />
+      <NameField key={program.name} value={program.name} onSave={(name) => void handleSaveName(name)} />
 
       {program.is_active ? (
         <View style={styles.activeBadge}>

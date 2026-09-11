@@ -265,9 +265,6 @@ function TitleField({
 }) {
   const [draft, setDraft] = useState(value ?? "");
 
-  // Keep in step when the server sends a different title back.
-  useEffect(() => setDraft(value ?? ""), [value]);
-
   const commit = () => {
     const trimmed = draft.trim();
     if (trimmed === (value ?? "")) return;
@@ -506,12 +503,10 @@ function SetForm({
  * moment a program is selected rather than needing another round trip.
  */
 function SaveAsTemplateModal({
-  visible,
   workout,
   onClose,
   onSaved,
 }: {
-  visible: boolean;
   workout: WorkoutDetail;
   onClose: () => void;
   onSaved: () => void;
@@ -526,12 +521,7 @@ function SaveAsTemplateModal({
   const nameInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
-    if (!visible) return;
-    setName(workout.title ?? "");
-    setError(null);
-
     let cancelled = false;
-    setLoadingPrograms(true);
     programsApi
       .listPrograms()
       .then((summaries) => Promise.all(summaries.map((p) => programsApi.getProgram(p.id))))
@@ -549,7 +539,7 @@ function SaveAsTemplateModal({
     return () => {
       cancelled = true;
     };
-  }, [visible, workout.title]);
+  }, []);
 
   const handleSave = async () => {
     const trimmed = name.trim();
@@ -582,7 +572,7 @@ function SaveAsTemplateModal({
 
   return (
     <Modal
-      visible={visible}
+      visible
       transparent
       animationType="slide"
       onRequestClose={onClose}
@@ -636,7 +626,7 @@ function SaveAsTemplateModal({
                 <ActivityIndicator color={colors.accent} style={styles.sheetLoading} />
               ) : programs.length === 0 ? (
                 <View>
-                  <Text style={styles.sheetEmpty}>You don't have a program yet.</Text>
+                  <Text style={styles.sheetEmpty}>You don&apos;t have a program yet.</Text>
                   <Pressable
                     style={styles.sheetCreateProgram}
                     onPress={() => {
@@ -706,7 +696,15 @@ export default function ActiveWorkoutScreen() {
   const [busyExercise, setBusyExercise] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [restSeconds, setRestSecondsState] = useState(DEFAULT_REST_SECONDS);
-  const [targets, setTargets] = useState<TemplateExerciseTarget[]>([]);
+  const [targetData, setTargetData] = useState<{
+    templateId: string;
+    exercises: TemplateExerciseTarget[];
+  } | null>(null);
+  const templateId = workout?.template_id;
+  const targets = useMemo(
+    () => templateId && targetData?.templateId === templateId ? targetData.exercises : [],
+    [templateId, targetData],
+  );
   const [saveAsTemplateVisible, setSaveAsTemplateVisible] = useState(false);
   // A past session opens read-only by default (see isFinished/readOnly
   // below); this is the escape hatch that lets it become editable again.
@@ -757,16 +755,12 @@ export default function ActiveWorkoutScreen() {
   // them fresh instead of depending on whatever POST /templates/{id}/start
   // returned when the session began.
   useEffect(() => {
-    const templateId = workout?.template_id;
-    if (!templateId) {
-      setTargets([]);
-      return;
-    }
+    if (!templateId) return;
     let cancelled = false;
     programsApi
       .getTemplate(templateId)
       .then((data) => {
-        if (!cancelled) setTargets(data.exercises);
+        if (!cancelled) setTargetData({ templateId, exercises: data.exercises });
       })
       .catch(() => {
         // No goals shown is a smaller problem than blocking logging over it.
@@ -774,7 +768,7 @@ export default function ActiveWorkoutScreen() {
     return () => {
       cancelled = true;
     };
-  }, [workout?.template_id]);
+  }, [templateId]);
 
   // Template exercises come first (in template order) so a session started
   // from a plan shows the whole plan immediately, not just what's logged so
@@ -942,7 +936,7 @@ export default function ActiveWorkoutScreen() {
           {readOnly ? (
             <Text style={styles.titleReadOnly}>{workout.title ?? "Workout"}</Text>
           ) : (
-            <TitleField value={workout.title} onSave={(title) => void handleSaveTitle(title)} />
+            <TitleField key={workout.title ?? ""} value={workout.title} onSave={(title) => void handleSaveTitle(title)} />
           )}
 
           {readOnly ? <Text style={styles.sessionDate}>{formatSessionDate(workout.performed_at)}</Text> : null}
@@ -1020,15 +1014,14 @@ export default function ActiveWorkoutScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <SaveAsTemplateModal
-        visible={saveAsTemplateVisible}
+      {saveAsTemplateVisible && <SaveAsTemplateModal
         workout={workout}
         onClose={() => setSaveAsTemplateVisible(false)}
         onSaved={() => {
           setSaveAsTemplateVisible(false);
           void handleFinish();
         }}
-      />
+      />}
     </>
   );
 }

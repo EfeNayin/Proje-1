@@ -31,6 +31,18 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 
 Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı.
 
+### Adım 10: Mobil lint ve bileşen yaşam döngüsü — 11 Eylül 2026
+
+- Güncel tam kontrolde sekiz hata ve iki uyarı vardı. Antrenman/program adı alanları, sunucudaki ad değiştiğinde React anahtarı üzerinden yeniden başlatılıyor; her prop değişiminde effect ile taslak kopyalanmıyor.
+- Şablon kaydetme formu yalnızca açıkken oluşturuluyor. Her açılış yeni ad, seçim, hata ve yükleme durumuyla başlıyor. Program listesi yüklemesinin iptal kontrolü ve klavye için `onShow` odağı korunuyor.
+- Şablon hedefleri kaynak şablon kimliğiyle saklanıyor. Şablonsuz veya farklı şablonlu antrenmanda eski hedefler hemen görünümden çıkarılıyor; boş liste için effect içinde ek render tetiklenmiyor.
+- Profilin ilk özet yüklemesi başlangıçtaki yükleme durumunu kullanıyor; ekrandan ayrıldıktan sonra gelen yanıt uygulanmıyor. Kullanıcı işleminden sonraki yenileme korunuyor.
+- Egzersiz seçicisinin callback referansı render sırasında değil, commit sonrası layout effect içinde güncelleniyor. Tamamlanmamış render'ın callback'i kullanılmıyor; seçim tek seferlik tüketiliyor.
+- Web tema başlangıcı `useSyncExternalStore` sunucu/istemci snapshot'larıyla ele alınıyor; sunucu çıktısında açık tema korunuyor. React belgeleri: [sunucu snapshot'ı](https://react.dev/reference/react/useSyncExternalStore), [state sıfırlama ve key](https://react.dev/learn/you-might-not-need-an-effect).
+- Bir JSX apostrofu ve dizi tipi uyarısı düzeltildi. Üretilmiş `.expo` ve `dist` çıktıları lint kapsamı dışında tutuluyor; kaynak kuralları kapatılmadı.
+
+Doğrulama: Tam mobil lint kontrolü sıfır hata ve sıfır uyarıyla, TypeScript kontrolü hatasız geçti. Üç yeni yaşam döngüsü testiyle toplam 52 mobil test geçti (`npm run test:lifecycle`). Seçici testleri kontrollü hook çağrıları, web başlangıç testi gerçek React sunucu render'ı kullanıyor; telefon üzerindeki form/klavye etkileşiminin yerine geçmez. Telefon görsel kontrolü henüz yapılmadı. Backend ve veritabanı değiştirilmedi.
+
 ### Adım 9: Mobil TypeScript kontrolünün temizlenmesi — 11 Eylül 2026
 
 - Önceki adımlarda raporlanan beş TypeScript hatası giderildi. Tema tablosu kullanan yerler, sistem değeri yalnızca `dark` olduğunda koyu tema seçiyor; diğer değerlerde açık tema kullanılıyor. Böylece `unspecified` değeri tabloya geçersiz anahtar olarak aktarılmıyor. Açılır içerik ikonunun rengi de aynı kurala uyarlandı.
