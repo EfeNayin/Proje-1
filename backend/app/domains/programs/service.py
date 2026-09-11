@@ -34,6 +34,7 @@ from app.domains.programs.schemas import (
     WorkoutTemplateCreate,
     WorkoutTemplateRead,
     WorkoutTemplateUpdate,
+    WorkoutTemplateWithExercisesCreate,
 )
 from app.domains.workouts.service import close_dangling_workouts
 from app.models import Exercise, Program, TemplateExercise, Workout, WorkoutTemplate
@@ -251,6 +252,30 @@ async def create_template(
     await db.commit()
 
     return await _to_template_detail(db, template)
+
+
+async def create_template_with_exercises(
+    db: AsyncSession,
+    user_id: UUID,
+    program_id: UUID,
+    payload: WorkoutTemplateWithExercisesCreate,
+) -> WorkoutTemplateRead:
+    program = await _load_owned_program(db, program_id, user_id)
+    await _assert_exercises_exist(db, {item.exercise_id for item in payload.exercises})
+    template = WorkoutTemplate(
+        program_id=program.id, name=payload.name, day_order=payload.day_order, notes=payload.notes
+    )
+    db.add(template)
+    await db.flush()
+    for order, item in enumerate(payload.exercises):
+        db.add(TemplateExercise(
+            template_id=template.id, exercise_order=order, **item.model_dump()
+        ))
+    await db.flush()
+    # Prepare the complete response before committing; failures leave no partial template.
+    detail = await _to_template_detail(db, template)
+    await db.commit()
+    return detail
 
 
 async def get_template(db: AsyncSession, user_id: UUID, template_id: UUID) -> WorkoutTemplateRead:

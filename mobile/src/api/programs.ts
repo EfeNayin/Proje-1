@@ -94,6 +94,17 @@ export function createTemplate(
   });
 }
 
+/** Creates the template and its targets together; never falls back to two writes. */
+export function createTemplateWithExercises(
+  programId: string,
+  input: { name: string; day_order?: number; notes?: string | null; exercises: TemplateExerciseInput[] },
+): Promise<WorkoutTemplate> {
+  return apiRequest<WorkoutTemplate>(`/programs/${programId}/templates/with-exercises`, {
+    method: "POST",
+    body: input,
+  });
+}
+
 export function getTemplate(id: string): Promise<WorkoutTemplate> {
   return apiRequest<WorkoutTemplate>(`/templates/${id}`);
 }

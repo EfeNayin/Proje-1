@@ -434,3 +434,100 @@ class TestStartWorkoutFromTemplate:
 
         response = await client.get(f"/workouts/{dangling.json()['id']}", headers=auth_headers)
         assert response.json()["finished_at"] is not None
+
+
+class TestAtomicTemplateCreate:
+    async def test_persists_ordered_targets(self, client, auth_headers, bench_press_id, squat_id):
+        program = await _create_program(client, auth_headers)
+        response = await client.post(
+            f"/programs/{program['id']}/templates/with-exercises", headers=auth_headers,
+            json={"name": "Full body", "day_order": 2, "notes": "Saved workout", "exercises": [
+                {"exercise_id": squat_id, "target_sets": 3, "target_reps_min": 6,
+                 "target_reps_max": 8, "target_rir": 2, "notes": "Controlled"},
+                {"exercise_id": bench_press_id, "target_sets": 2, "target_reps_min": 10,
+                 "target_reps_max": 12, "target_rpe": 8.5},
+            ]},
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["day_order"] == 2
+        assert body["notes"] == "Saved workout"
+        assert [e["exercise_id"] for e in body["exercises"]] == [squat_id, bench_press_id]
+        assert [e["exercise_order"] for e in body["exercises"]] == [0, 1]
+        assert body["exercises"][0]["target_sets"] == 3
+        assert body["exercises"][0]["target_rir"] == 2
+        assert body["exercises"][0]["notes"] == "Controlled"
+        assert float(body["exercises"][1]["target_rpe"]) == 8.5
+        detail = await client.get(f"/programs/{program['id']}", headers=auth_headers)
+        assert detail.json()["templates"] == [body]
+
+    @pytest.mark.parametrize("exercise", [
+        {"exercise_id": "00000000-0000-0000-0000-000000000000", "target_sets": 3},
+        {"target_sets": 0},
+        {"target_sets": 3, "target_reps_min": 12, "target_reps_max": 6},
+    ])
+    async def test_invalid_targets_leave_no_template(
+        self, client, auth_headers, bench_press_id, exercise
+    ):
+        program = await _create_program(client, auth_headers)
+        response = await client.post(
+            f"/programs/{program['id']}/templates/with-exercises", headers=auth_headers,
+            json={"name": "Invalid", "exercises": [{"exercise_id": bench_press_id, **exercise}]},
+        )
+        assert response.status_code == 422
+        detail = await client.get(f"/programs/{program['id']}", headers=auth_headers)
+        assert detail.json()["templates"] == []
+
+    async def test_requires_explicit_exercise_list(self, client, auth_headers):
+        program = await _create_program(client, auth_headers)
+        url = f"/programs/{program['id']}/templates/with-exercises"
+        response = await client.post(url, headers=auth_headers, json={"name": "Missing"})
+        assert response.status_code == 422
+        response = await client.post(
+            url, headers=auth_headers, json={"name": "Empty", "exercises": []}
+        )
+        assert response.status_code == 201
+        assert response.json()["exercises"] == []
+
+    async def test_other_users_program_is_rejected(
+        self, client, auth_headers, other_auth_headers, bench_press_id
+    ):
+        program = await _create_program(client, auth_headers)
+        response = await client.post(
+            f"/programs/{program['id']}/templates/with-exercises", headers=other_auth_headers,
+            json={"name": "Intruder", "exercises": [
+                {"exercise_id": bench_press_id, "target_sets": 3}
+            ]},
+        )
+        assert response.status_code == 404
+        detail = await client.get(f"/programs/{program['id']}", headers=auth_headers)
+        assert detail.json()["templates"] == []
+
+    async def test_failure_after_inserts_rolls_back_parent_and_children(
+        self, client, auth_headers, bench_press_id, monkeypatch, db
+    ):
+        from app.domains.programs import service
+
+        program = await _create_program(client, auth_headers)
+        inserted_ids = []
+
+        async def fail_after_inserts(db, template):
+            inserted_ids.append(template.id)
+            assert await db.scalar(select(func.count()).select_from(TemplateExercise).where(
+                TemplateExercise.template_id == template.id
+            )) == 1
+            raise RuntimeError("Simulated failure before commit")
+
+        monkeypatch.setattr(service, "_to_template_detail", fail_after_inserts)
+        with pytest.raises(RuntimeError, match="Simulated failure"):
+            await client.post(
+                f"/programs/{program['id']}/templates/with-exercises", headers=auth_headers,
+                json={"name": "Rollback", "exercises": [
+                    {"exercise_id": bench_press_id, "target_sets": 3}
+                ]},
+            )
+        assert len(inserted_ids) == 1
+        assert await db.get(WorkoutTemplate, inserted_ids[0]) is None
+        assert await db.scalar(select(func.count()).select_from(TemplateExercise).where(
+            TemplateExercise.template_id == inserted_ids[0]
+        )) == 0

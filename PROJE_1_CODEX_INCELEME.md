@@ -31,6 +31,17 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 
 Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı.
 
+### Adım 11: Antrenmandan şablon kaydının bütünlüğü — 11 Eylül 2026
+
+- “Antrenmanı şablon olarak kaydet” işlemi artık şablon adı ve tüm egzersiz hedeflerini tek istekte gönderiyor: `POST /programs/{program_id}/templates/with-exercises`.
+- Program sahipliği ve egzersiz kimlikleri yazmadan önce doğrulanıyor. Şablon ve hedefleri aynı veritabanı işleminde oluşturuluyor; yanıt verisi de commit öncesinde hazırlanıyor. Ara aşamadaki hata, boş veya yarım şablon bırakmıyor.
+- Ayrı endpoint, eski sunucunun yeni egzersiz alanını sessizce yok saymasını önlüyor. Mobil taraf eski iki istekli yönteme geri dönmüyor; bu akış için güncel backend gerekiyor. Program ekranından boş şablon oluşturma ve mevcut şablon hedeflerini düzenleme korunuyor.
+- Hedefler yalnızca pozitif tekrarlı, ısınma olmayan setlerden üretiliyor. Set sayısı, tekrar aralığı ve ilk çalışma setine göre egzersiz sırası korunuyor; efor hedefi çıkarılmıyor. Çalışma seti bulunmayan antrenmanda mevcut boş şablon davranışı korunuyor.
+
+Doğrulama: Sunucuda başarılı sıralı kayıt, geçersiz hedefler, zorunlu egzersiz listesi, başka kullanıcıya ait program ve veritabanına satırlar yazıldıktan sonra hata ile geri alma senaryoları eklendi. Mobilde tek istek, hata yayılımı ve çalışma setlerinden hedef üretimi testleri eklendi. 292 backend testi ve 55 mobil testi geçti. Backend Ruff ve mypy (52 kaynak dosyası), mobil TypeScript ve tam ESLint kontrolleri temiz. Backend testlerinde mevcut bağımlılık deprecation uyarıları sürüyor. Mobil testler `node --test tests/*.test.cjs` ile çalıştırılabilir.
+
+Sınır: Bu değişiklik idempotency sağlamaz; commit sonrası yanıt kaybolur ve kullanıcı tekrar denerse kopya şablon oluşabilir. Şablon kaydı ile antrenmanı bitirme hâlâ ayrı işlemlerdir. Telefon üzerinde uçtan uca görsel kontrol yapılmadı. Veritabanı migration gerekmiyor.
+
 ### Adım 10: Mobil lint ve bileşen yaşam döngüsü — 11 Eylül 2026
 
 - Güncel tam kontrolde sekiz hata ve iki uyarı vardı. Antrenman/program adı alanları, sunucudaki ad değiştiğinde React anahtarı üzerinden yeniden başlatılıyor; her prop değişiminde effect ile taslak kopyalanmıyor.

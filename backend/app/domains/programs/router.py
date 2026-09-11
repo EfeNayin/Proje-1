@@ -25,6 +25,7 @@ from app.domains.programs.schemas import (
     WorkoutTemplateCreate,
     WorkoutTemplateRead,
     WorkoutTemplateUpdate,
+    WorkoutTemplateWithExercisesCreate,
 )
 
 router = APIRouter(tags=["programs"])
@@ -102,6 +103,21 @@ async def create_template(
     db: DbSession,
 ) -> WorkoutTemplateRead:
     return await service.create_template(db, current_user.id, program_id, payload)
+
+
+@router.post(
+    "/programs/{program_id}/templates/with-exercises",
+    response_model=WorkoutTemplateRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a template and all exercise targets atomically",
+)
+async def create_template_with_exercises(
+    program_id: UUID,
+    payload: WorkoutTemplateWithExercisesCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> WorkoutTemplateRead:
+    return await service.create_template_with_exercises(db, current_user.id, program_id, payload)
 
 
 @router.get(

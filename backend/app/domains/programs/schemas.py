@@ -69,6 +69,12 @@ class WorkoutTemplateCreate(BaseModel):
     notes: str | None = Field(default=None, max_length=1000)
 
 
+class WorkoutTemplateWithExercisesCreate(WorkoutTemplateCreate):
+    """Create the template and all targets in one transaction."""
+
+    exercises: list[TemplateExerciseCreate] = Field(max_length=50)
+
+
 class WorkoutTemplateUpdate(BaseModel):
     """Partial update. Omitted fields keep their value."""
 
