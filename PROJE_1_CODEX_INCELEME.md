@@ -29,7 +29,17 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 3. Egzersiz kataloğunun doğrudan kas kapsamı tamamlandı; Adım 4 aşağıda.
 4. Dönem, veri yeterliliği ve gerçek kilo ölçüm aralığına dayalı değerlendirmeyi düzeltmek.
 
-Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de ele alındı. Farklı dönem isteklerinin ekranda tutarlı gösterimi sıradaki inceleme başlığı.
+Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı.
+
+### Adım 8: Dönem isteklerinde en güncel sonucun korunması — 11 Eylül 2026
+
+- Dönem seçimi, odaklanma ve yenileme aynı istek yöneticisinden geçiyor. Her istek yeni bir sıra alıyor; yalnızca son istek sonuç, hata ve yükleme göstergelerini değiştirebiliyor.
+- 4→8→4 gibi hızlı geçişlerde dönem numarasının aynı olması eski isteği geçerli kılmıyor. Ekrandan ayrılma mevcut isteği geçersizleştiriyor; yeniden giriş yeni istek başlatıyor.
+- Yeni dönem yüklenirken eski dönemin kartları gösterilmiyor. Yanıtın `period_weeks` değeri istenen dönemle uyuşmazsa yanlış kartlar yerine tekrar denenebilir hata gösteriliyor.
+- Aynı dönemi yenileme başarısız olursa önceki sonuç korunuyor, eski sonuç gösterildiği belirtiliyor ve “Try again” düğmesi sunuluyor. Başarılı tekrar deneme hata mesajını kaldırıyor. İlk yükleme hatası yetersiz kayıt durumuyla karışmıyor.
+- İsteklerin ağda fiziksel olarak iptal edilmesi eklenmedi; eski yanıtların ekranı değiştirmesi engelleniyor. Backend ve veritabanı değiştirilmedi.
+
+Doğrulama: Dokuz yeni eşzamanlı istek senaryosuyla toplam 49 mobil test geçti. Yeni test komutu `npm run test:diagnosis-requests`. Değişen mobil dosyaların ESLint kontrolü geçti; tam TypeScript kontrolünde yalnızca önceki beş hata var. Telefonda hızlı dönem değiştirme ve bağlantı kesilerek yenileme görsel olarak henüz denenmedi.
 
 ### Adım 7: Uyku yorumunda kayıt kapsamı — 11 Eylül 2026
 

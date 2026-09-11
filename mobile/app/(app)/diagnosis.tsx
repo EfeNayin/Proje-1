@@ -17,7 +17,8 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import * as analyticsApi from "../../src/api/analytics";
-import type { DiagnosisResponse, Finding } from "../../src/api/analytics";
+import type { Finding } from "../../src/api/analytics";
+import { createDiagnosisLoader, initialDiagnosisState } from "../../src/diagnosis/loader";
 import { describeFinding, describeTrainingCoverage } from "../../src/diagnosis/messages";
 import { colors, findingSeverityColors, radius, spacing } from "../../src/theme";
 
@@ -52,39 +53,23 @@ function FindingCard({ finding }: { finding: Finding }) {
 
 export default function DiagnosisScreen() {
   const [weeks, setWeeks] = useState<(typeof PERIODS)[number]>(4);
-  const [result, setResult] = useState<DiagnosisResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (forWeeks: number) => {
-    const data = await analyticsApi.fetchDiagnosis(forWeeks);
-    setResult(data);
-  }, []);
+  const [state, setState] = useState(initialDiagnosisState);
+  const [loader] = useState(() => createDiagnosisLoader(analyticsApi.fetchDiagnosis, setState));
+  // Do not show the prior period even during the render before the focus effect runs.
+  const current = state.weeks === weeks;
+  const result = current ? state.result : null;
+  const loading = !current || state.loading;
+  const refreshing = current && state.refreshing;
+  const error = current ? state.error : null;
 
   useFocusEffect(
     useCallback(() => {
-      let cancelled = false;
-      setLoading(true);
-      setError(null);
-      load(weeks)
-        .catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Could not load diagnosis");
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }, [load, weeks]),
+      void loader.load(weeks);
+      return () => loader.invalidate();
+    }, [loader, weeks]),
   );
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await load(weeks).catch(() => undefined);
-    setRefreshing(false);
-  };
+  const handleRefresh = () => loader.load(weeks, true);
 
   return (
     <ScrollView
@@ -99,7 +84,11 @@ export default function DiagnosisScreen() {
           <Pressable
             key={period}
             style={[styles.chip, weeks === period && styles.chipActive]}
-            onPress={() => setWeeks(period)}
+            onPress={() => {
+              if (period === weeks) return;
+              loader.invalidate();
+              setWeeks(period);
+            }}
           >
             <Text style={[styles.chipText, weeks === period && styles.chipTextActive]}>
               {period} weeks
@@ -108,7 +97,17 @@ export default function DiagnosisScreen() {
         ))}
       </View>
 
-      {!loading && !error && result?.training_coverage && (
+      {!loading && error && (
+        <View style={styles.centered}>
+          <Text style={styles.error}>{error}</Text>
+          {result && <Text style={styles.emptyText}>Showing the previous result for this period.</Text>}
+          <Pressable accessibilityRole="button" onPress={handleRefresh}>
+            <Text style={{ color: colors.accent }}>Try again</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {!loading && result?.training_coverage && (
         <View style={styles.card}>
           <Text style={styles.cardDescription}>
             {describeTrainingCoverage(result.training_coverage)}
@@ -123,9 +122,7 @@ export default function DiagnosisScreen() {
         <View style={styles.centered}>
           <ActivityIndicator color={colors.accent} />
         </View>
-      ) : error ? (
-        <Text style={styles.error}>{error}</Text>
-      ) : !result?.has_enough_data ? (
+      ) : error && !result ? null : !result?.has_enough_data ? (
         <View style={styles.centered}>
           <Ionicons name="hourglass-outline" size={28} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>Not enough training records for this period</Text>
