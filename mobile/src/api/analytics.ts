@@ -82,10 +82,21 @@ export type Finding = {
   data: Record<string, unknown>;
 };
 
+export type TrainingCoverage = {
+  period_start: string | null;
+  period_end: string;
+  completed_weeks: number;
+  weeks_with_work: number;
+  sessions: number;
+  required_weeks_with_work: number;
+};
+
 export type DiagnosisResponse = {
   period_weeks: number;
-  /** False before ~2 weeks of history exist; `findings` is empty in that case. */
+  /** Requires recorded work in at least two eligible completed weeks. */
   has_enough_data: boolean;
+  /** Optional while connecting to an older backend. */
+  training_coverage?: TrainingCoverage;
   findings: Finding[];
 };
 

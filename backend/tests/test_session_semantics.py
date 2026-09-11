@@ -48,18 +48,20 @@ async def test_work_counts_once_even_with_many_sets_and_without_finishing(
     client: AsyncClient, db: AsyncSession, auth_headers: dict[str, str], finished: bool,
 ) -> None:
     await log_session(db, days_ago=40, reps=8)
+    await log_session(db, days_ago=14, reps=8)
+    await log_session(db, days_ago=7, reps=8, set_count=4, finished=finished)
     await log_session(db, days_ago=0, reps=8, finished=finished, set_count=4)
     # Twelve invalid records used to generate a false consistency celebration.
     for _ in range(4):
-        await log_session(db, days_ago=0, reps=None, finished=True)
-        await log_session(db, days_ago=0, reps=8, warmup=True)
-        await log_session(db, days_ago=0, reps=0)
+        await log_session(db, days_ago=7, reps=None, finished=True)
+        await log_session(db, days_ago=7, reps=8, warmup=True)
+        await log_session(db, days_ago=7, reps=0)
     response = await client.get("/analytics/diagnosis", headers=auth_headers)
     assert response.status_code == 200
     body = response.json()
     assert body["has_enough_data"] is True
     finding = next(f for f in body["findings"] if f["code"] == "training_infrequent")
-    assert finding["data"]["avg_per_week"] == 0.2  # 1 session / 4 weeks, one decimal
+    assert finding["data"]["avg_per_week"] == 0.5  # Two real sessions across four completed weeks.
     assert not any(f["code"] == "training_consistent" for f in body["findings"])
     volume = (await client.get("/analytics/weekly-volume?weeks=1", headers=auth_headers)).json()
     chest = next(m for m in volume["weeks"][0]["muscles"] if m["name"] == "chest")
@@ -71,11 +73,13 @@ async def test_other_users_work_cannot_make_an_empty_session_count(
     other_auth_headers: dict[str, str],
 ) -> None:
     await log_session(db, days_ago=40, reps=8)
-    await log_session(db, days_ago=0, reps=None)
-    await log_session(db, days_ago=0, reps=8, username="intruder")
+    await log_session(db, days_ago=14, reps=8)
+    await log_session(db, days_ago=7, reps=8, set_count=4)
+    await log_session(db, days_ago=7, reps=None)
+    await log_session(db, days_ago=7, reps=8, username="intruder")
     body = (await client.get("/analytics/diagnosis", headers=auth_headers)).json()
     finding = next(f for f in body["findings"] if f["code"] == "training_infrequent")
-    assert finding["data"]["avg_per_week"] == 0
+    assert finding["data"]["avg_per_week"] == 0.5
 
 
 async def test_explicit_finish_records_source_and_preserves_it_on_retry(

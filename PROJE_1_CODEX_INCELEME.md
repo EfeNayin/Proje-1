@@ -29,7 +29,20 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 3. Egzersiz kataloğunun doğrudan kas kapsamı tamamlandı; Adım 4 aşağıda.
 4. Dönem, veri yeterliliği ve gerçek kilo ölçüm aralığına dayalı değerlendirmeyi düzeltmek.
 
-Dönemsel değerlendirme maddesi küçük değişikliklerle ilerliyor: kilo ölçüm kapsamı Adım 5'te; antrenmanların tamamlanmış haftalara göre değerlendirilmesi ve dönem içi kayıt yeterliliği sırada.
+Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları ve dönem içi kayıt yeterliliği Adım 6'da ele alındı. Uyku kayıtlarının dönem kapsamı ve farklı dönem isteklerinin ekranda tutarlı gösterimi sonraki inceleme başlıkları.
+
+### Adım 6: Tamamlanmış antrenman haftaları ve kayıt kapsamı — 11 Eylül 2026
+
+- Hacim ve antrenman sıklığı yorumları kullanıcının saat dilimindeki tamamlanmış Pazartesi–Pazar haftalarına dayanıyor. Devam eden hafta değerlendirme ortalamasına girmiyor; canlı haftalık hacim ekranında gerçek setleri görünmeye devam ediyor.
+- İlk gerçek çalışma kaydının bulunduğu hafta kısmi olabileceği için dışarıda kalıyor. Kullanıcı Pazartesi başlamış olsa da aynı ihtiyatlı kural uygulanıyor. Öncesindeki haftalar sıfır antrenman gibi doldurulmuyor.
+- Seçilen 4/8/12 hafta üst sınırdır. Örneğin yalnızca iki tam haftalık uygun geçmiş varsa 12'ye bölünmüyor; iki haftaya bölünüyor. Uygun aralıktaki kayıtsız haftalar paydada kalıyor.
+- Değerlendirme için aralıkta en az iki farklı tamamlanmış haftada ısınma dışı, pozitif tekrarlı çalışma seti gerekiyor. Tek bir eski seans, tek haftada çok sayıda seans veya boş/ısınma/sıfır tekrar kayıtları kapıyı açmıyor. Bu bir ürün kuralıdır; veri bütünlüğü veya istatistiksel güven garantisi değildir. API'de bir hafta seçilirse yetersiz kapsam dönüyor.
+- `training_coverage` yanıtı gerçek başlangıç/bitişi, toplam tam hafta sayısını, çalışma kaydı bulunan hafta sayısını ve gerçek seans sayısını taşıyor. Aynı kapsam hacim ve sıklıkta kullanılıyor; bir seansta çok set bulunması seans sayısını çoğaltmıyor.
+- Ekran kayıt sayıları ve tarih aralığını açıklıyor. Kayıt bulunmaması kesin olarak antrenman yapılmadığı biçiminde ifade edilmiyor. Yeni mobil eski backend ile karşılaşırsa mevcut olmayan tarih alanlarını göstermiyor.
+- Uyku ve kilo kendi seçili, bugüne kadar gelen tarih pencerelerini kullanmayı sürdürüyor; antrenmandan farklı pencere kullandıkları ekranda belirtiliyor. Genel yetersiz antrenman kapsamı durumunda tüm bulguları gizleyen mevcut ekran davranışı korunuyor. Bu kaynakların bağımsız gösterimi ayrıca değerlendirilebilir.
+- Gelecek tarihli antrenmanlar canlı haftalık hacimden de çıkarıldı. Şema migration'ı yok; backend ve mobil birlikte güncellenmeli.
+
+Doğrulama: Gerçek PostgreSQL üzerinde 276 backend testi geçti; son test güçlendirmelerinin ardından 24 ilgili vaka tekrar geçti. On iki yeni backend vakası ve üç yeni mobil metin testi eklendi; toplam 36 mobil test geçti. Backend Ruff ve mypy, değişen mobil dosyaların ESLint kontrolü geçti. Mobil TypeScript kontrolünde yalnızca önceki beş hata bulunuyor. Telefon üzerinde tarih/kapsam kartının görsel kontrolü henüz yapılmadı.
 
 ### Adım 5: Kilo yorumunda gerçek ölçüm aralığı — 11 Eylül 2026
 

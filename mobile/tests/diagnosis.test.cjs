@@ -12,6 +12,7 @@ const code = ts.transpileModule(readFileSync(path.join(root, 'src/diagnosis/mess
 const loaded = { exports: {} };
 vm.runInNewContext(code, { module: loaded, exports: loaded.exports });
 const { describeFinding } = loaded.exports;
+const { describeTrainingCoverage } = loaded.exports;
 const coverage = { weeks: 12, first_measured_on: '2026-08-28', last_measured_on: '2026-09-11',
   span_days: 14, measurement_count: 3, required_span_days: 14, latest_age_days: 0 };
 
@@ -54,4 +55,28 @@ test('older backend response never invents a measurement interval', () => {
   assert.doesNotMatch(JSON.stringify(copy), /undefined|NaN|12 weeks/);
   const empty = describeFinding({ code: 'weight_no_data', data: { weeks: 4 } });
   assert.doesNotMatch(JSON.stringify(empty), /undefined|NaN/);
+});
+
+test('training coverage shows evaluated dates, denominator and missing-log limitation', () => {
+  const copy = describeTrainingCoverage({ period_start: '2026-08-10', period_end: '2026-09-06',
+    completed_weeks: 4, weeks_with_work: 2, sessions: 3, required_weeks_with_work: 2 });
+  assert.match(copy, /2026-08-10 to 2026-09-06/);
+  assert.match(copy, /3 recorded sessions across 4 completed weeks/);
+  assert.match(copy, /2 weeks contain working sets/);
+  assert.match(copy, /missing logs/);
+});
+
+test('new history never prints null as a date', () => {
+  const copy = describeTrainingCoverage({ period_start: null, period_end: '2026-09-06',
+    completed_weeks: 0, weeks_with_work: 0, sessions: 0, required_weeks_with_work: 2 });
+  assert.match(copy, /No completed training weeks/);
+  assert.doesNotMatch(copy, /null|undefined/);
+});
+
+test('missing direct sets are described as absent records rather than proof of no training', () => {
+  const copy = describeFinding({ code: 'muscles_untrained',
+    data: { region: 'core', count: 1, muscles: ['Karın'] } });
+  assert.match(copy.description, /No direct working sets were recorded/);
+  assert.match(copy.action, /logs are complete/);
+  assert.doesNotMatch(copy.title, /untrained/);
 });

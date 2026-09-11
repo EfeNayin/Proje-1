@@ -28,6 +28,7 @@ from app.domains.analytics.schemas import (
     DiagnosisResponse,
     Finding,
     MuscleWeeklyVolume,
+    TrainingCoverage,
     VolumeStatus,
     WeeklyVolume,
     WeeklyVolumeQuery,
@@ -96,7 +97,7 @@ def _week_start_in(timezone: str, moment: datetime | None = None) -> date:
 
 
 async def _week_muscle_aggregates(
-    db: AsyncSession, user: User, weeks: int
+    db: AsyncSession, user: User, weeks: int, *, last_week: date | None = None
 ) -> tuple[date, _WeekMuscleAggregates]:
     """Direct/involved sets, avg effectiveness and tonnage per (week, muscle).
 
@@ -104,7 +105,7 @@ async def _week_muscle_aggregates(
     which week do they land in" query — the one thing that must never drift
     out of sync between the two — lives in exactly one place.
     """
-    current_week = _week_start_in(user.timezone)
+    current_week = last_week or _week_start_in(user.timezone)
     earliest_week = current_week - timedelta(weeks=weeks - 1)
 
     # AT TIME ZONE in function form: converts the stored UTC instant into the
@@ -136,6 +137,8 @@ async def _week_muscle_aggregates(
             Set.is_warmup.is_(False),
             Set.reps > 0,
             func.date_trunc("week", local_time) >= earliest_week,
+            local_time < current_week + timedelta(weeks=1),
+            Workout.performed_at <= datetime.now(UTC),
         )
         .group_by(week_start, ExerciseMuscleGroup.muscle_group_id)
     )
@@ -218,7 +221,7 @@ async def weekly_volume(
 #     crowded out by a bad volume week — worst case 3 + 3 = 6, matching the
 #     "5-6 bulgu" product rule.
 
-_MIN_HISTORY_DAYS = 14
+_MIN_TRAINING_WEEKS = 2
 _UNDERTRAINED_WEEKLY_AVG = 2.0
 _CONSISTENT_WEEKLY_AVG = 3.0
 _LOW_SLEEP_HOURS = Decimal("7")
@@ -250,21 +253,39 @@ class _Candidate:
     finding: Finding
 
 
-async def _has_enough_data(db: AsyncSession, user: User) -> bool:
-    """False for a brand-new account: one workout is not a trend.
+async def _training_coverage(db: AsyncSession, user: User, weeks: int) -> TrainingCoverage:
+    """Whole local weeks after recording began, within the requested window.
 
-    Anchored on the very first workout ever logged, not just ones inside the
-    requested window, so switching from weeks=4 to weeks=12 cannot itself
-    flip a fresh account into "enough data".
+    The first recorded week may be partial. Empty weeks inside the eligible
+    interval stay in the denominator; they represent missing recorded work.
     """
+    now = datetime.now(UTC)
+    end = _week_start_in(user.timezone, now)
     earliest = await db.scalar(
         select(func.min(Workout.performed_at)).where(
-            Workout.user_id == user.id, _has_working_set()
+            Workout.user_id == user.id, Workout.performed_at <= now, _has_working_set()
         )
     )
-    if earliest is None:
-        return False
-    return (datetime.now(UTC) - earliest) >= timedelta(days=_MIN_HISTORY_DAYS)
+    start = end if earliest is None else min(end, max(
+        end - timedelta(weeks=weeks),
+        _week_start_in(user.timezone, earliest) + timedelta(weeks=1),
+    ))
+    local_time = func.timezone(user.timezone, Workout.performed_at)
+    recorded_week = func.date_trunc("week", local_time)
+    rows = (await db.execute(
+        select(recorded_week, func.count())
+        .where(Workout.user_id == user.id, _has_working_set(),
+               local_time >= start, local_time < end)
+        .group_by(recorded_week)
+    )).all()
+    return TrainingCoverage(
+        period_start=start if start < end else None,
+        period_end=end - timedelta(days=1),
+        completed_weeks=(end - start).days // 7,
+        weeks_with_work=len(rows),
+        sessions=sum(row[1] for row in rows),
+        required_weeks_with_work=_MIN_TRAINING_WEEKS,
+    )
 
 
 def _volume_candidates(
@@ -463,24 +484,11 @@ async def _weight_finding(db: AsyncSession, user: User, weeks: int) -> Finding |
     return Finding(code="weight_on_track", severity="good", data=weight_data)
 
 
-async def _consistency_finding(db: AsyncSession, user: User, weeks: int) -> Finding | None:
-    """Sessions with actual work, including unfinished sessions, counted once."""
-    current_week = _week_start_in(user.timezone)
-    earliest_week = current_week - timedelta(weeks=weeks - 1)
-    local_day = func.timezone(user.timezone, Workout.performed_at)
-
-    count = await db.scalar(
-        select(func.count())
-        .select_from(Workout)
-        .where(
-            Workout.user_id == user.id,
-            func.date_trunc("week", local_day) >= earliest_week,
-            Workout.performed_at <= datetime.now(UTC),
-            _has_working_set(),
-        )
-    )
-    avg_per_week = (count or 0) / weeks
-    consistency_data = {"avg_per_week": round(avg_per_week, 1), "weeks_total": weeks}
+def _consistency_finding(coverage: TrainingCoverage) -> Finding | None:
+    """Use exactly the same complete interval as volume and coverage."""
+    avg_per_week = coverage.sessions / coverage.completed_weeks
+    consistency_data = {"avg_per_week": round(avg_per_week, 1),
+                        "weeks_total": coverage.completed_weeks}
 
     if avg_per_week < _UNDERTRAINED_WEEKLY_AVG:
         return Finding(code="training_infrequent", severity="warning", data=consistency_data)
@@ -493,23 +501,29 @@ async def diagnosis(db: AsyncSession, user: User, query: DiagnosisQuery) -> Diag
     """The "why am I not growing" screen's endpoint. See the module comment
     above for the ranking and budget rules that keep this from turning into
     a wall of text."""
-    if not await _has_enough_data(db, user):
-        return DiagnosisResponse(period_weeks=query.weeks, has_enough_data=False, findings=[])
+    coverage = await _training_coverage(db, user, query.weeks)
+    if coverage.weeks_with_work < _MIN_TRAINING_WEEKS:
+        return DiagnosisResponse(period_weeks=query.weeks, has_enough_data=False,
+                                 training_coverage=coverage, findings=[])
 
     muscle_groups_query = select(MuscleGroup).order_by(MuscleGroup.region, MuscleGroup.name)
     muscle_groups = list((await db.scalars(muscle_groups_query)).all())
-    current_week, by_week = await _week_muscle_aggregates(db, user, query.weeks)
+    current_week, by_week = await _week_muscle_aggregates(
+        db, user, coverage.completed_weeks,
+        last_week=coverage.period_end - timedelta(days=6),
+    )
 
-    candidates = _volume_candidates(muscle_groups, by_week, current_week, query.weeks)
+    candidates = _volume_candidates(muscle_groups, by_week, current_week, coverage.completed_weeks)
     candidates.sort(key=lambda candidate: candidate.score, reverse=True)
     findings = [candidate.finding for candidate in candidates[:_VOLUME_FINDING_BUDGET]]
 
     for finding in (
         await _readiness_finding(db, user, query.weeks),
         await _weight_finding(db, user, query.weeks),
-        await _consistency_finding(db, user, query.weeks),
+        _consistency_finding(coverage),
     ):
         if finding is not None:
             findings.append(finding)
 
-    return DiagnosisResponse(period_weeks=query.weeks, has_enough_data=True, findings=findings)
+    return DiagnosisResponse(period_weeks=query.weeks, has_enough_data=True,
+                             training_coverage=coverage, findings=findings)

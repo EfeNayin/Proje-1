@@ -7,7 +7,17 @@
  * the endpoint.
  */
 
-import type { Finding } from "../api/analytics";
+import type { Finding, TrainingCoverage } from "../api/analytics";
+
+export function describeTrainingCoverage(coverage: TrainingCoverage): string {
+  if (!coverage.period_start) {
+    return "No completed training weeks are available after your first recorded week yet.";
+  }
+  return `Training: ${coverage.period_start} to ${coverage.period_end}. ` +
+    `${coverage.sessions} recorded sessions across ${coverage.completed_weeks} completed weeks; ` +
+    `${coverage.weeks_with_work} weeks contain working sets. ` +
+    "The current week and your first recorded week are excluded. Weeks without records remain in the average; they may reflect missing logs.";
+}
 
 export type FindingCopy = {
   title: string;
@@ -50,9 +60,9 @@ export function describeFinding(finding: Finding): FindingCopy {
       const mev = data.mev as number;
       const weeksTotal = data.weeks_total as number;
       return {
-        title: `${muscle} is under-trained`,
-        description: `Averaging ${avgSets} sets/week over the last ${weeksTotal}, below the ${mev}-set minimum (MEV) for growth.`,
-        action: `Add 2-3 sets a week until you're consistently at or above ${mev}.`,
+        title: `${muscle}: low recorded volume`,
+        description: `Averaging ${avgSets} recorded sets/week across ${weeksTotal} evaluated weeks, below the ${mev}-set reference (MEV).`,
+        action: "Check that your logs are complete before using this reference to adjust your program.",
       };
     }
 
@@ -61,8 +71,8 @@ export function describeFinding(finding: Finding): FindingCopy {
       const avgSets = data.avg_sets as number;
       const mrv = data.mrv as number;
       return {
-        title: `${muscle} may be overtrained`,
-        description: `Averaging ${avgSets} sets/week, above the ${mrv}-set recoverable maximum (MRV).`,
+        title: `${muscle}: high recorded volume`,
+        description: `Averaging ${avgSets} recorded sets/week in the evaluated training period, above the ${mrv}-set reference (MRV).`,
         action: "Cut back a few sets, or make sure sleep and nutrition can support this volume.",
       };
     }
@@ -72,9 +82,9 @@ export function describeFinding(finding: Finding): FindingCopy {
       const count = data.count as number;
       const muscles = data.muscles as string[];
       return {
-        title: `${REGION_TITLES[region] ?? region}: ${count} muscle${count === 1 ? "" : "s"} untrained`,
-        description: `${muscles.join(", ")} got no direct work in this period.`,
-        action: "Add at least one exercise for each so they're not skipped entirely.",
+        title: `${REGION_TITLES[region] ?? region}: ${count} muscle${count === 1 ? "" : "s"} without direct-work records`,
+        description: `No direct working sets were recorded for ${muscles.join(", ")} in the evaluated training period.`,
+        action: "Check that your logs are complete before changing your program.",
       };
     }
 
@@ -157,11 +167,11 @@ export function describeFinding(finding: Finding): FindingCopy {
       const weeksTotal = data.weeks_total as number;
       const consistent = finding.code === "training_consistent";
       return {
-        title: consistent ? "Training consistently" : "Training less than twice a week",
-        description: `Averaging ${avgPerWeek} sessions/week over the last ${weeksTotal}.`,
+        title: consistent ? "Training recorded consistently" : "Fewer than two recorded sessions per week",
+        description: `Averaging ${avgPerWeek} recorded sessions/week across ${weeksTotal} evaluated weeks.`,
         action: consistent
           ? "Keep it up."
-          : "Consistency drives growth more than any single session. Aim for at least 3/week.",
+          : "Check for missing logs before using this average to adjust your schedule.",
       };
     }
   }

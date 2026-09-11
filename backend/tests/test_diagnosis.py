@@ -13,7 +13,7 @@ Two layers, for two different reasons:
   has_enough_data gate.
 """
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -142,18 +142,8 @@ class TestVolumeCandidates:
         assert "volume_below_mev" in codes
 
 
-async def _old_workout(db: AsyncSession, user: User, days_ago: int) -> None:
-    """Actual recorded work, old enough to satisfy the history-age gate."""
-    exercise = await db.scalar(select(Exercise).where(Exercise.name == "Barbell Bench Press"))
-    assert exercise is not None
-    workout = Workout(
-        user_id=user.id, performed_at=datetime.now(UTC) - timedelta(days=days_ago)
-    )
-    db.add(workout)
-    await db.flush()
-    db.add(Set(workout_id=workout.id, exercise_id=exercise.id, set_number=1,
-               weight_kg=Decimal("40"), reps=8))
-    await db.commit()
+async def _training_history(db: AsyncSession, user: User) -> None:
+    await _log_chest_sets(db, user, sets_per_week=1, weeks=4)
 
 
 async def _log_chest_sets(
@@ -271,7 +261,7 @@ class TestReadiness:
         self, client: AsyncClient, db: AsyncSession, auth_headers: dict[str, str]
     ) -> None:
         user = await _get_user(db)
-        await _old_workout(db, user, days_ago=20)
+        await _training_history(db, user)
         for days_ago in (1, 3, 5, 7):
             await _add_readiness_log(db, user, days_ago, sleep_hours="6.5")
 
@@ -290,7 +280,7 @@ class TestReadiness:
         self, client: AsyncClient, db: AsyncSession, auth_headers: dict[str, str]
     ) -> None:
         user = await _get_user(db)
-        await _old_workout(db, user, days_ago=20)
+        await _training_history(db, user)
         for days_ago in (1, 3, 5, 7):
             await _add_readiness_log(db, user, days_ago, sleep_hours="4.0")
 
@@ -304,7 +294,7 @@ class TestReadiness:
         self, client: AsyncClient, db: AsyncSession, auth_headers: dict[str, str]
     ) -> None:
         user = await _get_user(db)
-        await _old_workout(db, user, days_ago=20)
+        await _training_history(db, user)
         await _add_readiness_log(db, user, days_ago=1, sleep_hours="5.0")
 
         body = (await client.get("/analytics/diagnosis", headers=auth_headers)).json()
@@ -322,7 +312,7 @@ class TestWeightTrend:
         self, client: AsyncClient, db: AsyncSession, auth_headers: dict[str, str]
     ) -> None:
         user = await _get_user(db)
-        await _old_workout(db, user, days_ago=20)
+        await _training_history(db, user)
         await client.patch("/users/me", headers=auth_headers, json={"nutrition_goal": "bulk"})
         await _add_measurement(db, user, days_ago=25, weight_kg="80.0")
         await _add_measurement(db, user, days_ago=0, weight_kg="80.0")
@@ -349,7 +339,7 @@ class TestWeightTrend:
         self, client: AsyncClient, db: AsyncSession, auth_headers: dict[str, str]
     ) -> None:
         user = await _get_user(db)
-        await _old_workout(db, user, days_ago=20)
+        await _training_history(db, user)
         await client.patch("/users/me", headers=auth_headers, json={"nutrition_goal": "bulk"})
         await _add_measurement(db, user, days_ago=25, weight_kg="80.0")
         await _add_measurement(db, user, days_ago=0, weight_kg="81.5")
@@ -365,7 +355,7 @@ class TestWeightTrend:
         self, client: AsyncClient, db: AsyncSession, auth_headers: dict[str, str]
     ) -> None:
         user = await _get_user(db)
-        await _old_workout(db, user, days_ago=20)
+        await _training_history(db, user)
         await _add_measurement(db, user, days_ago=25, weight_kg="80.0")
         await _add_measurement(db, user, days_ago=0, weight_kg="80.0")
 

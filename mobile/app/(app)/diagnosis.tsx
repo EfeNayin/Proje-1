@@ -18,7 +18,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 
 import * as analyticsApi from "../../src/api/analytics";
 import type { DiagnosisResponse, Finding } from "../../src/api/analytics";
-import { describeFinding } from "../../src/diagnosis/messages";
+import { describeFinding, describeTrainingCoverage } from "../../src/diagnosis/messages";
 import { colors, findingSeverityColors, radius, spacing } from "../../src/theme";
 
 const PERIODS = [4, 8, 12] as const;
@@ -108,6 +108,17 @@ export default function DiagnosisScreen() {
         ))}
       </View>
 
+      {!loading && !error && result?.training_coverage && (
+        <View style={styles.card}>
+          <Text style={styles.cardDescription}>
+            {describeTrainingCoverage(result.training_coverage)}
+          </Text>
+          <Text style={styles.cardDescription}>
+            Sleep and weight use the selected {result.period_weeks}-week window through today.
+          </Text>
+        </View>
+      )}
+
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={colors.accent} />
@@ -117,9 +128,11 @@ export default function DiagnosisScreen() {
       ) : !result?.has_enough_data ? (
         <View style={styles.centered}>
           <Ionicons name="hourglass-outline" size={28} color={colors.textMuted} />
-          <Text style={styles.emptyTitle}>Not enough history yet</Text>
+          <Text style={styles.emptyTitle}>Not enough training records for this period</Text>
           <Text style={styles.emptyText}>
-            At least 2 weeks of training history is needed for a diagnosis.
+            {result?.training_coverage
+              ? `Working sets must be recorded in at least ${result.training_coverage.required_weeks_with_work} completed weeks. Continue logging or choose a wider period if you have older records.`
+              : "More training history is needed before this period can be evaluated."}
           </Text>
         </View>
       ) : result.findings.length === 0 ? (
@@ -127,7 +140,7 @@ export default function DiagnosisScreen() {
           <Ionicons name="checkmark-circle-outline" size={28} color={colors.accent} />
           <Text style={styles.emptyTitle}>Nothing stands out</Text>
           <Text style={styles.emptyText}>
-            Volume, recovery and weight trend all look fine for this period.
+            No findings were generated from the available records for this period.
           </Text>
         </View>
       ) : (

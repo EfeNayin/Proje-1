@@ -111,8 +111,17 @@ class DiagnosisQuery(BaseModel):
         default=4,
         ge=1,
         le=52,
-        description="How many weeks back to evaluate, counting the current one.",
+        description="Maximum completed training weeks to evaluate; excludes the current week.",
     )
+
+
+class TrainingCoverage(BaseModel):
+    period_start: date | None
+    period_end: date
+    completed_weeks: int
+    weeks_with_work: int
+    sessions: int
+    required_weeks_with_work: int = 2
 
 
 class DiagnosisResponse(BaseModel):
@@ -123,4 +132,5 @@ class DiagnosisResponse(BaseModel):
 
     period_weeks: int
     has_enough_data: bool
+    training_coverage: TrainingCoverage
     findings: list[Finding]
