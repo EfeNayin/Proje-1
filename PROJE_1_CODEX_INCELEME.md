@@ -26,10 +26,23 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 
 1. Antrenman geçmişindeki ilk 20 kayıt sınırı kaldırıldı; Adım 2 aşağıda.
 2. Boş, açık ve otomatik kapanan seans kuralları uygulandı; Adım 3 aşağıda.
-3. Egzersiz kataloğunun doğrudan kas kapsamını tamamlamak.
+3. Egzersiz kataloğunun doğrudan kas kapsamı tamamlandı; Adım 4 aşağıda.
 4. Dönem, veri yeterliliği ve gerçek kilo ölçüm aralığına dayalı değerlendirmeyi düzeltmek.
 
-3–4 numaralı adımlar henüz uygulanmadı; her biri ayrı, gözden geçirilebilir değişiklik olarak ilerleyecek.
+Sıradaki iş 4 numaralı dönemsel değerlendirme maddesi; ayrı bir değişiklik olarak ilerleyecek.
+
+### Adım 4: Katalogdaki doğrudan kas kapsamı — 11 Eylül 2026
+
+- Resmî egzersiz sayısı 20'den 25'e çıkarıldı. Analizdeki 17 kas grubunun her biri artık en az bir doğrudan egzersizle kaydedilebiliyor.
+- Karın için Crunch, yan karın için Dumbbell Side Bend, ön kol için Dumbbell Wrist Curl, arka omuz için Dumbbell Reverse Fly, trapez için Dumbbell Shrug eklendi. Türkçe adları ve ekipman filtreleri mevcut API ile çalışıyor.
+- Bu beş kasın eksikliği doğrudan (`primary`) kapsamdı; bazılarının mevcut ikincil bağlantıları zaten vardı. Eski egzersiz eşleştirmeleri ve hacim eşikleri değiştirilmedi.
+- Seçilen egzersizler mevcut tekrar/set akışına uyuyor. Crunch sıfır dış ağırlıkla kaydedilebiliyor. Süreyle ölçülen egzersizler için yeni kayıt türü eklenmedi.
+- Yeni bağlantıların `effectiveness=4` değeri mevcut katalog ölçeğinde bir içerik kararıdır; bilimsel ölçüm, büyüme garantisi veya set çarpanı değildir. Analiz her doğrudan çalışma setini bir set sayar.
+- Veriler `c6a42e8b91df_complete_primary_catalogue.py` migration'ıyla ekleniyor; baseline SQL korunuyor. Sabit UUID'ler geri almada kullanıcıların aynı adlı egzersizlerinin hedeflenmesini önlüyor. Yeni egzersizlerden biri set veya program şablonunda kullanılmışsa veritabanı geri almayı reddeder; geçmiş silinmez.
+
+İçerik dayanakları: [Crunch](https://www.muscleandfitness.com/exercise/workouts/abs-and-core-exercises/crunch/), [yan eğilme](https://musclewiki.com/exercise/dumbbell-side-bend), [bilek bükme](https://www.acefitness.org/resources/everyone/exercise-library/30/wrist-curl-flexion/), [ters açış](https://www.acefitness.org/certifiednewsarticle/2660/a-commonsense-approach-to-addressing-shoulder-instability/) ve [omuz silkme](https://musclewiki.com/exercise/dumbbell-shrug). Bu kaynaklar hareket/hedef kas seçimine dayanak sağlar; 1–5 puanını doğrulamaz. Katalog tüm egzersiz çeşitlerini kapsama iddiası taşımaz.
+
+Doğrulama: Gerçek PostgreSQL üzerinde 248 backend testi geçti; sekiz yeni vaka kapsam, arama/kayıt/hacim akışı, migration geri alma/yeniden uygulama ve kullanılmış egzersizlerin korunmasını denetliyor. Ruff ve 52 dosyalık mypy kontrolü geçti. Telefonda yeni egzersiz seçimi henüz denenmedi.
 
 ### Adım 3: Gerçek çalışma ile boş seansın ayrılması
 

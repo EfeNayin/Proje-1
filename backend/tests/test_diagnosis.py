@@ -4,15 +4,8 @@ Two layers, for two different reasons:
 
 - TestVolumeCandidates exercises `_volume_candidates` directly, with
   synthetic MuscleGroup/aggregate data instead of going through the API.
-  The seed catalogue (db/schema_v1.sql) has no exercise at all for
-  abs/obliques/traps/forearms/rear_delts (not even as secondary), so those
-  five muscles are untrained for *any* user regardless of what they log.
-  That structurally guarantees the "core" and "upper" regions score high
-  enough to win the top-3 budget over a merely-below-MEV muscle, which would
-  make a below-MEV finding's presence in an end-to-end test a coin flip
-  driven by seed data rather than by the ranking logic. Testing the pure
-  function sidesteps that and pins the actual rule: a trained-but-light
-  muscle is "below_mev", never "untrained".
+  Synthetic inputs isolate ranking rules from catalogue coverage and the
+  top-three budget: a trained-but-light muscle is below_mev, never untrained.
 
 - The rest goes through the real API and a real Postgres database, matching
   every other test in this suite, and covers what only the full stack can
@@ -248,8 +241,8 @@ class TestUntrainedRegionsAndBudget:
         self, client: AsyncClient, db: AsyncSession, auth_headers: dict[str, str]
     ) -> None:
         """Legs are never touched; the "lower" region finding must show up,
-        and — because the seed catalogue leaves several other muscles
-        permanently untrained too — this also proves the 3-finding cap on
+        and — because this user leaves several other muscles
+        untrained too — this also proves the 3-finding cap on
         the volume/region side actually engages rather than just happening
         to stay under it.
         """
