@@ -225,6 +225,9 @@ _LOW_SLEEP_HOURS = Decimal("7")
 _VERY_LOW_SLEEP_HOURS = Decimal("6")
 _MIN_READINESS_NIGHTS = 3
 _MIN_WEIGHT_MEASUREMENTS = 2
+# Product sufficiency rules, not clinical thresholds or a prescribed rate of change.
+_MIN_WEIGHT_SPAN_DAYS = 14
+_MAX_WEIGHT_AGE_DAYS = 7
 _STALL_THRESHOLD_PCT = Decimal("0.5")
 _VOLUME_FINDING_BUDGET = 3
 
@@ -389,42 +392,64 @@ async def _readiness_finding(db: AsyncSession, user: User, weeks: int) -> Findin
 
 
 async def _weight_finding(db: AsyncSession, user: User, weeks: int) -> Finding | None:
-    """Weight trend vs. the user's stated goal — the only way to sanity-check
-    "eating enough / eating too much" without a food log, which this product
-    deliberately does not have."""
+    """Describe endpoint weight change over its actual observed date interval.
+
+    The selected window is a search boundary, not the measurement duration.
+    This compares direction only; it does not infer intake or an ideal pace.
+    """
     goal = user.nutrition_goal
     if goal is None or goal == "maintain":
         # Nothing directional to check: maintain has no "wrong direction",
         # and without a goal we don't know which direction would be right.
         return None
 
-    window_start = _today_in(user.timezone) - timedelta(days=weeks * 7 - 1)
+    today = _today_in(user.timezone)
+    window_start = today - timedelta(days=weeks * 7 - 1)
     rows = (
         await db.scalars(
             select(BodyMeasurement)
             .where(
                 BodyMeasurement.user_id == user.id,
                 BodyMeasurement.measured_on >= window_start,
+                BodyMeasurement.measured_on <= today,
             )
             .order_by(BodyMeasurement.measured_on.asc())
         )
     ).all()
 
+    span_days = (rows[-1].measured_on - rows[0].measured_on).days if rows else 0
+    latest_age_days = (today - rows[-1].measured_on).days if rows else None
+    coverage = {
+        "goal": goal,
+        "weeks": weeks,  # Retained for older clients: selected window only.
+        "measurement_count": len(rows),
+        "first_measured_on": rows[0].measured_on.isoformat() if rows else None,
+        "last_measured_on": rows[-1].measured_on.isoformat() if rows else None,
+        "span_days": span_days,
+        "required_span_days": _MIN_WEIGHT_SPAN_DAYS,
+        "latest_age_days": latest_age_days,
+    }
+    reason = None
     if len(rows) < _MIN_WEIGHT_MEASUREMENTS:
+        reason = "too_few_measurements"
+    elif span_days < _MIN_WEIGHT_SPAN_DAYS:
+        reason = "short_span"
+    elif latest_age_days is not None and latest_age_days > _MAX_WEIGHT_AGE_DAYS:
+        reason = "stale_measurements"
+    if reason is not None:
         return Finding(
             code="weight_no_data",
             severity="info",
-            data={"goal": goal, "weeks": weeks},
+            data={**coverage, "reason": reason},
         )
 
     first, last = rows[0], rows[-1]
     change_kg = last.weight_kg - first.weight_kg
     change_pct = (change_kg / first.weight_kg) * 100
     weight_data = {
-        "goal": goal,
+        **coverage,
         "change_kg": float(round(change_kg, 2)),
         "change_pct": float(round(change_pct, 2)),
-        "weeks": weeks,
     }
 
     if goal == "bulk":

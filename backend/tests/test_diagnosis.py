@@ -337,6 +337,12 @@ class TestWeightTrend:
             "change_kg": 0.0,
             "change_pct": 0.0,
             "weeks": 4,
+            "measurement_count": 2,
+            "first_measured_on": (datetime.now(_ISTANBUL).date() - timedelta(days=25)).isoformat(),
+            "last_measured_on": datetime.now(_ISTANBUL).date().isoformat(),
+            "span_days": 25,
+            "required_span_days": 14,
+            "latest_age_days": 0,
         }
 
     async def test_rising_weight_on_a_bulk_goal_is_on_track(

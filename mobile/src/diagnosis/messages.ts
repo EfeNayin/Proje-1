@@ -26,6 +26,17 @@ function signed(value: number): string {
   return value > 0 ? `+${value}` : `${value}`;
 }
 
+function weightInterval(data: Finding["data"]): string {
+  const { first_measured_on: first, last_measured_on: last, span_days: days,
+    measurement_count: count } = data;
+  if (typeof first === "string" && typeof last === "string" &&
+      typeof days === "number" && typeof count === "number") {
+    return `Between ${first} and ${last} (${days} days; ${count} weigh-ins)`;
+  }
+  // Older servers cannot tell us the actual interval; never substitute the selector.
+  return "Between the first and last recorded weigh-ins";
+}
+
 // Each branch reads `data` under the shape documented in
 // backend/app/domains/analytics/service.py for that code — the wire type is
 // a plain object, so this is the one place that assumes the field list.
@@ -95,34 +106,48 @@ export function describeFinding(finding: Finding): FindingCopy {
     case "weight_stalled_cut": {
       const changeKg = data.change_kg as number;
       const changePct = data.change_pct as number;
-      const weeks = data.weeks as number;
       const bulk = finding.code === "weight_stalled_bulk";
       return {
-        title: bulk ? "Weight isn't moving on a bulk" : "Weight isn't moving on a cut",
-        description: `${signed(changeKg)} kg (${signed(changePct)}%) over the last ${weeks} weeks.`,
-        action: bulk
-          ? "You're likely not eating enough. Increase your calorie goal."
-          : "You're likely not in a deficit. Lower your calorie goal or double-check intake.",
+        title: bulk ? "No clear weight increase recorded" : "No clear weight decrease recorded",
+        description: `${weightInterval(data)}: ${signed(changeKg)} kg (${signed(changePct)}%).`,
+        action: "Keep recording under similar conditions and review the pattern. These measurements alone do not explain the cause.",
       };
     }
 
     case "weight_on_track": {
       const changeKg = data.change_kg as number;
       const changePct = data.change_pct as number;
-      const weeks = data.weeks as number;
       return {
-        title: "Weight is on track",
-        description: `${signed(changeKg)} kg (${signed(changePct)}%) over the last ${weeks} weeks, matching your goal.`,
-        action: "Keep doing what you're doing.",
+        title: "Recorded weight change matches your goal's direction",
+        description: `${weightInterval(data)}: ${signed(changeKg)} kg (${signed(changePct)}%).`,
+        action: "Keep tracking the pattern. Direction alone does not show whether the pace is appropriate.",
       };
     }
 
     case "weight_no_data": {
       const weeks = data.weeks as number;
+      const count = data.measurement_count;
+      const requiredDays = typeof data.required_span_days === "number" ? data.required_span_days : 14;
+      if (data.reason === "short_span") {
+        return {
+          title: "Weigh-ins are too close together",
+          description: `${weightInterval(data)}. At least ${requiredDays} days between measurements are needed for this comparison.`,
+          action: "Continue logging, or select a wider period if you have older weigh-ins.",
+        };
+      }
+      if (data.reason === "stale_measurements") {
+        return {
+          title: "A recent weigh-in is needed",
+          description: `${weightInterval(data)}. The latest weigh-in was ${data.latest_age_days} days ago.`,
+          action: "Add a current measurement before interpreting this as your current trend.",
+        };
+      }
       return {
         title: "Not enough weigh-ins",
-        description: `Too few weigh-ins in the last ${weeks} weeks to read a trend.`,
-        action: "Log your weight at least twice a week to track this.",
+        description: typeof count === "number"
+          ? `${count} weigh-in${count === 1 ? "" : "s"} in the selected ${weeks}-week period.`
+          : `Too few weigh-ins in the selected ${weeks}-week period.`,
+        action: `Record at least two measurements spanning ${requiredDays} days, including one from the past 7 days.`,
       };
     }
 

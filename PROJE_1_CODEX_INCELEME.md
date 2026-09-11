@@ -29,7 +29,19 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 3. Egzersiz kataloğunun doğrudan kas kapsamı tamamlandı; Adım 4 aşağıda.
 4. Dönem, veri yeterliliği ve gerçek kilo ölçüm aralığına dayalı değerlendirmeyi düzeltmek.
 
-Sıradaki iş 4 numaralı dönemsel değerlendirme maddesi; ayrı bir değişiklik olarak ilerleyecek.
+Dönemsel değerlendirme maddesi küçük değişikliklerle ilerliyor: kilo ölçüm kapsamı Adım 5'te; antrenmanların tamamlanmış haftalara göre değerlendirilmesi ve dönem içi kayıt yeterliliği sırada.
+
+### Adım 5: Kilo yorumunda gerçek ölçüm aralığı — 11 Eylül 2026
+
+- Seçilen 4/8/12 hafta artık kilo değişiminin ölçüldüğü süre gibi gösterilmiyor. Kart ilk ve son ölçüm tarihini, aradaki gün sayısını ve kullanılan ölçüm sayısını gösteriyor.
+- Karşılaştırma için seçili aralıkta en az iki ölçüm, ilk-son ölçüm arasında en az 14 gün ve en yeni ölçümün son 7 gün içinde olması gerekiyor. Az kayıt, kısa aralık ve eski kayıt farklı bilgi mesajları üretiyor; artış/düşüş yorumu verilmiyor.
+- Tarih sınırları kullanıcının saat dilimindeki bugüne göre hesaplanıyor; gelecek tarihli ve seçili dönem dışındaki ölçümler dışlanıyor.
+- 14 ve 7 günlük sınırlar ürünün kayıt yeterliliği kurallarıdır; klinik eşik veya ideal kilo değişim hızı iddiası değildir. Eski yüzde 0,5 yön karşılaştırma eşiği korunuyor; haftalık hıza dönüştürülmüyor.
+- Yorum hâlâ ilk-son ölçüm farkıdır; ara ölçümlere regresyon/yumuşatma uygulanmıyor. Gösterilen ölçüm sayısı veri kapsamını anlatır, bütün ölçümlerin ortalamaya girdiğini ifade etmez. Kilonun hedef yönünde değişmesi ideal hız, kas kazanımı veya uygun beslenme kanıtı gibi sunulmuyor.
+- Kilo kartındaki otomatik kalori artır/azalt yönlendirmesi kaldırıldı; ölçümlerin tek başına değişimin nedenini açıklamadığı belirtiliyor.
+- Mevcut bulgu kodları ve `weeks` alanı uyumluluk için korunuyor; `weeks` seçilen aralık demektir. Yeni mobil eski backend'e bağlanırsa tarih uydurmak yerine ilk-son kayıt arasında değişim olduğunu söyler. Tam davranış için backend ve mobil birlikte güncellenmeli; şema migration'ı gerekmiyor.
+
+Doğrulama: Gerçek PostgreSQL ile 264 backend testi geçti; 16 yeni vaka eklendi. Mobilde yedi yeni metin testiyle birlikte toplam 33 test geçti (`npm run test:diagnosis`, `test:history`, `test:session`). Backend Ruff ve mypy, değişen mobil dosyaların ESLint kontrolü geçti. Tam mobil TypeScript kontrolünde değişiklik öncesi ve sonrasında aynı beş eski hata var; yeni hata yok. Telefonda görsel doğrulama henüz yapılmadı. Bu adım genel `has_enough_data` kapısını, devam eden haftaların hacim/sıklık ortalamasına dahil edilmesini veya uyku yorumunu değiştirmiyor; bunlar sıradaki antrenman dönemi adımında ele alınacak.
 
 ### Adım 4: Katalogdaki doğrudan kas kapsamı — 11 Eylül 2026
 
