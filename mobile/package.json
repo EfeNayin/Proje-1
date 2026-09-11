@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "test:diagnosis-requests": "node --test tests/diagnosis-requests.test.cjs",
     "test:diagnosis": "node --test tests/diagnosis.test.cjs",
     "test:history": "node --test tests/history.test.cjs",

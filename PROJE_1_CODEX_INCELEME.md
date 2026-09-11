@@ -31,6 +31,14 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 
 Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı.
 
+### Adım 9: Mobil TypeScript kontrolünün temizlenmesi — 11 Eylül 2026
+
+- Önceki adımlarda raporlanan beş TypeScript hatası giderildi. Tema tablosu kullanan yerler, sistem değeri yalnızca `dark` olduğunda koyu tema seçiyor; diğer değerlerde açık tema kullanılıyor. Böylece `unspecified` değeri tabloya geçersiz anahtar olarak aktarılmıyor. Açılır içerik ikonunun rengi de aynı kurala uyarlandı.
+- Android/web ikon eşlemesi yalnızca metin biçimindeki geçerli sembol adlarını kabul ediyor. `satisfies` ile mevcut eşlemeler denetleniyor; bileşenin kabul ettiği adlar gerçekten tabloda bulunan dört anahtarla sınırlanıyor. Tabloya eklenmemiş tüm semboller destekleniyormuş gibi tip dönüşümü yapılmıyor.
+- Mobil `package.json` içine `npm run typecheck` komutu eklendi. Bağımlılıklar, backend ve veritabanı değiştirilmedi.
+
+Doğrulama: Tam mobil TypeScript kontrolü artık hatasız. Değişen dört kaynak dosyasının ESLint kontrolü ve 49 mevcut mobil test geçti. Bu adım tam projenin bütün lint sorunlarını kapattığı anlamına gelmez. Telefonda tema/ikon görsel kontrolü henüz yapılmadı.
+
 ### Adım 8: Dönem isteklerinde en güncel sonucun korunması — 11 Eylül 2026
 
 - Dönem seçimi, odaklanma ve yenileme aynı istek yöneticisinden geçiyor. Her istek yeni bir sıra alıyor; yalnızca son istek sonuç, hata ve yükleme göstergelerini değiştirebiliyor.
