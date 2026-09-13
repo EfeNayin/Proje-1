@@ -31,6 +31,18 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 
 Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı.
 
+### Adım 13: Antrenmanın başlangıç hedeflerini koruma — 13 Eylül 2026
+
+- Şablondan başlatılan yeni seanslarda şablonun kimliği, adı, gün sırası, notları ve sıralı egzersiz hedefleri `workouts.template_snapshot` alanında saklanıyor. Bu plan başlangıçta kopyalanıyor; gerçekleşmiş set oluşturulmuyor. Serbest antrenmanda alan `null` kalıyor.
+- Başlatma ile hedef listesini değiştirme aynı şablon satırını kilitliyor. Böylece aynı anda gelen hedef düzenlemesi, seansın başlangıç planını kopyalama işleminin ortasına giremiyor. Şablon güncellemesi sonraki seanslara uygulanıyor.
+- Antrenman ayrıntısı ve set/başlık/bitirme yanıtları saklanan planı içeriyor. Şablon veya program silinse ve canlı `template_id` bağlantısı boşalsa da başlangıç planı korunuyor. Geçmiş liste yanıtına büyük plan içeriği eklenmiyor.
+- Mobil antrenman ekranı hedefleri yalnızca seansın saklanan planından okuyor; güncel şablonu ayrıca çekmiyor. “Starting plan” açıklaması planın kaynağını belirtiyor. Eski şablonlu kayıtta plan yoksa “Starting targets were not saved for this workout.” gösteriliyor. Boş hedefli plan ile hiç saklanmamış plan ayrılıyor.
+- Eski kayıtlar bugünkü şablon hedefleriyle doldurulmuyor. `f21c7d905e38` migration'ı yalnızca nullable JSONB alanını ekliyor; geçmişin bilinmeyen hedeflerini tahmin etmiyor. API üzerinden seans düzenlerken başlangıç planı değiştirilemiyor.
+
+Doğrulama: 309 backend ve 63 mobil testi geçti. Şablon düzenleme/silme, program silme, yeni seansın yeni planı alması, set ve seans düzenlemesinde koruma, boş/serbest/eski seans ayrımı, kullanıcı sahipliği ve eşzamanlı hedef değiştirme test edildi. Backend Ruff/mypy ve mobil TypeScript/tam ESLint temiz. Test veritabanında migration downgrade/upgrade döngüsü doğrulandı. Mevcut bağımlılık deprecation uyarıları sürüyor.
+
+Sınır: Bu adım tarihsel planı korur; plan–gerçekleşen puanı, efor girişi veya ilerleme analizi eklemez. Migration öncesi planı saklanmamış ve şablonu zaten silinmiş seansın geçmişte şablon kullanıp kullanmadığı belirlenemez. Telefon üzerinde görsel/uçtan uca kontrol henüz yapılmadı.
+
 ### Adım 12: Şablon kaydını güvenle tekrar deneme — 13 Eylül 2026
 
 - Antrenmandan şablon kaydı artık `PUT /programs/{program_id}/templates/requests/{request_id}` yolunu kullanıyor. Mobilde işlem kimliği antrenmanın UUID'si; kullanıcı başına bir antrenmandan tek şablon kaydetme denemesi temsil ediliyor. Eski atomik POST yolu diğer istemciler için korunuyor, ancak tekrar koruması yeni PUT yoluna ait. Güncel olmayan sunucuda sessiz geri dönüş yapılmıyor.

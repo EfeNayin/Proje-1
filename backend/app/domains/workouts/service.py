@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError, ValidationAppError
+from app.domains.programs.schemas import WorkoutTemplateRead
 from app.domains.workouts.schemas import (
     SetCreate,
     SetRead,
@@ -143,6 +144,10 @@ async def _to_detail(db: AsyncSession, workout: Workout) -> WorkoutDetail:
         total_volume_kg=workout.total_volume_kg,
         total_sets=workout.total_sets,
         template_id=workout.template_id,
+        template_snapshot=(
+            WorkoutTemplateRead.model_validate(workout.template_snapshot)
+            if workout.template_snapshot is not None else None
+        ),
         finished_at=workout.finished_at,
         finished_automatically=workout.finished_automatically,
         is_private=workout.is_private,

@@ -124,7 +124,7 @@ class TemplateStart(BaseModel):
     No sets are created — only an empty workout linked to the template.
     Targets are returned too so the client can prefill goals on the spot;
     on resume (app reopened mid-session) the client re-fetches them via
-    GET /templates/{id} instead of relying on this one-time response.
+    the workout's saved template_snapshot instead of today's mutable template.
     """
 
     workout_id: UUID

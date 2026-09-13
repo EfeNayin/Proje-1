@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domains.programs.schemas import WorkoutTemplateRead
+
 
 class SetCreate(BaseModel):
     """One logged set.
@@ -96,8 +98,8 @@ class WorkoutSummary(BaseModel):
     total_sets: int
     is_private: bool
     # Which template this session was started from, if any. Free logging
-    # (no template) leaves this null; the client uses it to decide whether
-    # to fetch and display target goals alongside logged sets.
+    # (no template) leaves this null. Goals come from the detail snapshot,
+    # never from a fresh read of this mutable template.
     template_id: UUID | None
     # When the session was finished. NULL = still in progress; the client
     # uses this (not a device-local flag) to decide whether to open a
@@ -109,6 +111,7 @@ class WorkoutSummary(BaseModel):
 class WorkoutDetail(WorkoutSummary):
     notes: str | None
     sets: list[SetRead]
+    template_snapshot: WorkoutTemplateRead | None = None
 
 
 class WorkoutListResponse(BaseModel):

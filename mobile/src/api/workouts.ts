@@ -7,6 +7,7 @@
  */
 
 import { apiRequest } from "./client";
+import type { WorkoutTemplate } from "./programs";
 
 export type LoggedSet = {
   id: number;
@@ -38,6 +39,8 @@ export type WorkoutSummary = {
 export type WorkoutDetail = WorkoutSummary & {
   notes: string | null;
   sets: LoggedSet[];
+  /** Absent on older servers; null for workouts with no captured starting plan. */
+  template_snapshot?: WorkoutTemplate | null;
 };
 
 export type WorkoutList = {

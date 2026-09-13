@@ -5,7 +5,7 @@ Maps to schema_v1.sql -> workouts, sets
 
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -21,6 +21,7 @@ from sqlalchemy import (
     Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -81,6 +82,10 @@ class Workout(Base):
         PgUUID(as_uuid=True),
         ForeignKey("workout_templates.id", ondelete="SET NULL"),
     )
+
+    # Immutable plan at session start; survives template edits and deletion.
+    # NULL means no snapshot was captured, not an empty planned exercise list.
+    template_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
 
     # When the session was finished. NULL = still in progress. Device-only
     # "finished" state used to mean a lost device made every workout look

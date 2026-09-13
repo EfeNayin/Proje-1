@@ -59,18 +59,21 @@ async def _load_owned_program(db: AsyncSession, program_id: UUID, user_id: UUID)
 
 
 async def _load_owned_template(
-    db: AsyncSession, template_id: UUID, user_id: UUID
+    db: AsyncSession, template_id: UUID, user_id: UUID, *, lock: bool = False
 ) -> WorkoutTemplate:
     """A template belonging to one of this user's programs, or 404.
 
     Templates carry no user_id of their own; ownership is proven by joining
     through the program that owns them.
     """
-    template = await db.scalar(
+    statement = (
         select(WorkoutTemplate)
         .join(Program, Program.id == WorkoutTemplate.program_id)
         .where(WorkoutTemplate.id == template_id, Program.user_id == user_id)
     )
+    if lock:
+        statement = statement.with_for_update(of=WorkoutTemplate)
+    template = await db.scalar(statement)
     if template is None:
         raise NotFoundError("Template not found")
     return template
@@ -342,7 +345,8 @@ async def set_template_exercises(
     Simplest correct approach: delete everything and reinsert in the order
     given, rather than diffing against what was there before.
     """
-    template = await _load_owned_template(db, template_id, user_id)
+    # Serialize target replacement with start so a snapshot sees one complete plan.
+    template = await _load_owned_template(db, template_id, user_id, lock=True)
     await _assert_exercises_exist(db, {item.exercise_id for item in payload.exercises})
 
     await db.execute(delete(TemplateExercise).where(TemplateExercise.template_id == template.id))
@@ -374,18 +378,19 @@ async def start_workout_from_template(
 ) -> TemplateStart:
     """Create an empty workout linked to this template.
 
-    No sets are created — only the link. The user logs what actually
+    No sets are created — only the link and a snapshot. The user logs what actually
     happened against the returned targets, the same way they always log a
     set; this endpoint just saves them from re-picking every exercise.
     """
-    template = await _load_owned_template(db, template_id, user_id)
-    targets = await _load_exercises(db, template.id)
+    template = await _load_owned_template(db, template_id, user_id, lock=True)
+    snapshot = await _to_template_detail(db, template)
 
     await close_dangling_workouts(db, user_id)
 
     workout = Workout(
         user_id=user_id,
         template_id=template.id,
+        template_snapshot=snapshot.model_dump(mode="json"),
         title=template.name,
         performed_at=datetime.now(UTC),
     )
@@ -396,5 +401,5 @@ async def start_workout_from_template(
         workout_id=workout.id,
         template_id=template.id,
         performed_at=workout.performed_at,
-        targets=targets,
+        targets=snapshot.exercises,
     )

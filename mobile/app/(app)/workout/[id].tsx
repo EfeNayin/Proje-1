@@ -41,6 +41,7 @@ import {
   setRestSeconds,
 } from "../../../src/workout/restPreference";
 import { buildTemplateExercisesFromWorkout } from "../../../src/workout/templateFromWorkout";
+import { getStartingPlan } from "../../../src/workout/startingPlan";
 import {
   clearTemplateSaveRequest,
   getTemplateSaveRequest,
@@ -707,15 +708,7 @@ export default function ActiveWorkoutScreen() {
   const [busyExercise, setBusyExercise] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [restSeconds, setRestSecondsState] = useState(DEFAULT_REST_SECONDS);
-  const [targetData, setTargetData] = useState<{
-    templateId: string;
-    exercises: TemplateExerciseTarget[];
-  } | null>(null);
-  const templateId = workout?.template_id;
-  const targets = useMemo(
-    () => templateId && targetData?.templateId === templateId ? targetData.exercises : [],
-    [templateId, targetData],
-  );
+  const { targets, description: planDescription } = useMemo(() => getStartingPlan(workout), [workout]);
   const [saveAsTemplateVisible, setSaveAsTemplateVisible] = useState(false);
   // A past session opens read-only by default (see isFinished/readOnly
   // below); this is the escape hatch that lets it become editable again.
@@ -761,30 +754,8 @@ export default function ActiveWorkoutScreen() {
     };
   }, [id]);
 
-  // Fetched separately rather than embedded in the workout response: targets
-  // belong to the template, not the session, and a resumed workout re-fetches
-  // them fresh instead of depending on whatever POST /templates/{id}/start
-  // returned when the session began.
-  useEffect(() => {
-    if (!templateId) return;
-    let cancelled = false;
-    programsApi
-      .getTemplate(templateId)
-      .then((data) => {
-        if (!cancelled) setTargetData({ templateId, exercises: data.exercises });
-      })
-      .catch(() => {
-        // No goals shown is a smaller problem than blocking logging over it.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [templateId]);
-
-  // Template exercises come first (in template order) so a session started
-  // from a plan shows the whole plan immediately, not just what's logged so
-  // far — this is what makes an empty, just-started session show anything
-  // at all instead of a blank screen.
+  // Include saved plan exercises even before their first set is logged.
+  // Recorded exercises keep logging order; remaining targets keep plan order.
   const blocks = useMemo(() => {
     if (!workout) return [];
     const targetExtras = targets.map((t) => ({ id: t.exercise_id, name: t.exercise_name }));
@@ -953,6 +924,7 @@ export default function ActiveWorkoutScreen() {
           )}
 
           {readOnly ? <Text style={styles.sessionDate}>{formatSessionDate(workout.performed_at)}</Text> : null}
+          {planDescription ? <Text style={styles.sessionDate}>{planDescription}</Text> : null}
 
           <View style={styles.summary}>
             <View>
