@@ -81,6 +81,23 @@ async def refresh(db: AsyncSession, raw_token: str) -> TokenPair:
     token that shows up again is a strong signal that it was stolen and
     replayed, so in that case every active token for the user is revoked and
     they have to sign in again everywhere.
+
+    That theft detection only works if rotation is atomic across concurrent
+    callers. `with_for_update()` below takes a row lock on this specific
+    token (token_hash is unique, so it never touches any other token or
+    user's rows) before its `revoked_at` is read. Without it, two requests
+    presenting the *same still-valid* token at the same time — a client
+    retry after a dropped response, or a stolen token raced against the
+    legitimate device's own refresh — would both read `revoked_at IS NULL`
+    before either commits, and both would go on to rotate it successfully:
+    two live token pairs minted from one input, and neither request ever
+    sees the "already used" branch below that is supposed to catch exactly
+    this. The mobile client's own single-flight guards against firing two
+    refreshes from itself, but has no way to know about a second device or
+    a retried request in flight elsewhere — that guarantee has to live here.
+    The lock makes the second request wait for the first's whole rotation
+    (revoke + issue + commit) to finish, so its own read always sees the
+    up-to-date `revoked_at` and takes the replay-detection branch instead.
     """
     try:
         claims = decode_token(raw_token)
@@ -98,7 +115,9 @@ async def refresh(db: AsyncSession, raw_token: str) -> TokenPair:
         raise UnauthorizedError("Invalid or expired refresh token") from None
 
     stored = await db.scalar(
-        select(RefreshToken).where(RefreshToken.token_hash == hash_token(raw_token))
+        select(RefreshToken)
+        .where(RefreshToken.token_hash == hash_token(raw_token))
+        .with_for_update()
     )
     if stored is None:
         raise UnauthorizedError("Invalid or expired refresh token")

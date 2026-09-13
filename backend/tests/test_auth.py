@@ -1,9 +1,14 @@
 """Tests for /auth/register, /auth/login and /auth/refresh."""
 
+import asyncio
+from uuid import UUID
+
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domains.auth.schemas import TokenPair
 from app.models import RefreshToken, User
 
 
@@ -288,3 +293,69 @@ class TestRefresh:
         assert stored is not None
         assert stored.token_hash != tokens["refresh_token"]
         assert len(stored.token_hash) == 64  # sha256 hex
+
+
+class TestConcurrentRefresh:
+    """Regression tests for the race fixed in Adım 19 (PROJE_1_CODEX_INCELEME.md):
+    `refresh()` now takes a row lock (`SELECT ... FOR UPDATE`) on the presented
+    refresh token before checking `revoked_at`.
+
+    Same shape as the Adım 18 workout race, and the same testing lesson
+    applies: a bare `asyncio.gather` of two requests against a fast local
+    database does not reliably interleave two SQL statements just because
+    the two coroutines are concurrent — it was checked by hand and found to
+    pass whether or not the lock existed, so it proves nothing on its own.
+    `monkeypatch` injects a real `await asyncio.sleep()` between reading the
+    token and committing the rotation, widening the race window to
+    something the scheduler cannot dodge; both directions (fails without
+    the fix, passes with it) were checked by hand before this was kept.
+    """
+
+    async def test_replaying_the_same_token_concurrently_still_gets_caught(
+        self,
+        client: AsyncClient,
+        db: AsyncSession,
+        register_payload: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Before the fix: two requests presenting the same still-valid token
+        at the same moment (a dropped-response retry, or a stolen token
+        raced against the legitimate device) would both read `revoked_at IS
+        NULL` before either commits, and both would rotate successfully —
+        two live token pairs minted from one input, and the replay check
+        below never triggers for either. With the fix, the second request's
+        lock acquisition waits for the first's entire transaction, so it
+        always sees the already-used token and takes the theft-response
+        branch — which revokes every token for the account, including the
+        one the "winning" request just received a moment before.
+        """
+        import app.domains.auth.service as auth_service
+
+        original_issue_token_pair = auth_service._issue_token_pair
+
+        async def slow_issue_token_pair(db: AsyncSession, user_id: UUID) -> TokenPair:
+            pair = await original_issue_token_pair(db, user_id)
+            await asyncio.sleep(0.3)
+            return pair
+
+        monkeypatch.setattr(auth_service, "_issue_token_pair", slow_issue_token_pair)
+
+        tokens = (await client.post("/auth/register", json=register_payload)).json()["tokens"]
+
+        first, second = await asyncio.gather(
+            client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]}),
+            client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]}),
+        )
+
+        assert sorted([first.status_code, second.status_code]) == [200, 401]
+
+        user = await db.scalar(select(User).where(User.email == register_payload["email"]))
+        assert user is not None
+        active_count = await db.scalar(
+            select(func.count())
+            .select_from(RefreshToken)
+            .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
+        )
+        # Every token for the account — including the pair the "winning"
+        # request just received — was revoked once the replay was detected.
+        assert active_count == 0
