@@ -4,7 +4,7 @@ Maps to schema_v1.sql -> programs, workout_templates, template_exercises
 """
 
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,6 +27,20 @@ from app.models.base import Base, created_at, updated_at
 if TYPE_CHECKING:
     from app.models.exercise import Exercise
     from app.models.workout import Workout
+
+
+class TemplateSaveRequest(Base):
+    """Committed receipts survive template deletion to prevent accidental recreation."""
+
+    __tablename__ = "template_save_requests"
+
+    user_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    request_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    request_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    response: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[created_at]
 
 
 class Program(Base):

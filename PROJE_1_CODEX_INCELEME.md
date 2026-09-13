@@ -31,6 +31,20 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 
 Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı.
 
+### Adım 12: Şablon kaydını güvenle tekrar deneme — 13 Eylül 2026
+
+- Antrenmandan şablon kaydı artık `PUT /programs/{program_id}/templates/requests/{request_id}` yolunu kullanıyor. Mobilde işlem kimliği antrenmanın UUID'si; kullanıcı başına bir antrenmandan tek şablon kaydetme denemesi temsil ediliyor. Eski atomik POST yolu diğer istemciler için korunuyor, ancak tekrar koruması yeni PUT yoluna ait. Güncel olmayan sunucuda sessiz geri dönüş yapılmıyor.
+- Sunucuda kullanıcı ve işlem kimliği birlikte benzersiz. İşlem makbuzu, şablon ve egzersiz hedefleri aynı transaction içinde kaydediliyor. Aynı anda gelen tekrarlar veritabanı benzersizlik kuralında bekliyor; ilk kayıt tamamlanınca aynı şablon kimliği ve ilk yanıt dönüyor. İlk işlem geri alınırsa tekrar başarılı biçimde kaydedebiliyor.
+- İlk isteğin programı ve normalleştirilmiş içeriği özetlenerek saklanıyor. Aynı kimliğin farklı program, ad veya hedeflerle kullanımı 409; başka kullanıcıya ait program 404. Şablon sonradan düzenlenmişse tekrar ilk yanıtı döndürüyor ve düzenlemeyi değiştirmiyor. Silinmiş şablon tekrar isteğiyle yeniden oluşturulmuyor. Makbuzlar kullanıcı silinince temizleniyor.
+- Telefon, gönderimden önce program ve tam istek içeriğini SecureStore'a yazıyor. Ağ hatası, pencereyi kapatma veya uygulamayı yeniden başlatma sonrasında aynı içerik geri yükleniyor. Hedef programdaki şablon sayısının değişmesi bile tekrarın gün sırasını değiştirmiyor. Önceki deneme varken ad/program kilitleniyor ve “Continue save” ile devam ediliyor. Yerel depolama hatasında sunucuya yazma isteği gönderilmiyor.
+- Sunucunun 422 doğrulama reddinde yerel deneme kaldırılarak form düzeltmeye açılıyor. Sonucu belirsiz hatalarda deneme korunuyor. Şablon başarıyla kaydedildikten sonra da antrenmanı bitirme başarısız olabileceği için yerel kayıt tutuluyor; antrenmanın bittiği sunucudan doğrulanınca temizleniyor. Aynı ekranda çift dokunma ve kayıt sürerken pencereyi kapatma engelleniyor.
+
+Doğrulama: 301 backend testi ve 59 mobil testi geçti. Backend Ruff ve mypy (52 kaynak dosyası), mobil TypeScript ve tam ESLint temiz. Yeni testler kayıp yanıt sonrası tekrar, beş eşzamanlı istek, değiştirilmiş içerik, kullanıcı ayrımı, silinmiş şablon, transaction geri alma, geçersiz egzersiz sonrası yeniden deneme, uygulama yeniden açılışı ve cihaz depolama hatasını kapsıyor. Mevcut bağımlılık deprecation uyarıları sürüyor.
+
+Migration: `d87b19c4a620`, yalnızca `template_save_requests` tablosunu ekler; mevcut şablon ve antrenmanları değiştirmez. Test veritabanında downgrade/upgrade döngüsü doğrulandı. Backend başlatılmadan önce `alembic upgrade head` gerekir. Telefon üzerinde uçtan uca görsel/ağ testi henüz yapılmadı.
+
+Sınır: Şablon kaydı ile antrenmanı bitirme hâlâ iki ayrı işlem. Bu adım genel bir çevrimdışı kuyruk oluşturmaz; kayıt için sunucu bağlantısı gerekir. Önceki denemenin hedefi sonradan silinirse kullanıcı hata alır ve şablon tekrar oluşturulmaz. Başka cihazda aynı antrenman için farklı içerikle kayıt denemesi 409 döner; ilk kayıt üzerine sessiz yazılmaz.
+
 ### Adım 11: Antrenmandan şablon kaydının bütünlüğü — 11 Eylül 2026
 
 - “Antrenmanı şablon olarak kaydet” işlemi artık şablon adı ve tüm egzersiz hedeflerini tek istekte gönderiyor: `POST /programs/{program_id}/templates/with-exercises`.

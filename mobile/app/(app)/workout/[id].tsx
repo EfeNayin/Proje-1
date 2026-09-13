@@ -24,6 +24,7 @@ import {
 } from "react-native";
 
 import * as programsApi from "../../../src/api/programs";
+import { ApiError } from "../../../src/api/client";
 import type {
   ProgramDetail,
   TemplateExerciseTarget,
@@ -40,6 +41,13 @@ import {
   setRestSeconds,
 } from "../../../src/workout/restPreference";
 import { buildTemplateExercisesFromWorkout } from "../../../src/workout/templateFromWorkout";
+import {
+  clearTemplateSaveRequest,
+  getTemplateSaveRequest,
+  prepareTemplateSaveRequest,
+  sendTemplateSaveRequest,
+} from "../../../src/workout/templateSaveRequest";
+import type { TemplateSaveRequest } from "../../../src/workout/templateSaveRequest";
 import { usePickedExercise } from "../../../src/workout/usePickedExercise";
 
 type ExerciseBlock = {
@@ -486,16 +494,32 @@ function SaveAsTemplateModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameInputRef = useRef<TextInput>(null);
+  const saveInFlight = useRef(false);
+  const [pendingSave, setPendingSave] = useState<TemplateSaveRequest | null>(null);
+  const [saveRequestLoaded, setSaveRequestLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    programsApi
-      .listPrograms()
-      .then((summaries) => Promise.all(summaries.map((p) => programsApi.getProgram(p.id))))
-      .then((details) => {
+    getTemplateSaveRequest(workout.id)
+      .then((pending) => {
+        if (!cancelled) {
+          setPendingSave(pending);
+          setSaveRequestLoaded(true);
+          if (pending) {
+            setName(pending.input.name);
+            setSelectedProgramId(pending.programId);
+          }
+        }
+        return programsApi.listPrograms().then((summaries) => ({ pending, summaries }));
+      })
+      .then(async ({ pending, summaries }) => ({
+        pending, details: await Promise.all(summaries.map((p) => programsApi.getProgram(p.id))),
+      }))
+      .then(({ pending, details }) => {
         if (cancelled) return;
         setPrograms(details);
-        setSelectedProgramId(details.find((p) => p.is_active)?.id ?? details[0]?.id ?? null);
+        setSelectedProgramId(pending?.programId ??
+          details.find((p) => p.is_active)?.id ?? details[0]?.id ?? null);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load programs");
@@ -506,31 +530,45 @@ function SaveAsTemplateModal({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [workout.id]);
 
   const handleSave = async () => {
+    if (saveInFlight.current || !saveRequestLoaded) return;
     const trimmed = name.trim();
     if (!trimmed) {
       setError("Name the template first.");
       return;
     }
     const program = programs.find((p) => p.id === selectedProgramId);
-    if (!program) return;
+    if (!program && !pendingSave) return;
 
+    saveInFlight.current = true;
     setSaving(true);
     setError(null);
     try {
-      await programsApi.createTemplateWithExercises(program.id, {
-        name: trimmed,
-        day_order: program.templates.length,
-        exercises: buildTemplateExercisesFromWorkout(workout),
+      const request = await prepareTemplateSaveRequest(workout.id, pendingSave ?? {
+        programId: program!.id,
+        input: {
+          name: trimmed,
+          day_order: program!.templates.length,
+          exercises: buildTemplateExercisesFromWorkout(workout),
+        },
       });
+      setPendingSave(request);
+      await sendTemplateSaveRequest(workout.id, request);
 
       onSaved();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 422) setPendingSave(null);
       setError(err instanceof Error ? err.message : "Could not save the template");
       setSaving(false);
+    } finally {
+      saveInFlight.current = false;
     }
+  };
+
+  const close = () => {
+    if (!saveInFlight.current) onClose();
   };
 
   return (
@@ -538,7 +576,7 @@ function SaveAsTemplateModal({
       visible
       transparent
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={close}
       // autoFocus on the TextInput below is not reliable here: on Android in
       // particular, a TextInput can request focus before this Modal's native
       // window actually exists, so the keyboard opens but keystrokes still
@@ -556,7 +594,7 @@ function SaveAsTemplateModal({
         style={styles.sheetAvoider}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+        <Pressable style={styles.sheetBackdrop} onPress={close}>
           {/* A Pressable with its own onPress, even a no-op, is what keeps a
               tap inside the sheet from also being read as a tap on the
               backdrop behind it. */}
@@ -573,6 +611,11 @@ function SaveAsTemplateModal({
               keyboardShouldPersistTaps="handled"
             >
               <Text style={styles.sheetTitle}>Save as template</Text>
+              {pendingSave ? (
+                <Text style={styles.sheetLabel}>
+                  A previous save is ready to resume. Continue with the original name and program.
+                </Text>
+              ) : null}
 
               <TextInput
                 ref={nameInputRef}
@@ -580,6 +623,7 @@ function SaveAsTemplateModal({
                 value={name}
                 onChangeText={setName}
                 placeholder="Template name"
+                editable={!saving && !pendingSave && saveRequestLoaded}
                 placeholderTextColor={colors.textMuted}
               />
 
@@ -587,6 +631,8 @@ function SaveAsTemplateModal({
 
               {loadingPrograms ? (
                 <ActivityIndicator color={colors.accent} style={styles.sheetLoading} />
+              ) : programs.length === 0 && pendingSave ? (
+                <Text style={styles.sheetLabel}>Continue to check your previous save.</Text>
               ) : programs.length === 0 ? (
                 <View>
                   <Text style={styles.sheetEmpty}>You don&apos;t have a program yet.</Text>
@@ -608,6 +654,7 @@ function SaveAsTemplateModal({
                       key={program.id}
                       style={styles.sheetRow}
                       onPress={() => setSelectedProgramId(program.id)}
+                      disabled={saving || !!pendingSave || !saveRequestLoaded}
                     >
                       <Text style={styles.sheetRowText}>{program.name}</Text>
                       {selectedProgramId === program.id ? (
@@ -625,7 +672,7 @@ function SaveAsTemplateModal({
             <View style={styles.modalActions}>
               <Pressable
                 style={[styles.modalButton, styles.modalButtonSecondary]}
-                onPress={onClose}
+                onPress={close}
                 disabled={saving}
               >
                 <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
@@ -633,12 +680,13 @@ function SaveAsTemplateModal({
               <Pressable
                 style={[styles.modalButton, saving && styles.modalButtonDisabled]}
                 onPress={() => void handleSave()}
-                disabled={saving || loadingPrograms || programs.length === 0}
+                disabled={saving || !saveRequestLoaded ||
+                  (!pendingSave && (loadingPrograms || programs.length === 0))}
               >
                 {saving ? (
                   <ActivityIndicator color={colors.accentText} />
                 ) : (
-                  <Text style={styles.modalButtonText}>Save</Text>
+                  <Text style={styles.modalButtonText}>{pendingSave ? "Continue save" : "Save"}</Text>
                 )}
               </Pressable>
             </View>
@@ -814,6 +862,8 @@ export default function ActiveWorkoutScreen() {
       return;
     }
     await clearActiveWorkout();
+    // Cleanup failure must not turn a confirmed finish into a failed operation.
+    await clearTemplateSaveRequest(id).catch(() => undefined);
     router.dismissAll();
     router.replace("/");
   }, [id, router]);

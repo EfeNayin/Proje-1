@@ -15,14 +15,17 @@ Two invariants this module is responsible for:
    with itself under that index the instant both rows read is_active=true.
 """
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import NotFoundError, ValidationAppError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationAppError
 from app.domains.programs.schemas import (
     ProgramCreate,
     ProgramDetail,
@@ -38,6 +41,7 @@ from app.domains.programs.schemas import (
 )
 from app.domains.workouts.service import close_dangling_workouts
 from app.models import Exercise, Program, TemplateExercise, Workout, WorkoutTemplate
+from app.models.program import TemplateSaveRequest
 
 
 async def _load_owned_program(db: AsyncSession, program_id: UUID, user_id: UUID) -> Program:
@@ -259,8 +263,30 @@ async def create_template_with_exercises(
     user_id: UUID,
     program_id: UUID,
     payload: WorkoutTemplateWithExercisesCreate,
+    request_id: UUID | None = None,
 ) -> WorkoutTemplateRead:
     program = await _load_owned_program(db, program_id, user_id)
+    if request_id is not None:
+        request_hash = hashlib.sha256(json.dumps(
+            {"program_id": str(program_id), "payload": payload.model_dump(mode="json")},
+            sort_keys=True, separators=(",", ":"),
+        ).encode()).hexdigest()
+        # The unique key makes concurrent retries wait for the first transaction.
+        # A rollback releases the key so the waiting request can perform the save.
+        inserted = await db.scalar(
+            insert(TemplateSaveRequest).values(
+                user_id=user_id, request_id=request_id, request_hash=request_hash
+            ).on_conflict_do_nothing().returning(TemplateSaveRequest.request_id)
+        )
+        if inserted is None:
+            receipt = await db.get(TemplateSaveRequest, (user_id, request_id))
+            if receipt is None or receipt.request_hash != request_hash:
+                raise ConflictError("This save request was already used with different details.")
+            if receipt.response is None:
+                raise ConflictError("This save request has no completed result.")
+            detail = WorkoutTemplateRead.model_validate(receipt.response)
+            await _load_owned_template(db, detail.id, user_id)
+            return detail
     await _assert_exercises_exist(db, {item.exercise_id for item in payload.exercises})
     template = WorkoutTemplate(
         program_id=program.id, name=payload.name, day_order=payload.day_order, notes=payload.notes
@@ -274,6 +300,11 @@ async def create_template_with_exercises(
     await db.flush()
     # Prepare the complete response before committing; failures leave no partial template.
     detail = await _to_template_detail(db, template)
+    if request_id is not None:
+        await db.execute(update(TemplateSaveRequest).where(
+            TemplateSaveRequest.user_id == user_id,
+            TemplateSaveRequest.request_id == request_id,
+        ).values(response=detail.model_dump(mode="json")))
     await db.commit()
     return detail
 

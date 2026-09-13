@@ -120,6 +120,24 @@ async def create_template_with_exercises(
     return await service.create_template_with_exercises(db, current_user.id, program_id, payload)
 
 
+@router.put(
+    "/programs/{program_id}/templates/requests/{request_id}",
+    response_model=WorkoutTemplateRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Save a template once and replay the result on retry",
+)
+async def save_template_once(
+    program_id: UUID,
+    request_id: UUID,
+    payload: WorkoutTemplateWithExercisesCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> WorkoutTemplateRead:
+    return await service.create_template_with_exercises(
+        db, current_user.id, program_id, payload, request_id=request_id
+    )
+
+
 @router.get(
     "/templates/{template_id}",
     response_model=WorkoutTemplateRead,

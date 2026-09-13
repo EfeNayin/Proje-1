@@ -30,10 +30,10 @@ test('saving a populated template sends exactly one complete request', async () 
   const input = { name: 'Push', day_order: 2, exercises: [
     { exercise_id: 'bench', target_sets: 2, target_reps_min: 6, target_reps_max: 8 },
   ] };
-  assert.equal(await api.createTemplateWithExercises('program', input), result);
+  assert.equal(await api.createTemplateWithExercises('program', input, 'request'), result);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], '/programs/program/templates/with-exercises');
-  assert.equal(calls[0][1].method, 'POST');
+  assert.equal(calls[0][0], '/programs/program/templates/requests/request');
+  assert.equal(calls[0][1].method, 'PUT');
   assert.equal(calls[0][1].body, input);
 });
 
@@ -45,8 +45,83 @@ test('failed atomic request propagates without falling back to partial writes', 
   } });
   await assert.rejects(api.createTemplateWithExercises('program', {
     name: 'Push', exercises: [],
-  }), error => error === failure);
+  }, 'request'), error => error === failure);
   assert.equal(calls, 1);
+});
+
+class ApiError extends Error {
+  constructor(status) { super(`Failure ${status}`); this.status = status; }
+}
+
+function retryHarness(storage, send) {
+  return load('src/workout/templateSaveRequest.ts', {
+    'expo-secure-store': storage,
+    '../api/client': { ApiError },
+    '../api/programs': { createTemplateWithExercises: send },
+  });
+}
+
+function memoryStorage() {
+  const values = new Map();
+  return {
+    getItemAsync: async key => values.get(key) ?? null,
+    setItemAsync: async (key, value) => { values.set(key, value); },
+    deleteItemAsync: async key => { values.delete(key); },
+  };
+}
+
+const proposed = () => ({ programId: 'program', input: {
+  name: 'Push', day_order: 1, exercises: [{ exercise_id: 'bench', target_sets: 2 }],
+} });
+
+test('lost response and app restart reuse the original request including order and targets', async () => {
+  const storage = memoryStorage();
+  const calls = [];
+  const send = async (...args) => {
+    calls.push(args);
+    if (calls.length === 1) throw new ApiError(0);
+    return { id: 'one-template' };
+  };
+  let retry = retryHarness(storage, send);
+  const first = await retry.prepareTemplateSaveRequest('workout', proposed());
+  await assert.rejects(retry.sendTemplateSaveRequest('workout', first));
+  retry = retryHarness(storage, send); // Fresh module, like reopening the application.
+  const recovered = await retry.prepareTemplateSaveRequest('workout', {
+    programId: 'different', input: { name: 'Changed', day_order: 2, exercises: [] },
+  });
+  await retry.sendTemplateSaveRequest('workout', recovered);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0])), JSON.parse(JSON.stringify(calls[1])));
+  assert.equal(calls[1][2], 'workout');
+  assert.deepEqual(JSON.parse(JSON.stringify(await retry.getTemplateSaveRequest('workout'))), proposed());
+});
+
+test('storage failure prevents an untracked server write', async () => {
+  let calls = 0;
+  const storage = memoryStorage();
+  storage.setItemAsync = async () => { throw new Error('Storage unavailable'); };
+  const retry = retryHarness(storage, async () => { calls++; });
+  await assert.rejects(async () => {
+    const request = await retry.prepareTemplateSaveRequest('workout', proposed());
+    await retry.sendTemplateSaveRequest('workout', request);
+  }, /Storage unavailable/);
+  assert.equal(calls, 0);
+});
+
+test('only validation rejection releases the stored form for correction', async () => {
+  for (const status of [0, 401, 404, 409, 422, 500]) {
+    const retry = retryHarness(memoryStorage(), async () => { throw new ApiError(status); });
+    const request = await retry.prepareTemplateSaveRequest('workout', proposed());
+    await assert.rejects(retry.sendTemplateSaveRequest('workout', request));
+    assert.equal(await retry.getTemplateSaveRequest('workout') === null, status === 422);
+  }
+});
+
+test('different workouts keep independent pending saves', async () => {
+  const retry = retryHarness(memoryStorage(), async () => ({}));
+  await retry.prepareTemplateSaveRequest('one', proposed());
+  assert.equal(await retry.getTemplateSaveRequest('two'), null);
+  await retry.clearTemplateSaveRequest('one');
+  assert.equal(await retry.getTemplateSaveRequest('one'), null);
 });
 
 test('targets count only positive working sets and preserve their first occurrence', () => {
