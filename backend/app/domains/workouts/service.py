@@ -37,18 +37,42 @@ from app.models import Exercise, Set, Workout
 
 
 async def _load_owned_workout(
-    db: AsyncSession, workout_id: UUID, user_id: UUID, *, with_sets: bool = False
+    db: AsyncSession,
+    workout_id: UUID,
+    user_id: UUID,
+    *,
+    with_sets: bool = False,
+    for_update: bool = False,
 ) -> Workout:
     """Fetch a workout that belongs to this user, or raise 404.
 
     A workout owned by someone else reports 404 rather than 403: telling the
     caller "this exists but is not yours" would leak which ids are real.
+
+    for_update=True takes a row lock (`SELECT ... FOR UPDATE`) on the
+    workout. Every set mutation (add/update/delete, see below) passes this:
+    two concurrent requests against the same workout — two devices, a
+    client retry, a double-tapped "add set" button — would otherwise each
+    read the sets table, compute total_volume_kg/total_sets independently,
+    and commit; the second commit overwrites the first, silently dropping
+    its contribution from the totals even though the set row itself is
+    safely stored (see `_recalculate_totals`). Recomputing from scratch on
+    every mutation guards against incremental drift, but on its own does
+    nothing against this: it is still a plain read-then-write with no
+    ordering guarantee between two transactions. The lock forces the second
+    request to wait until the first has fully committed (insert + recompute)
+    before it starts its own read, so its recompute always sees the first
+    request's change. It also serialises `_next_set_number`, which has the
+    same read-then-write shape and would otherwise let two concurrent adds
+    to the same exercise both claim set_number 1.
     """
     stmt = select(Workout).where(Workout.id == workout_id, Workout.user_id == user_id)
     if with_sets:
         # Eager load; a lazy load outside the await context raises
         # MissingGreenlet under async SQLAlchemy.
         stmt = stmt.options(selectinload(Workout.sets).selectinload(Set.exercise))
+    if for_update:
+        stmt = stmt.with_for_update()
 
     workout = await db.scalar(stmt)
     if workout is None:
@@ -319,7 +343,7 @@ async def add_set(
     db: AsyncSession, user_id: UUID, workout_id: UUID, payload: SetCreate
 ) -> WorkoutDetail:
     """Append a set and refresh the workout's totals."""
-    workout = await _load_owned_workout(db, workout_id, user_id)
+    workout = await _load_owned_workout(db, workout_id, user_id, for_update=True)
     await _assert_exercises_exist(db, {payload.exercise_id})
 
     db.add(
@@ -350,7 +374,7 @@ async def update_set(
     Ownership is checked through the workout, so a set id from someone else's
     session cannot be reached even by guessing (ids are sequential integers).
     """
-    workout = await _load_owned_workout(db, workout_id, user_id)
+    workout = await _load_owned_workout(db, workout_id, user_id, for_update=True)
 
     target = await db.scalar(
         select(Set).where(Set.id == set_id, Set.workout_id == workout.id)
@@ -373,7 +397,7 @@ async def delete_set(
     db: AsyncSession, user_id: UUID, workout_id: UUID, set_id: int
 ) -> WorkoutDetail:
     """Remove a set, then close the gap it leaves in the numbering."""
-    workout = await _load_owned_workout(db, workout_id, user_id)
+    workout = await _load_owned_workout(db, workout_id, user_id, for_update=True)
 
     target = await db.scalar(
         select(Set).where(Set.id == set_id, Set.workout_id == workout.id)
