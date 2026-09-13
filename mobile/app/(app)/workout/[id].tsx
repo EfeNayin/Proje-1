@@ -31,7 +31,14 @@ import type {
 } from "../../../src/api/programs";
 import * as workoutsApi from "../../../src/api/workouts";
 import type { LoggedSet, WorkoutDetail } from "../../../src/api/workouts";
+import { useAuth } from "../../../src/auth/AuthContext";
 import { colors, radius, spacing } from "../../../src/theme";
+import {
+  formatWeight,
+  formatWeightValue,
+  parseWeightInput,
+  type WeightUnit,
+} from "../../../src/units/weight";
 import { clearActiveWorkout } from "../../../src/workout/activeWorkout";
 import {
   DEFAULT_REST_SECONDS,
@@ -270,11 +277,13 @@ function TitleField({
  */
 function SetRow({
   set,
+  unit,
   onSave,
   onDelete,
 }: {
   set: LoggedSet;
-  onSave: (setId: number, weight: number, reps: number) => Promise<void>;
+  unit: WeightUnit;
+  onSave: (setId: number, weightKg: number, reps: number) => Promise<void>;
   onDelete: (setId: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -283,21 +292,21 @@ function SetRow({
   const [saving, setSaving] = useState(false);
 
   const startEditing = () => {
-    setWeight(String(Number(set.weight_kg)));
+    setWeight(formatWeightValue(Number(set.weight_kg), unit));
     setReps(String(set.reps));
     setEditing(true);
   };
 
   const save = async () => {
-    const parsedWeight = Number(weight.replace(",", "."));
+    const parsedWeightKg = parseWeightInput(weight, unit);
     const parsedReps = Number(reps);
 
-    if (!Number.isFinite(parsedWeight) || parsedWeight < 0) return;
+    if (parsedWeightKg === null || parsedWeightKg < 0) return;
     if (!Number.isInteger(parsedReps) || parsedReps <= 0) return;
 
     setSaving(true);
     try {
-      await onSave(set.id, parsedWeight, parsedReps);
+      await onSave(set.id, parsedWeightKg, parsedReps);
       setEditing(false);
     } finally {
       setSaving(false);
@@ -319,7 +328,7 @@ function SetRow({
           autoFocus
           selectTextOnFocus
         />
-        <Text style={styles.editUnit}>kg ×</Text>
+        <Text style={styles.editUnit}>{unit} ×</Text>
         <TextInput
           style={styles.editInput}
           value={reps}
@@ -373,32 +382,34 @@ function SetRow({
         {set.is_warmup ? "W" : set.set_number}
       </Text>
       <Text style={styles.setDetail}>
-        {Number(set.weight_kg)} kg × {set.reps}
+        {formatWeight(Number(set.weight_kg), unit)} × {set.reps}
       </Text>
     </Pressable>
   );
 }
 
 /** A logged set in a finished, read-only session — no tap-to-edit, no delete. */
-function ReadOnlySetRow({ set }: { set: LoggedSet }) {
+function ReadOnlySetRow({ set, unit }: { set: LoggedSet; unit: WeightUnit }) {
   return (
     <View style={styles.setRow}>
       <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
         {set.is_warmup ? "W" : set.set_number}
       </Text>
       <Text style={styles.setDetail}>
-        {Number(set.weight_kg)} kg × {set.reps}
+        {formatWeight(Number(set.weight_kg), unit)} × {set.reps}
       </Text>
     </View>
   );
 }
 
 function SetForm({
+  unit,
   onSubmit,
   busy,
   lastSet,
 }: {
-  onSubmit: (weight: number, reps: number, isWarmup: boolean) => void;
+  unit: WeightUnit;
+  onSubmit: (weightKg: number, reps: number, isWarmup: boolean) => void;
   busy: boolean;
   lastSet: LoggedSet | undefined;
 }) {
@@ -408,17 +419,17 @@ function SetForm({
   const [reps, setReps] = useState("");
   const [isWarmup, setIsWarmup] = useState(false);
 
-  const weightHint = lastSet ? String(Number(lastSet.weight_kg)) : "0";
+  const weightHint = lastSet ? formatWeightValue(Number(lastSet.weight_kg), unit) : "0";
   const repsHint = lastSet ? String(lastSet.reps) : "8";
 
   const submit = () => {
-    const parsedWeight = Number(weight === "" ? weightHint : weight.replace(",", "."));
+    const parsedWeightKg = parseWeightInput(weight === "" ? weightHint : weight, unit);
     const parsedReps = Number(reps === "" ? repsHint : reps);
 
-    if (!Number.isFinite(parsedWeight) || parsedWeight < 0) return;
+    if (parsedWeightKg === null || parsedWeightKg < 0) return;
     if (!Number.isInteger(parsedReps) || parsedReps <= 0) return;
 
-    onSubmit(parsedWeight, parsedReps, isWarmup);
+    onSubmit(parsedWeightKg, parsedReps, isWarmup);
     setWeight("");
     setReps("");
   };
@@ -426,7 +437,7 @@ function SetForm({
   return (
     <View style={styles.form}>
       <View style={styles.field}>
-        <Text style={styles.fieldLabel}>kg</Text>
+        <Text style={styles.fieldLabel}>{unit}</Text>
         <TextInput
           style={styles.fieldInput}
           value={weight}
@@ -701,6 +712,8 @@ function SaveAsTemplateModal({
 export default function ActiveWorkoutScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
+  const unit: WeightUnit = user?.weight_unit ?? "kg";
 
   const [workout, setWorkout] = useState<WorkoutDetail | null>(null);
   const [pending, setPending] = useState<{ id: string; name: string }[]>([]);
@@ -961,11 +974,12 @@ export default function ActiveWorkoutScreen() {
                 ) : null}
 
                 {readOnly
-                  ? block.sets.map((set) => <ReadOnlySetRow key={set.id} set={set} />)
+                  ? block.sets.map((set) => <ReadOnlySetRow key={set.id} set={set} unit={unit} />)
                   : block.sets.map((set) => (
                       <SetRow
                         key={set.id}
                         set={set}
+                        unit={unit}
                         onSave={handleEditSet}
                         onDelete={(setId) => void handleDeleteSet(setId)}
                       />
@@ -973,10 +987,11 @@ export default function ActiveWorkoutScreen() {
 
                 {readOnly ? null : (
                   <SetForm
+                    unit={unit}
                     busy={busyExercise === block.exerciseId}
                     lastSet={block.sets[block.sets.length - 1]}
-                    onSubmit={(weight, reps, isWarmup) =>
-                      void handleAddSet(block.exerciseId, weight, reps, isWarmup)
+                    onSubmit={(weightKg, reps, isWarmup) =>
+                      void handleAddSet(block.exerciseId, weightKg, reps, isWarmup)
                     }
                   />
                 )}

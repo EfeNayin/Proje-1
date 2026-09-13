@@ -3,7 +3,10 @@
  *
  * Three independent settings, each backed by whatever already stored it
  * before this screen existed — no new storage introduced here:
- * - Weight unit: users.weight_unit on the server, via PATCH /users/me.
+ * - Weight unit: users.weight_unit on the server, via PATCH /users/me. Every
+ *   screen that displays or accepts a weight (set logging, body weight,
+ *   goal weight) converts through src/units/weight.ts — stored values stay
+ *   kg, only the display/input layer changes with this preference.
  * - Default rest: src/workout/restPreference.ts, on-device, same store the
  *   workout screen's rest picker already reads and writes.
  * - Readiness check-in: src/workout/readinessPreference.ts, on-device, same
@@ -90,7 +93,7 @@ export default function PreferencesScreen() {
       <View style={[styles.card, styles.row]}>
         <View style={styles.rowText}>
           <Text style={styles.rowLabel}>Units</Text>
-          <Text style={styles.rowHint}>Display only — existing values are not converted</Text>
+          <Text style={styles.rowHint}>Converts how weights are shown and entered app-wide</Text>
         </View>
         <View style={styles.chipGroup}>
           {WEIGHT_UNITS.map((option) => (

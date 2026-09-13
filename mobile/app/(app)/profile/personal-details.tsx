@@ -29,6 +29,15 @@ import * as bodyApi from "../../../src/api/body";
 import type { BodySummary } from "../../../src/api/body";
 import { useAuth } from "../../../src/auth/AuthContext";
 import { colors, radius, spacing } from "../../../src/theme";
+import {
+  bodyWeightRangeLabel,
+  BODY_WEIGHT_MAX_KG,
+  BODY_WEIGHT_MIN_KG,
+  formatWeight,
+  formatWeightValue,
+  parseWeightInput,
+  type WeightUnit,
+} from "../../../src/units/weight";
 
 type Field = "weight" | "height" | "dob" | "gender" | "goal" | null;
 
@@ -166,11 +175,19 @@ export default function PersonalDetailsScreen() {
 
   if (!user) return null;
 
+  const unit: WeightUnit = user.weight_unit;
+
   const startEditing = (field: Exclude<Field, null>) => {
     setError(null);
-    if (field === "weight") setWeightDraft(summary?.current_weight_kg ?? "");
+    if (field === "weight") {
+      setWeightDraft(
+        summary?.current_weight_kg ? formatWeightValue(Number(summary.current_weight_kg), unit) : "",
+      );
+    }
     if (field === "height") setHeightDraft(user.height_cm ?? "");
-    if (field === "goal") setGoalDraft(user.goal_weight_kg ?? "");
+    if (field === "goal") {
+      setGoalDraft(user.goal_weight_kg ? formatWeightValue(Number(user.goal_weight_kg), unit) : "");
+    }
     if (field === "dob") {
       const parts = splitDate(user.date_of_birth);
       setDobDay(parts.day);
@@ -200,15 +217,15 @@ export default function PersonalDetailsScreen() {
   };
 
   const saveWeight = async () => {
-    const parsed = Number(weightDraft.replace(",", "."));
-    if (!Number.isFinite(parsed) || parsed < 20 || parsed > 400) {
-      setError("Enter a weight between 20 and 400 kg.");
+    const parsedKg = parseWeightInput(weightDraft, unit);
+    if (parsedKg === null || parsedKg < BODY_WEIGHT_MIN_KG || parsedKg > BODY_WEIGHT_MAX_KG) {
+      setError(`Enter a weight between ${bodyWeightRangeLabel(unit)}.`);
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      await bodyApi.upsertMeasurement({ weight_kg: parsed });
+      await bodyApi.upsertMeasurement({ weight_kg: parsedKg });
       loadSummary();
       setEditing(null);
     } catch (err) {
@@ -228,12 +245,12 @@ export default function PersonalDetailsScreen() {
   };
 
   const saveGoalWeight = async () => {
-    const parsed = Number(goalDraft.replace(",", "."));
-    if (!Number.isFinite(parsed) || parsed < 20 || parsed > 400) {
-      setError("Enter a weight between 20 and 400 kg.");
+    const parsedKg = parseWeightInput(goalDraft, unit);
+    if (parsedKg === null || parsedKg < BODY_WEIGHT_MIN_KG || parsedKg > BODY_WEIGHT_MAX_KG) {
+      setError(`Enter a weight between ${bodyWeightRangeLabel(unit)}.`);
       return;
     }
-    await savePatch({ goal_weight_kg: parsed });
+    await savePatch({ goal_weight_kg: parsedKg });
   };
 
   const saveDob = async () => {
@@ -260,11 +277,11 @@ export default function PersonalDetailsScreen() {
                 autoFocus
                 selectTextOnFocus
               />
-              <Text style={styles.unit}>kg</Text>
+              <Text style={styles.unit}>{unit}</Text>
             </View>
           ) : (
             <Text style={styles.goalValue}>
-              {user.goal_weight_kg ? `${user.goal_weight_kg} kg` : "—"}
+              {user.goal_weight_kg ? formatWeight(Number(user.goal_weight_kg), unit) : "—"}
             </Text>
           )}
         </View>
@@ -286,7 +303,7 @@ export default function PersonalDetailsScreen() {
             loadingSummary
               ? "…"
               : summary?.current_weight_kg
-                ? `${summary.current_weight_kg} kg`
+                ? formatWeight(Number(summary.current_weight_kg), unit)
                 : "—"
           }
           editing={editing === "weight"}
@@ -301,7 +318,7 @@ export default function PersonalDetailsScreen() {
               autoFocus
               selectTextOnFocus
             />
-            <Text style={styles.unit}>kg</Text>
+            <Text style={styles.unit}>{unit}</Text>
             <EditActions saving={saving} onCancel={cancelEditing} onSave={() => void saveWeight()} />
           </View>
         </Row>

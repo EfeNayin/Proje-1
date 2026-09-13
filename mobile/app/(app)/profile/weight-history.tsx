@@ -23,7 +23,15 @@ import {
 
 import * as bodyApi from "../../../src/api/body";
 import type { BodyMeasurement, BodySummary } from "../../../src/api/body";
+import { useAuth } from "../../../src/auth/AuthContext";
 import { colors, radius, spacing } from "../../../src/theme";
+import {
+  BODY_WEIGHT_MAX_KG,
+  BODY_WEIGHT_MIN_KG,
+  formatWeight,
+  parseWeightInput,
+  type WeightUnit,
+} from "../../../src/units/weight";
 
 function formatShortDate(iso: string): string {
   return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, {
@@ -41,29 +49,31 @@ function formatMonthYear(iso: string): string {
 
 /** null when there is nothing meaningful to show yet: no history, or a
  * single measurement with nothing to compare against. */
-function trendText(summary: BodySummary): string | null {
+function trendText(summary: BodySummary, unit: WeightUnit): string | null {
   if (summary.change_kg === null || summary.first_measured_on === null) return null;
-  const change = Number(summary.change_kg);
-  if (change === 0) return null;
-  const arrow = change > 0 ? "↗" : "↘";
-  return `${arrow} ${Math.abs(change)} kg — since ${formatMonthYear(summary.first_measured_on)}`;
+  const changeKg = Number(summary.change_kg);
+  if (changeKg === 0) return null;
+  const arrow = changeKg > 0 ? "↗" : "↘";
+  return `${arrow} ${formatWeight(Math.abs(changeKg), unit)} — since ${formatMonthYear(summary.first_measured_on)}`;
 }
 
 function AddWeightForm({
+  unit,
   onSubmit,
   onCancel,
   saving,
 }: {
-  onSubmit: (weight: number) => void;
+  unit: WeightUnit;
+  onSubmit: (weightKg: number) => void;
   onCancel: () => void;
   saving: boolean;
 }) {
   const [weight, setWeight] = useState("");
 
   const submit = () => {
-    const parsed = Number(weight.replace(",", "."));
-    if (!Number.isFinite(parsed) || parsed < 20 || parsed > 400) return;
-    onSubmit(parsed);
+    const parsedKg = parseWeightInput(weight, unit);
+    if (parsedKg === null || parsedKg < BODY_WEIGHT_MIN_KG || parsedKg > BODY_WEIGHT_MAX_KG) return;
+    onSubmit(parsedKg);
   };
 
   return (
@@ -72,7 +82,7 @@ function AddWeightForm({
         style={styles.addInput}
         value={weight}
         onChangeText={setWeight}
-        placeholder="kg"
+        placeholder={unit}
         placeholderTextColor={colors.textMuted}
         keyboardType="decimal-pad"
         autoFocus
@@ -95,9 +105,11 @@ function AddWeightForm({
 
 function MeasurementRow({
   measurement,
+  unit,
   onDelete,
 }: {
   measurement: BodyMeasurement;
+  unit: WeightUnit;
   onDelete: (id: number) => void;
 }) {
   return (
@@ -111,12 +123,14 @@ function MeasurementRow({
       }
     >
       <Text style={styles.historyDate}>{formatShortDate(measurement.measured_on)}</Text>
-      <Text style={styles.historyWeight}>{measurement.weight_kg} kg</Text>
+      <Text style={styles.historyWeight}>{formatWeight(Number(measurement.weight_kg), unit)}</Text>
     </Pressable>
   );
 }
 
 export default function WeightHistoryScreen() {
+  const { user } = useAuth();
+  const unit: WeightUnit = user?.weight_unit ?? "kg";
   const [summary, setSummary] = useState<BodySummary | null>(null);
   const [history, setHistory] = useState<BodyMeasurement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -181,7 +195,7 @@ export default function WeightHistoryScreen() {
     );
   }
 
-  const trend = summary ? trendText(summary) : null;
+  const trend = summary ? trendText(summary, unit) : null;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -192,7 +206,7 @@ export default function WeightHistoryScreen() {
           </Text>
         ) : null}
         <Text style={styles.currentWeight}>
-          {summary?.current_weight_kg ? `${summary.current_weight_kg} kg` : "—"}
+          {summary?.current_weight_kg ? formatWeight(Number(summary.current_weight_kg), unit) : "—"}
         </Text>
         {trend ? <Text style={styles.trend}>{trend}</Text> : null}
       </View>
@@ -201,7 +215,8 @@ export default function WeightHistoryScreen() {
 
       {addingWeight ? (
         <AddWeightForm
-          onSubmit={(weight) => void handleAddWeight(weight)}
+          unit={unit}
+          onSubmit={(weightKg) => void handleAddWeight(weightKg)}
           onCancel={() => setAddingWeight(false)}
           saving={saving}
         />
@@ -221,7 +236,11 @@ export default function WeightHistoryScreen() {
               key={measurement.id}
               style={index === history.length - 1 ? undefined : styles.historyRowWrap}
             >
-              <MeasurementRow measurement={measurement} onDelete={(id) => void handleDelete(id)} />
+              <MeasurementRow
+                measurement={measurement}
+                unit={unit}
+                onDelete={(id) => void handleDelete(id)}
+              />
             </View>
           ))
         )}
