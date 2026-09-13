@@ -11,8 +11,8 @@ class TestListExercises:
 
         assert response.status_code == 200, response.text
         body = response.json()
-        assert body["total"] == 25
-        assert len(body["items"]) == 25
+        assert body["total"] == 46
+        assert len(body["items"]) == 46
 
     async def test_requires_authentication(self, client: AsyncClient) -> None:
         response = await client.get("/exercises")
@@ -40,7 +40,7 @@ class TestListExercises:
         assert len(first["items"]) == 5
         assert len(second["items"]) == 5
         # total reports the whole match, not the page.
-        assert first["total"] == second["total"] == 25
+        assert first["total"] == second["total"] == 46
         assert {item["id"] for item in first["items"]}.isdisjoint(
             item["id"] for item in second["items"]
         )

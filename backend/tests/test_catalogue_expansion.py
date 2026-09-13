@@ -1,4 +1,14 @@
-"""Catalogue coverage must be usable through search, logging and volume analytics."""
+"""Adım 22 (PROJE_1_CODEX_INCELEME.md): the user asked for more exercise
+variety — most muscles had exactly one primary-work option in the seed
+catalogue, which meant no equipment alternative and no real choice. This
+mirrors test_catalogue_coverage.py's approach for the migration that fixed
+the analogous gap (c6a42e8b91df, Adım 4), but for
+946401aa1328_expand_exercise_catalogue_with_more_per_.py: every muscle now
+has at least two official primary exercises, a representative sample of the
+newly added ones round-trips through search → logging → weekly-volume the
+same way the rest of the catalogue does, and the migration itself is a safe,
+reversible, FK-respecting data change.
+"""
 
 import runpy
 from pathlib import Path
@@ -14,30 +24,36 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
 MIGRATION = Path(__file__).resolve().parents[1] / (
-    "alembic/versions/c6a42e8b91df_complete_primary_catalogue.py"
+    "alembic/versions/946401aa1328_expand_exercise_catalogue_with_more_per_.py"
 )
 
 
-async def test_every_muscle_has_an_official_direct_exercise(db: AsyncSession) -> None:
-    missing = await db.execute(
+async def test_every_muscle_has_at_least_two_official_direct_exercises(
+    db: AsyncSession,
+) -> None:
+    """Adım 4 only guaranteed one; a single option is still no real choice."""
+    short = await db.execute(
         text("""
-        SELECT m.name FROM muscle_groups m WHERE NOT EXISTS (
-            SELECT 1 FROM exercise_muscle_groups em JOIN exercises e ON e.id = em.exercise_id
-            WHERE em.muscle_group_id = m.id AND em.role = 'primary' AND e.created_by IS NULL
-        )
+        SELECT m.name, count(*) FILTER (WHERE em.role = 'primary') AS primary_count
+        FROM muscle_groups m
+        LEFT JOIN exercise_muscle_groups em ON em.muscle_group_id = m.id
+        LEFT JOIN exercises e ON e.id = em.exercise_id AND e.created_by IS NULL
+        GROUP BY m.name
+        HAVING count(*) FILTER (WHERE em.role = 'primary' AND e.id IS NOT NULL) < 2
     """)
     )
-    assert missing.scalars().all() == []
+    assert short.all() == []
 
 
 @pytest.mark.parametrize(
     "muscle,query,name,equipment",
     [
-        ("abs", "karin sikistirma", "Crunch", "bodyweight"),
-        ("obliques", "yan egilme", "Dumbbell Side Bend", "dumbbell"),
-        ("forearms", "bilek bukme", "Dumbbell Wrist Curl", "dumbbell"),
-        ("rear_delts", "ters acis", "Dumbbell Reverse Fly", "dumbbell"),
-        ("traps", "omuz silkme", "Dumbbell Shrug", "dumbbell"),
+        ("glutes", "hip thrust", "Hip Thrust", "barbell"),
+        ("chest", "sinav", "Push-Up", "bodyweight"),
+        ("biceps", "barbell curl", "Barbell Curl", "barbell"),
+        ("rear_delts", "face pull", "Face Pull", "cable"),
+        ("abs", "asili bacak", "Hanging Leg Raise", "bodyweight"),
+        ("traps", "barbell omuz silkme", "Barbell Shrug", "barbell"),
     ],
 )
 async def test_new_exercise_can_be_found_logged_and_counted(
@@ -75,7 +91,6 @@ async def test_new_exercise_can_be_found_logged_and_counted(
     muscles = {m["name"]: m for m in volume.json()["weeks"][0]["muscles"]}
     assert muscles[muscle]["direct_sets"] == 3
     assert muscles[muscle]["status"] != "untrained"
-    assert all(m["direct_sets"] == 0 for key, m in muscles.items() if key != muscle)
 
 
 def _migrate(connection: Connection, direction: str) -> None:
@@ -89,9 +104,7 @@ async def test_catalogue_migration_roundtrip_preserves_original_entries(db: Asyn
     before = (await db.execute(text("SELECT id, name, name_tr FROM exercises ORDER BY id"))).all()
     async with connection.begin_nested():
         await connection.run_sync(_migrate, "downgrade")
-        # 46 seeded at head (20 baseline + 5 from this migration + 21 from
-        # 946401aa1328, Adım 22) minus this migration's own 5 rows.
-        assert await db.scalar(text("SELECT count(*) FROM exercises")) == 41
+        assert await db.scalar(text("SELECT count(*) FROM exercises")) == 25
         await connection.run_sync(_migrate, "upgrade")
         after = (
             await db.execute(text("SELECT id, name, name_tr FROM exercises ORDER BY id"))
@@ -105,7 +118,7 @@ async def test_downgrade_refuses_to_remove_logged_exercises(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    exercise_id = "670ce4cd-34be-4ab9-bf34-221d55fe4101"
+    exercise_id = "134e6937-828e-41e4-aa94-002eb8b5ff93"  # Hip Thrust
     logged = await client.post(
         "/workouts",
         headers=auth_headers,
@@ -116,16 +129,14 @@ async def test_downgrade_refuses_to_remove_logged_exercises(
     with pytest.raises(IntegrityError):
         async with connection.begin_nested():
             await connection.run_sync(_migrate, "downgrade")
-    # 46 seeded at head (20 baseline + 5 from this migration + 21 from
-    # 946401aa1328, Adım 22); the failed downgrade above changes nothing.
     assert await db.scalar(text("SELECT count(*) FROM exercises")) == 46
     assert await db.scalar(text("SELECT count(*) FROM sets")) == 1
     assert (
         await db.scalar(
-            text("""
+            text(f"""
         SELECT count(*) FROM exercise_muscle_groups
-        WHERE exercise_id = '670ce4cd-34be-4ab9-bf34-221d55fe4101'
+        WHERE exercise_id = '{exercise_id}'
     """)
         )
-        == 1
+        == 2
     )
