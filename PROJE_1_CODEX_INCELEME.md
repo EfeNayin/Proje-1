@@ -29,7 +29,22 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 3. Egzersiz kataloğunun doğrudan kas kapsamı tamamlandı; Adım 4 aşağıda.
 4. Dönem, veri yeterliliği ve gerçek kilo ölçüm aralığına dayalı değerlendirmeyi düzeltmek.
 
-Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı.
+Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı. Bölüm 7'de listelenen güncelliğini yitirmiş belgeler Adım 14'te düzeltildi.
+
+### Adım 14: Güncelliğini yitirmiş belgelerin düzeltilmesi — 13 Eylül 2026
+
+- Kök `README.md`: monorepo tablosu artık backend ve mobilin gerçek durumunu anlatıyor ("boş" değil); var olmayan `ml/` klasörü ayrı bir dipnota alındı. "app/ kodu henüz yazılmadı" uyarısı kaldırıldı, mobil hızlı başlangıç komutu eklendi.
+- `backend/README.md`: "Planlanan yapı (henüz yazılmadı)" bölümü, `app/domains/` altındaki gerçek dokuz domain (auth, users, exercises, workouts, programs, readiness, body, nutrition, analytics) ile değiştirildi.
+- `mobile/README.md`: saf Expo şablon metni yerine gerçek ürün bağlamına işaret eden, mevcut `npm run test:*`/`typecheck`/`lint` komutlarını listeleyen bir içerikle yeniden yazıldı.
+- `mobile/AGENTS.md`: Expo 54 dokümanına işaret eden bağlantı Expo 57'ye güncellendi (`package.json` içindeki gerçek sürümle eşleşiyor); sürümün tekrar kaymasına karşı `package.json`'a bakma notu eklendi.
+- `CLAUDE.md` DURUM bölümü: 7 tablo/beş domain'lik eski liste, gerçek 13 tablo ve dokuz domain ile değiştirildi; sabit "125 test" iddiası kaldırılıp yerine PROJE_1_CODEX_INCELEME.md'deki en güncel Adım girdisine (test sayısı için) işaret eden bir not kondu — sayı hızlı eskidiği için artık buraya sabit yazılmıyor. "Uçtan uca telefonda çalışıyor" ifadesi, hangi adımların gerçekten telefonda denendiğini netleştiren bir cümleyle değiştirildi.
+- `CLAUDE.md` SEED BACKLOG: "Auto adjust macros: kalori sistemi yok" ifadesi yanlıştı — bu özellik zaten var (`profile/nutrition-goals.tsx`, yalnızca ekrandaki makro/kalori alanları arasında canlı aritmetik senkron, tüketim veya kilo trendine bağlı değil). Not, gerçekten eksik olan "Add burned calories" / "Rollover calories" maddelerinden ayrıldı.
+- `TASK_diagnosis.md`: dosyanın başına, görevin artık uygulanmış olduğunu ve gerçek davranışın Adım 5-8 ile bu dosyada yazılandan ileri gittiğini belirten bir durum notu eklendi. Örnek çıktıdaki ve test listesindeki "5,5 saat uyku → `sleep_low`" çelişkisi düzeltildi: eşik tanımına göre (`<6` saat) doğru kod `sleep_very_low` (severity: critical).
+- `backend/tests/test_diagnosis.py` giriş yorumu incelendi: Bölüm 7 madde 8'de belirtilen "bazı kasların secondary bağlantısı bile yok" iddiası dosyada artık bulunmuyor — muhtemelen Adım 4'teki katalog kapsamı çalışmasıyla birlikte zaten düzeltilmiş. Ayrı bir değişiklik gerekmedi.
+
+Doğrulama: Bu adım yalnızca Markdown belgelerini değiştirdi; uygulama kodu, testler, migration'lar veya bağımlılıklar dokunulmadı. pytest/mypy/ruff/tsc/ESLint bu adımda çalıştırılmadı — gerek yoktu. Belgelerdeki tablo/domain sayıları `backend/app/models/` ve `backend/app/domains/` klasörleri elle sayılarak doğrulandı (13 `__tablename__`, 9 domain klasörü).
+
+Sınır: Bu adım yalnızca Bölüm 7'deki dokuz maddeyi kapatıyor. Bölüm 8'deki G (kg/lb dönüşümü, dil tutarlılığı, bilinmeyen eşik davranışı) ve H (eşzamanlılık, çoklu cihaz atomikliği, cihaz/hesap bazlı aktif seans, saat dilimi ayrışması) maddeleri kod değişikliği gerektirdiği için ayrı adımlarda ele alınacak.
 
 ### Adım 13: Antrenmanın başlangıç hedeflerini koruma — 13 Eylül 2026
 

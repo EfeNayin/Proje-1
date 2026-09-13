@@ -26,16 +26,26 @@ cp .env.example .env               # DATABASE_URL'deki host'u localhost yap
 uvicorn app.main:app --reload
 ```
 
-## Planlanan yapı (henüz yazılmadı — sonraki adımlar)
+## Mevcut yapı
 ```
 app/
 ├── main.py            # FastAPI uygulaması, router'ları bağlar
 ├── core/              # config, database, security, exceptions
-├── models/            # SQLAlchemy modelleri
+├── models/            # SQLAlchemy modelleri (13 tablo — bkz. CLAUDE.md)
 └── domains/
-    ├── auth/          # register, login, refresh (JWT + bcrypt)
-    └── users/         # GET /me, PATCH /me
+    ├── auth/          # register, login, refresh (rotasyon)
+    ├── users/         # GET/PATCH /users/me
+    ├── exercises/     # egzersiz kataloğu (arama/filtre)
+    ├── workouts/      # antrenman + set CRUD, başlangıç plan anlık görüntüsü
+    ├── programs/      # program/şablon CRUD, şablon kaydetme (idempotent)
+    ├── readiness/     # günlük toparlanma kaydı (uyku/enerji/ruh hali)
+    ├── body/          # kilo ölçümü
+    ├── nutrition/     # beslenme hedefi hesaplama
+    └── analytics/     # haftalık hacim + dönemsel değerlendirme (teşhis)
 ```
+
+Domain yapısının kaynağı `app/domains/` klasörüdür; en güncel durum için oraya
+bakın — bu liste değişiklik olduğunda elle güncellenmelidir.
 
 ## Geliştirme komutları
 ```bash

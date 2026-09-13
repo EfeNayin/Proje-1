@@ -84,34 +84,57 @@ exercise_muscle_groups tablosu iki BAĞIMSIZ boyut tutar:
   5=en iyi seçeneklerden, 3=işe yarar ama optimal değil, 1=marjinal.
 
 ## DURUM (GÜNCEL — GERÇEK DOSYALARA GÜVEN, VARSAYMA)
-Backend TAMAM ve test edilmiş. Mobil Faz 1 TAMAM.
+Backend ve mobil çalışıyor, sürekli genişliyor. Bu bölüm bir anlık görüntüdür
+ve eskiyebilir — **en güncel, tarihli durum ve test sayıları için
+`PROJE_1_CODEX_INCELEME.md` içindeki "Uygulama günlüğü" (Adım N) girdilerine
+bakın**; en son girdi (bu satırın yazıldığı tarihte Adım 13, 13 Eylül 2026)
+309 backend ve 63 mobil testinin geçtiğini raporluyor. Buraya sabit bir test
+sayısı yazmıyoruz çünkü hızla eskiyor ve yanlış güven verir.
 
-Backend (backend/app/, 125 pytest testi geçiyor, ruff+mypy strict temiz):
+Backend (backend/app/, ruff+mypy strict temiz olmalı — bkz. `app/domains/`
+ve `app/models/` gerçek listesi için):
 - core/: config, database (async), security (JWT+bcrypt, jti claim'li), exceptions
-- models/: User, RefreshToken, MuscleGroup, Exercise, ExerciseMuscleGroup,
-  Workout, Set (7 tablo, schema_v1.sql ile birebir)
-- domains/auth: register, login, refresh (rotasyon)
-- domains/users: GET/PATCH /users/me
-- domains/exercises: GET /exercises (arama+filtre), /exercises/{id}, /muscle-groups
-- domains/workouts: workout + set CRUD, sahiplik kontrolü (404, 403 değil)
-- domains/analytics: GET /analytics/weekly-volume (MEV/MAV/MRV, timezone-aware)
+- models/: 13 tablo — users, refresh_tokens, muscle_groups, exercises,
+  exercise_muscle_groups, workouts, sets, programs, workout_templates,
+  template_exercises, template_save_requests, readiness_logs,
+  body_measurements
+- domains/ (9 domain): auth (register/login/refresh), users (GET/PATCH /me),
+  exercises (katalog arama+filtre), workouts (workout+set CRUD, başlangıç
+  plan anlık görüntüsü), programs (program/şablon CRUD, idempotent şablon
+  kaydetme), readiness (günlük toparlanma kaydı), body (kilo ölçümü),
+  nutrition (beslenme hedefi hesaplama), analytics (haftalık hacim +
+  dönemsel değerlendirme/"teşhis")
 
 Mobil (mobile/, Expo SDK 57, TypeScript strict sıfır hata):
 - src/api/: client (single-flight refresh), tokens (SecureStore), auth,
-  exercises, workouts, analytics
-- src/auth/AuthContext: kalıcı oturum
+  exercises, workouts, programs, readiness, body, nutrition, analytics
+- src/auth/AuthContext: kalıcı oturum, bağlantı hatasında oturumu koruma
 - src/workout/: activeWorkout (yarım kalan seans cihazda), restPreference
 - app/(auth)/: login, register
-- app/(app)/(tabs)/: index (training home), volume, profile
-- app/(app)/workout/: [id] (canlı loglama), exercise-picker
+- app/(app)/(tabs)/: index (training home + geçmiş sayfalama), programs,
+  volume, profile
+- app/(app)/workout/: [id] (canlı loglama, başlangıç planı, şablona
+  kaydetme), checkin, exercise-picker
+- app/(app)/program/: [id], template/[id]
+- app/(app)/diagnosis: dönemsel değerlendirme ("Neden gelişemiyorum?")
+- app/(app)/profile/*: kişisel bilgiler, tercihler, kilo geçmişi, beslenme
+  hedefleri
 
-Çalışan akış: kayıt → canlı antrenman loglama (set set, dinlenme sayacı, başlık
-düzenleme, set düzeltme/silme) → haftalık hacim ekranı (renkli MEV/MAV/MRV) →
-profil. Uçtan uca telefonda çalışıyor.
+Çalışan akış: kayıt → canlı antrenman loglama (set set, dinlenme sayacı,
+başlık düzenleme, set düzeltme/silme, şablondan başlatma) → program/şablon
+yönetimi → haftalık hacim ekranı (renkli MEV/MAV/MRV) → dönemsel
+değerlendirme → profil/beslenme hedefleri. Telefonda görsel/uçtan uca
+doğrulama yalnızca ilk adımlarda (Adım 1-2) kullanıcı tarafından yapıldı;
+sonraki adımların çoğu yalnızca statik/otomatik testlerle doğrulandı —
+"kodda mevcut" ile "telefonda denendi" birbirine karıştırılmamalı (bkz.
+PROJE_1_CODEX_INCELEME.md doğrulama sınırı notu).
 
 ## TEST & KALİTE (her değişiklikten sonra)
-- Backend: docker compose exec backend pytest (125 test), ruff, mypy strict
-- Mobil: npx tsc --noEmit (sıfır hata olmalı)
+- Backend: docker compose exec backend pytest, ruff, mypy strict — geçen
+  test sayısı için PROJE_1_CODEX_INCELEME.md'deki en güncel Adım'a bakın
+- Mobil: npx tsc --noEmit (sıfır hata olmalı), npm run lint (sıfır hata/uyarı
+  olmalı), npm run test:* (bkz. mobile/README.md — her komutu ayrı ayrı veya
+  `node --test tests/*.test.cjs` ile hepsini birden çalıştırın)
 - Testler gerçek PostgreSQL'e karşı çalışır (mock/SQLite değil), çünkü şema
   CITEXT/trigger/AT TIME ZONE kullanıyor. Ownership ve timezone bugları
   sessizdir — bunları test eden mevcut testleri BOZMA.
@@ -144,7 +167,13 @@ profil. Uçtan uca telefonda çalışıyor.
   - Badge celebrations: rozet sistemi yok.
   - Live activity: iOS kilit ekranı widget'ı, native modül + kalori verisi
     gerektiriyor.
-  - Add burned / Rollover calories / Auto adjust macros: kalori sistemi yok.
+  - Add burned calories / Rollover calories: kalori TAKİBİ (ne yenildiği,
+    ne yakıldığı) olmadan anlamsız — o sistem yok.
+  - NOT: "Auto adjust macros" bunlardan farklı, zaten VAR
+    (profile/nutrition-goals.tsx, `autoAdjust` state'i) — ama tüketilen
+    yemeğe veya kilo trendine göre değil, yalnızca ekrandaki makro
+    alanlarıyla kalori hedefi arasındaki aritmetiği canlı senkronlar. Otomatik
+    beslenme koçu değildir.
   - Marketing emails: e-posta altyapısı hiç yok (kayıt doğrulama, şifre
     sıfırlama dahil).
 - Beslenme TAKİBİ yok — sadece HEDEF belirleme var (bkz.

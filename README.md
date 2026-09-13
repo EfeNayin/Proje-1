@@ -7,23 +7,29 @@ Hipertrofi-odaklı, bilim-temelli bir bodybuilding antrenman platformu (Türkiye
 
 | Klasör     | İçerik                                      | Durum             |
 |------------|---------------------------------------------|-------------------|
-| `backend/` | FastAPI (async) + PostgreSQL + Redis API'si | Altyapı kuruldu   |
-| `mobile/`  | React Native (TypeScript) uygulaması        | Boş (Faz 1 sonu)  |
-| `ml/`      | PyTorch — CV / RL / HAR modelleri           | Boş (Faz 4+)      |
+| `backend/` | FastAPI (async) + PostgreSQL + Redis API'si | Çalışıyor — auth, egzersiz kataloğu, antrenman kaydı, program/şablon, toparlanma, vücut ölçümü, beslenme hedefi, haftalık hacim ve dönemsel değerlendirme (teşhis) domain'leri kurulu |
+| `mobile/`  | React Native + Expo (TypeScript strict) uygulaması | Faz 1 tamam, uçtan uca çalışıyor — kayıt/giriş, antrenman loglama, program/şablon, haftalık hacim, dönemsel değerlendirme, profil/beslenme hedefleri |
+
+`ml/` (PyTorch — CV / RL / HAR modelleri) Faz 4+ için planlanan bir klasördür; depoda henüz oluşturulmadı.
+
+Güncel durumun ayrıntılı ve tarihli dökümü için bkz. `CLAUDE.md` (mimari kararlar, veri modeli, test sayıları) ve `PROJE_1_CODEX_INCELEME.md` (adım adım değişiklik günlüğü).
 
 ## Hızlı başlangıç (yerel)
 
 ```bash
 cd backend && cp .env.example .env    # değerleri düzenle
 cd ..
-docker compose up --build             # db + redis + backend ayağa kalkar
+docker compose up --build             # db + redis + backend ayağa kalkar; başlarken alembic upgrade head çalışır
 ```
 
 Backend: http://localhost:8000  ·  Otomatik API dokümanı: http://localhost:8000/docs
 
-> **Not:** `app/` kodu henüz yazılmadı; bu adımda yalnızca altyapı dosyaları
-> hazırlandı. Container, `app/main.py` eklendikten sonra tam çalışır.
-> Sonraki adım: veritabanı şeması (`schema_v1.sql`) ve FastAPI iskeleti.
+Mobil için:
+
+```bash
+cd mobile && npm install
+npx expo start
+```
 
 ## Faz planı (özet)
 

@@ -1,50 +1,50 @@
-# Welcome to your Expo app 👋
+# BodyTrack — Mobil
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+React Native + Expo (Expo Router, TypeScript strict) ile yazılmış BodyTrack
+istemcisi. Ürün bağlamı ve mimari kararlar için kök dizindeki `CLAUDE.md`'ye
+bakın; bu dosya yalnızca mobil klasörün kendi kurulum/komut referansıdır.
 
-## Get started
+## Kurulum
 
-1. Install dependencies
+```bash
+npm install
+cp .env.example .env    # backend URL'ini düzenleyin
+npx expo start
+```
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
+Çıktıda uygulamayı açmak için seçenekler görürsünüz:
 
 - [development build](https://docs.expo.dev/develop/development-builds/introduction/)
 - [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- [Expo Go](https://expo.dev/go)
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+Ekranlar `app/` altında dosya tabanlı yönlendirme (Expo Router) ile
+tanımlanır; ekran haritası için `PROJE_1_CODEX_INCELEME.md` bölüm 6'ya bakın.
 
-## Get a fresh project
-
-When you're ready, run:
+## Geliştirme komutları
 
 ```bash
-npm run reset-project
+npm run typecheck              # tsc --noEmit, sıfır hata olmalı
+npm run lint                   # expo lint
+
+npm run test:session           # oturum/refresh davranışı
+npm run test:history           # antrenman geçmişi sayfalama
+npm run test:diagnosis         # teşhis ekranı metinleri
+npm run test:diagnosis-requests # dönem isteklerinde son-yanıt tutarlılığı
+npm run test:lifecycle         # bileşen yaşam döngüsü
+
+node --test tests/*.test.cjs   # tüm mobil testler (bazı dosyaların ayrı npm script'i yok)
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Testler `node --test` ile çalışan `.cjs` dosyalarıdır; `tests/` klasöründe
+yer alır ve gerçek React render/hook davranışını test eder — telefon
+üzerindeki form/klavye etkileşiminin yerini tutmaz.
 
-## Learn more
+Bu proje `Expo ~57` üzerine kuruludur (bkz. `package.json`); versiyona özgü
+API farklılıkları için `AGENTS.md` dosyasındaki notu izleyin.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Daha fazla bilgi
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- [Expo documentation](https://docs.expo.dev/)
+- [Expo Router](https://docs.expo.dev/router/introduction)
