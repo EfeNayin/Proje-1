@@ -24,6 +24,7 @@ import type { WorkoutSummary } from "../../../src/api/workouts";
 import { colors, radius, spacing } from "../../../src/theme";
 import { clearActiveWorkout, getActiveWorkout, setActiveWorkout } from "../../../src/workout/activeWorkout";
 import { isReadinessCheckinEnabled } from "../../../src/workout/readinessPreference";
+import { resolveActiveWorkoutId } from "../../../src/workout/resolveActiveWorkout";
 import { createWorkoutHistory } from "../../../src/workout/workoutHistory";
 
 function formatDate(iso: string): string {
@@ -112,41 +113,20 @@ export default function TrainingHome() {
   const [starting, setStarting] = useState(false);
 
   const load = useCallback(async () => {
-    const stored = await getActiveWorkout();
-
-    // The stored id could point at a workout deleted from another device, or
-    // one finished from another device since this device last saw it, so
-    // confirm it still exists AND is still unfinished rather than routing
-    // into a dead or already-closed screen.
-    if (stored) {
-      try {
-        const workout = await workoutsApi.getWorkout(stored);
-        if (workout.finished_at) {
-          await clearActiveWorkout();
-          setActiveId(null);
-        } else {
-          setActiveId(stored);
-        }
-      } catch {
-        await clearActiveWorkout();
-        setActiveId(null);
-      }
-    } else {
-      // No local pointer — the server's copy is the backup for exactly this
-      // case (new phone, reinstall), so check it before assuming there is
-      // nothing in progress.
-      try {
-        const active = await workoutsApi.getActiveWorkout();
-        if (active) {
-          await setActiveWorkout(active.id);
-          setActiveId(active.id);
-        } else {
-          setActiveId(null);
-        }
-      } catch {
-        setActiveId(null);
-      }
-    }
+    // See src/workout/resolveActiveWorkout.ts for what this reconciles and
+    // why (Adım 20, PROJE_1_CODEX_INCELEME.md, Bölüm 8 madde H3): the local
+    // pointer is a device key, so a stale one — left by a workout finished
+    // elsewhere, deleted, or belonging to a different account previously
+    // signed in on this device — must not be taken at face value.
+    setActiveId(
+      await resolveActiveWorkoutId({
+        getActiveWorkout,
+        setActiveWorkout,
+        clearActiveWorkout,
+        getWorkout: workoutsApi.getWorkout,
+        getServerActiveWorkout: workoutsApi.getActiveWorkout,
+      }),
+    );
 
     // The active program offers a quick way to start a planned session.
     // Isolated in its own try/catch: a programs-API hiccup must not take

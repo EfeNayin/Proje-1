@@ -66,6 +66,13 @@ async function fetchWithNetworkError(url: string, options: RequestInit): Promise
 
 async function expireSession(): Promise<never> {
   await clearTokens();
+  // Clearing account-scoped device state beyond the tokens themselves (the
+  // active-workout pointer — see AuthContext's signOut and its
+  // onSessionExpired handler) deliberately does not happen here: this HTTP
+  // layer only knows about tokens, and `onSessionExpired` is exactly the
+  // hook that exists so the caller who does know about that state — the
+  // auth layer — can react to a forced sign-out the same way as an
+  // explicit one.
   onSessionExpired?.();
   throw new ApiError(401, "Your session has expired. Please sign in again.");
 }

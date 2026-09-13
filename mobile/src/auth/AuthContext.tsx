@@ -13,6 +13,7 @@ import * as authApi from "../api/auth";
 import type { RegisterInput, UserProfile } from "../api/auth";
 import { setOnSessionExpired } from "../api/client";
 import { clearTokens, saveTokens } from "../api/tokens";
+import { clearActiveWorkout } from "../workout/activeWorkout";
 import { restoreSession } from "./restoreSession";
 
 type AuthStatus = "loading" | "signedIn" | "signedOut" | "unavailable";
@@ -40,6 +41,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await clearTokens();
+    // The active-workout pointer is a device key (see src/workout/activeWorkout.ts),
+    // not scoped to an account. Left in place, it would resume — or, worse,
+    // silently point at — this account's in-progress session for whoever
+    // signs in next on this device. Preferences such as rest length are
+    // deliberately per-device and are not cleared here; this is only about
+    // state that identifies a specific workout belonging to THIS account.
+    await clearActiveWorkout();
     setUser(null);
     setStatus("signedOut");
   }, []);
@@ -48,7 +56,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // back here when a refresh fails and the session is unrecoverable.
   useEffect(() => {
     setOnSessionExpired(() => {
-      // The client has already cleared tokens before notifying us.
+      // The client has already cleared tokens before notifying us. This is
+      // a forced sign-out, not a voluntary one, but the account-switch
+      // reasoning is identical to signOut() below — the active-workout
+      // pointer must not survive to whoever is signed in next on this
+      // device — so it is cleared the same way. Fire-and-forget: nothing
+      // useful can be done if this SecureStore write fails, and the
+      // sign-out itself must not wait on it.
+      void clearActiveWorkout();
       setUser(null);
       setStatus("signedOut");
     });
