@@ -156,9 +156,10 @@ PROJE_1_CODEX_INCELEME.md doğrulama sınırı notu).
   MinIO) yok. Tek avatar için o altyapıyı kurmak orantısız; şimdilik baş
   harfler kullanılıyor (bkz. profile.tsx, initials()). Altyapı kurulunca
   gelecek.
-- weight_unit SADECE bir gösterim etiketi (bkz. profile/preferences.tsx) —
-  lb seçilince kg değerleri DÖNÜŞTÜRÜLMÜYOR. Gerçek lb desteği için gösterim
-  katmanında (ve muhtemelen girişte) dönüşüm gerekir.
+- weight_unit artık işlevsel: mobile/src/units/weight.ts, users.weight_unit
+  tercihine göre her ekranda (set loglama, vücut kilosu, hedef kilo) kg<->lb
+  dönüşümü yapıyor (bkz. PROJE_1_CODEX_INCELEME.md Adım 15). Depoda ve API'de
+  değerler hâlâ SADECE kg; dönüşüm yalnızca gösterim/girdi katmanında.
 - Preferences ekranı referansında (foto 3) olup karşılığı olmadığı için
   EKLENMEYENLER:
   - Tema (System/Light/Dark): uygulama şu an sadece koyu tema, theme.ts'te

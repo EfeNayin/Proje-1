@@ -33,6 +33,7 @@ npm run test:history           # antrenman geçmişi sayfalama
 npm run test:diagnosis         # teşhis ekranı metinleri
 npm run test:diagnosis-requests # dönem isteklerinde son-yanıt tutarlılığı
 npm run test:lifecycle         # bileşen yaşam döngüsü
+npm run test:weight-unit       # kg/lb dönüşüm katmanı
 
 node --test tests/*.test.cjs   # tüm mobil testler (bazı dosyaların ayrı npm script'i yok)
 ```

@@ -29,7 +29,22 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 3. Egzersiz kataloğunun doğrudan kas kapsamı tamamlandı; Adım 4 aşağıda.
 4. Dönem, veri yeterliliği ve gerçek kilo ölçüm aralığına dayalı değerlendirmeyi düzeltmek.
 
-Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı. Bölüm 7'de listelenen güncelliğini yitirmiş belgeler Adım 14'te düzeltildi.
+Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı. Bölüm 7'de listelenen güncelliğini yitirmiş belgeler Adım 14'te düzeltildi. Bölüm 8 madde G1'deki (kg/lb dönüşümü eksik) sorun Adım 15'te giderildi.
+
+### Adım 15: kg/lb dönüşümünün işlevselleştirilmesi — 13 Eylül 2026
+
+- Yeni paylaşılan modül `mobile/src/units/weight.ts`: kg<->lb dönüşümü, gösterim için yuvarlama (bir ondalık basamak) ve kullanıcı girdisini (virgül ondalık ayırıcı dahil) kg'a çeviren ayrıştırma. API ve veritabanı hâlâ yalnızca kg görüyor — bu kasıtlı mimari kararı (bkz. CLAUDE.md) değiştirmiyor, yalnızca gösterim/girdi katmanına bir dönüşüm ekliyor.
+- Üç ekran `users.weight_unit` tercihine göre gerçekten dönüşüm yapıyor artık:
+  - `workout/[id].tsx`: canlı set loglama ve düzenleme (SetForm/SetRow/ReadOnlySetRow) artık kullanıcının birimini gösteriyor ve kabul ediyor; sunucuya gönderilen `weight_kg` değeri değişmedi.
+  - `profile/weight-history.tsx`: güncel kilo, trend metni ve geçmiş liste satırları seçili birimde gösteriliyor; yeni ölçüm girişi kg'a çevrilip kaydediliyor.
+  - `profile/personal-details.tsx`: güncel kilo ve hedef kilo satırları aynı şekilde dönüştürülüyor; doğrulama sınırları (20-400 kg) her zaman kg'da kontrol ediliyor — girilen değer önce kg'a çevrilip öyle sınanıyor, böylece lb için ayrı bir sınır tanımlamaya gerek kalmadı.
+  - `profile/preferences.tsx`: "Display only — existing values are not converted" ipucu metni artık yanlıştı, kaldırıldı; birim tercihinin artık gerçekten ne yaptığını anlatan bir cümleyle değiştirildi.
+- `mobile/tests/weight-unit.test.cjs` eklendi (8 test): dönüşüm sabiti, yuvarlama/floating-point gürültüsü, ayrıştırma, kg sınırlarının lb girdisinde de doğru çalışması. `npm run test:weight-unit` ile veya `node --test tests/*.test.cjs` ile diğerleriyle birlikte çalışır. `package.json`'a script eklendi.
+- `CLAUDE.md` SEED BACKLOG'daki "weight_unit SADECE bir gösterim etiketi... DÖNÜŞTÜRÜLMÜYOR" notu güncellendi.
+
+Doğrulama: Bu adımda **gerçek proje bağımlılıkları üzerinden `npx tsc --noEmit` veya `npm run lint` çalıştırılamadı** — bilgisayarınızdaki shell (device_bash) hâlâ Windows güncellemesi kaynaklı virtiofs/Plan9 mount hatası nedeniyle devre dışı, dosyalara yalnızca staging üzerinden erişilebiliyor. Bunun yerine: (1) `mobile/src/units/weight.ts` bu oturumun kendi cloud sandbox'ında gerçek `node --test` ile çalıştırıldı, 8/8 test geçti; (2) değişen üç ekran dosyası elle, satır satır, tip imzaları ve prop akışı için gözden geçirildi; (3) `tsc --noResolve` ile bir sözdizimi taraması yapıldı (modül çözümlemesi olmadığı için anlamlı tip hatası ayrıştıramadı, yalnızca sözdizimi kontrolü sağladı). **Bu adımdan sonra `cd mobile && npm run typecheck && npm run lint && node --test tests/*.test.cjs` komutlarının gerçek makinede çalıştırılıp sonucun paylaşılması gerekiyor** — bu proje her adımda gerçek pytest/tsc/ESLint doğrulaması istiyor ve bu adım o standardı henüz karşılamıyor.
+
+Sınır: Bu adım yalnızca mobil gösterim/girdi katmanını değiştirdi; backend'e dokunulmadı, migration gerekmedi. Haftalık hacim ekranındaki tonaj (`total_volume_kg`) ve antrenman özet ekranları taranıp kg/kütle gösteren başka bir yer bulunmadı (bkz. bu adımın araştırma notları) — yalnızca üç ekranda kg metni vardı. Telefonda görsel doğrulama yapılmadı.
 
 ### Adım 14: Güncelliğini yitirmiş belgelerin düzeltilmesi — 13 Eylül 2026
 
