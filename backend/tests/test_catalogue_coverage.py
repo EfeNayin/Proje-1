@@ -89,9 +89,10 @@ async def test_catalogue_migration_roundtrip_preserves_original_entries(db: Asyn
     before = (await db.execute(text("SELECT id, name, name_tr FROM exercises ORDER BY id"))).all()
     async with connection.begin_nested():
         await connection.run_sync(_migrate, "downgrade")
-        # 46 seeded at head (20 baseline + 5 from this migration + 21 from
-        # 946401aa1328, Adım 22) minus this migration's own 5 rows.
-        assert await db.scalar(text("SELECT count(*) FROM exercises")) == 41
+        # 96 seeded at head (20 baseline + 5 from this migration + 21 from
+        # 946401aa1328, Adım 22 + 50 from 254456be6d79, Adım 24) minus this
+        # migration's own 5 rows.
+        assert await db.scalar(text("SELECT count(*) FROM exercises")) == 91
         await connection.run_sync(_migrate, "upgrade")
         after = (
             await db.execute(text("SELECT id, name, name_tr FROM exercises ORDER BY id"))
@@ -116,9 +117,10 @@ async def test_downgrade_refuses_to_remove_logged_exercises(
     with pytest.raises(IntegrityError):
         async with connection.begin_nested():
             await connection.run_sync(_migrate, "downgrade")
-    # 46 seeded at head (20 baseline + 5 from this migration + 21 from
-    # 946401aa1328, Adım 22); the failed downgrade above changes nothing.
-    assert await db.scalar(text("SELECT count(*) FROM exercises")) == 46
+    # 96 seeded at head (20 baseline + 5 from this migration + 21 from
+    # 946401aa1328, Adım 22 + 50 from 254456be6d79, Adım 24); the failed
+    # downgrade above changes nothing.
+    assert await db.scalar(text("SELECT count(*) FROM exercises")) == 96
     assert await db.scalar(text("SELECT count(*) FROM sets")) == 1
     assert (
         await db.scalar(

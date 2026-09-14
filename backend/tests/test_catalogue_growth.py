@@ -1,13 +1,12 @@
-"""Adım 22 (PROJE_1_CODEX_INCELEME.md): the user asked for more exercise
-variety — most muscles had exactly one primary-work option in the seed
-catalogue, which meant no equipment alternative and no real choice. This
-mirrors test_catalogue_coverage.py's approach for the migration that fixed
-the analogous gap (c6a42e8b91df, Adım 4), but for
-946401aa1328_expand_exercise_catalogue_with_more_per_.py: every muscle now
-has at least two official primary exercises, a representative sample of the
-newly added ones round-trips through search → logging → weekly-volume the
-same way the rest of the catalogue does, and the migration itself is a safe,
-reversible, FK-respecting data change.
+"""Adım 24 (PROJE_1_CODEX_INCELEME.md): the user asked for the catalogue to
+keep growing, pointed at fitnessprogramer.com/exercises/ as a source, and
+asked for 50 more. Mirrors test_catalogue_coverage.py (Adım 4) and
+test_catalogue_expansion.py (Adım 22)'s approach for the migration that adds
+them (254456be6d79): every muscle now has at least four official primary
+exercises, a representative sample of the new ones round-trips through
+search → logging → weekly-volume the same way the rest of the catalogue
+does, and the migration itself is a safe, reversible, FK-respecting data
+change.
 """
 
 import runpy
@@ -24,14 +23,14 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
 MIGRATION = Path(__file__).resolve().parents[1] / (
-    "alembic/versions/946401aa1328_expand_exercise_catalogue_with_more_per_.py"
+    "alembic/versions/254456be6d79_add_50_more_exercises_sourced_from_a_.py"
 )
 
 
-async def test_every_muscle_has_at_least_two_official_direct_exercises(
+async def test_every_muscle_has_at_least_four_official_direct_exercises(
     db: AsyncSession,
 ) -> None:
-    """Adım 4 only guaranteed one; a single option is still no real choice."""
+    """946401aa1328 (Adım 22) only guaranteed two."""
     short = await db.execute(
         text("""
         SELECT m.name, count(*) FILTER (WHERE em.role = 'primary') AS primary_count
@@ -39,7 +38,7 @@ async def test_every_muscle_has_at_least_two_official_direct_exercises(
         LEFT JOIN exercise_muscle_groups em ON em.muscle_group_id = m.id
         LEFT JOIN exercises e ON e.id = em.exercise_id AND e.created_by IS NULL
         GROUP BY m.name
-        HAVING count(*) FILTER (WHERE em.role = 'primary' AND e.id IS NOT NULL) < 2
+        HAVING count(*) FILTER (WHERE em.role = 'primary' AND e.id IS NOT NULL) < 4
     """)
     )
     assert short.all() == []
@@ -48,12 +47,12 @@ async def test_every_muscle_has_at_least_two_official_direct_exercises(
 @pytest.mark.parametrize(
     "muscle,query,name,equipment",
     [
-        ("glutes", "hip thrust", "Hip Thrust", "barbell"),
-        ("chest", "sinav", "Push-Up", "bodyweight"),
-        ("biceps", "barbell curl", "Barbell Curl", "barbell"),
-        ("rear_delts", "face pull", "Face Pull", "cable"),
-        ("abs", "asili bacak", "Hanging Leg Raise", "bodyweight"),
-        ("traps", "barbell omuz silkme", "Barbell Shrug", "barbell"),
+        ("chest", "pec deck", "Pec Deck Fly", "machine"),
+        ("lats", "straight-arm", "Straight-Arm Pulldown", "cable"),
+        ("front_delts", "landmine press", "Landmine Press", "barbell"),
+        ("triceps", "skull crusher", "Barbell Skull Crusher", "barbell"),
+        ("quads", "hack squat", "Hack Squat", "machine"),
+        ("obliques", "woodchop", "Cable Woodchop", "cable"),
     ],
 )
 async def test_new_exercise_can_be_found_logged_and_counted(
@@ -73,6 +72,9 @@ async def test_new_exercise_can_be_found_logged_and_counted(
     assert response.json()["total"] == 1
     exercise = response.json()["items"][0]
     assert exercise["name"] == name
+    # Per the user's request this round, name_tr is the same English string
+    # (see the migration's docstring) rather than a Turkish translation.
+    assert exercise["name_tr"] == name
     detail = await client.get(f"/exercises/{exercise['id']}", headers=auth_headers)
     assert any(m["name"] == muscle and m["role"] == "primary" for m in detail.json()["muscles"])
     logged = await client.post(
@@ -104,9 +106,7 @@ async def test_catalogue_migration_roundtrip_preserves_original_entries(db: Asyn
     before = (await db.execute(text("SELECT id, name, name_tr FROM exercises ORDER BY id"))).all()
     async with connection.begin_nested():
         await connection.run_sync(_migrate, "downgrade")
-        # 96 seeded at head (25 pre-existing + this migration's own 21 +
-        # 50 from 254456be6d79, Adım 24) minus this migration's own 21 rows.
-        assert await db.scalar(text("SELECT count(*) FROM exercises")) == 75
+        assert await db.scalar(text("SELECT count(*) FROM exercises")) == 46
         await connection.run_sync(_migrate, "upgrade")
         after = (
             await db.execute(text("SELECT id, name, name_tr FROM exercises ORDER BY id"))
@@ -120,7 +120,7 @@ async def test_downgrade_refuses_to_remove_logged_exercises(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    exercise_id = "134e6937-828e-41e4-aa94-002eb8b5ff93"  # Hip Thrust
+    exercise_id = "84a8250e-35ff-4aba-aa1a-7cbc7b1873a5"  # Pec Deck Fly
     logged = await client.post(
         "/workouts",
         headers=auth_headers,
@@ -141,5 +141,5 @@ async def test_downgrade_refuses_to_remove_logged_exercises(
         WHERE exercise_id = '{exercise_id}'
     """)
         )
-        == 2
+        == 1
     )

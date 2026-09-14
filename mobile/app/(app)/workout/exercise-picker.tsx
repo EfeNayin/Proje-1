@@ -61,7 +61,11 @@ export default function ExercisePicker() {
   }, [query]);
 
   const choose = (exercise: ExerciseSummary) => {
-    depositPickedExercise({ id: exercise.id, name: exercise.name_tr ?? exercise.name });
+    // English name, matching what the workout/program APIs already return
+    // for a logged set (workouts/service.py, programs/service.py both send
+    // exercise.name, never name_tr) — this screen was the one place still
+    // showing the Turkish name.
+    depositPickedExercise({ id: exercise.id, name: exercise.name });
     router.back();
   };
 
@@ -90,7 +94,7 @@ export default function ExercisePicker() {
           renderItem={({ item }) => (
             <Pressable style={styles.row} onPress={() => choose(item)}>
               <View style={styles.rowMain}>
-                <Text style={styles.rowTitle}>{item.name_tr ?? item.name}</Text>
+                <Text style={styles.rowTitle}>{item.name}</Text>
                 <Text style={styles.rowMeta}>
                   {[item.equipment, item.is_compound ? "compound" : "isolation"]
                     .filter(Boolean)

@@ -7,12 +7,14 @@ class TestListExercises:
     async def test_returns_the_seeded_catalogue(
         self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
-        response = await client.get("/exercises", headers=auth_headers)
+        # limit=100: the catalogue (96) now exceeds the default page size
+        # (50), unlike when this test was first written.
+        response = await client.get("/exercises?limit=100", headers=auth_headers)
 
         assert response.status_code == 200, response.text
         body = response.json()
-        assert body["total"] == 46
-        assert len(body["items"]) == 46
+        assert body["total"] == 96
+        assert len(body["items"]) == 96
 
     async def test_requires_authentication(self, client: AsyncClient) -> None:
         response = await client.get("/exercises")
@@ -40,7 +42,7 @@ class TestListExercises:
         assert len(first["items"]) == 5
         assert len(second["items"]) == 5
         # total reports the whole match, not the page.
-        assert first["total"] == second["total"] == 46
+        assert first["total"] == second["total"] == 96
         assert {item["id"] for item in first["items"]}.isdisjoint(
             item["id"] for item in second["items"]
         )
@@ -91,7 +93,8 @@ class TestSearch:
         self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
         body = (await client.get("/exercises?q=deadlift", headers=auth_headers)).json()
-        assert body["total"] == 2  # conventional + romanian
+        # conventional, romanian, single-leg romanian, sumo (Adım 24).
+        assert body["total"] == 4
 
     async def test_returns_empty_for_no_match(
         self, client: AsyncClient, auth_headers: dict[str, str]
