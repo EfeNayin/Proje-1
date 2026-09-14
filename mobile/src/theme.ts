@@ -30,6 +30,9 @@ export const statusColors = {
   optimal: "#3ddc84",
   high: "#4aa3f0",
   above_mrv: "#ff6b6b",
+  // Neutral, same tone as textMuted — deliberately not the "optimal" green:
+  // there is no published range to say this count is fine against.
+  no_reference: "#8b93a3",
 } as const;
 
 export const statusLabels = {
@@ -38,6 +41,7 @@ export const statusLabels = {
   optimal: "Optimal",
   high: "High",
   above_mrv: "Over MRV",
+  no_reference: "No reference range",
 } as const;
 
 /**

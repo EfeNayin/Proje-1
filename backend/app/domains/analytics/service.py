@@ -74,8 +74,11 @@ def _classify(direct_sets: int, mev: int | None, mav: int | None, mrv: int | Non
         return "untrained"
     if mev is None or mav is None or mrv is None:
         # No published landmark for this muscle; report the count without a
-        # verdict rather than inventing one.
-        return "optimal"
+        # verdict rather than inventing one. "optimal" would be a verdict —
+        # it claims the count sits inside a real range that does not exist
+        # here, and a client would be right to render it exactly like a
+        # muscle that really is on track. "no_reference" says neither.
+        return "no_reference"
     if direct_sets < mev:
         return "below_mev"
     if direct_sets <= mav:
@@ -364,7 +367,8 @@ def _volume_candidates(
                     data={
                         "region": region,
                         "count": len(untrained),
-                        "muscles": [group.name_tr for group in untrained],
+                        "muscles": [group.name for group in untrained],
+                        "muscles_tr": [group.name_tr for group in untrained],
                     },
                 ),
             )

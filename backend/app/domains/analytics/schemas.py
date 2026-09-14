@@ -6,7 +6,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-VolumeStatus = Literal["untrained", "below_mev", "optimal", "high", "above_mrv"]
+VolumeStatus = Literal["untrained", "below_mev", "optimal", "high", "above_mrv", "no_reference"]
+"""no_reference: no published MEV/MAV/MRV for this muscle, so direct_sets has
+nothing to be judged against. Distinct from "optimal" — that means "the count
+sits inside a real published range", not "there is no range at all". Every
+current seed muscle has all three landmarks, so this only fires once a muscle
+is added without them (see PROJE_1_CODEX_INCELEME.md Adım 17)."""
 
 
 class MuscleWeeklyVolume(BaseModel):

@@ -109,9 +109,25 @@ test('new history never prints null as a date', () => {
 });
 
 test('missing direct sets are described as absent records rather than proof of no training', () => {
+  // 'abs', not the Turkish 'Karın' — muscles_untrained now carries English
+  // names in `muscles` (see PROJE_1_CODEX_INCELEME.md Adım 16); `muscles_tr`
+  // is the Turkish counterpart, reserved for the future translated build.
   const copy = describeFinding({ code: 'muscles_untrained',
-    data: { region: 'core', count: 1, muscles: ['Karın'] } });
+    data: { region: 'core', count: 1, muscles: ['abs'], muscles_tr: ['Karın'] } });
   assert.match(copy.description, /No direct working sets were recorded/);
   assert.match(copy.action, /logs are complete/);
   assert.doesNotMatch(copy.title, /untrained/);
 });
+
+// Adım 16: volume_below_mev / volume_above_mrv used to splice the Turkish
+// muscle_tr name into an otherwise-English sentence ("Göğüs: low recorded
+// volume"). These pin the fix — English throughout, muscle_tr ignored.
+for (const code of ['volume_below_mev', 'volume_above_mrv']) {
+  test(`${code} uses the English muscle name, not muscle_tr, in title and description`, () => {
+    const copy = describeFinding({ code, data: { muscle: 'chest', muscle_tr: 'Göğüs',
+      avg_sets: 4.8, mev: 8, mrv: 22, weeks_below: 3, weeks_above: 3, weeks_total: 4 } });
+    assert.match(copy.title, /^chest:/);
+    assert.doesNotMatch(copy.title, /Göğüs/);
+    assert.doesNotMatch(copy.description, /Göğüs/);
+  });
+}

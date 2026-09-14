@@ -9,7 +9,14 @@ import { apiRequest } from "./client";
  * sets call for different nudges — one is "you skipped this", the other is
  * "you are close, add a couple".
  */
-export type VolumeStatus = "untrained" | "below_mev" | "optimal" | "high" | "above_mrv";
+/**
+ * "no_reference": no published MEV/MAV/MRV for this muscle — the count has
+ * nothing to be judged against. Distinct from "optimal", which means the
+ * count sits inside a real range; every current seed muscle has one, so this
+ * only appears once a muscle is added without landmarks (see
+ * PROJE_1_CODEX_INCELEME.md Adım 17).
+ */
+export type VolumeStatus = "untrained" | "below_mev" | "optimal" | "high" | "above_mrv" | "no_reference";
 
 export type MuscleWeeklyVolume = {
   muscle_group_id: number;

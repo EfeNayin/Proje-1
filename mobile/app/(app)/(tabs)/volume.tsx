@@ -82,7 +82,7 @@ function MuscleRow({ muscle }: { muscle: MuscleWeeklyVolume }) {
   return (
     <View style={[styles.muscle, untrained && styles.muscleDim]}>
       <View style={styles.muscleHeader}>
-        <Text style={styles.muscleName}>{muscle.name_tr}</Text>
+        <Text style={styles.muscleName}>{muscle.name}</Text>
         <View style={styles.muscleNumbers}>
           <Text style={[styles.setCount, { color: statusColors[muscle.status] }]}>
             {muscle.direct_sets}

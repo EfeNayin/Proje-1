@@ -78,7 +78,8 @@ class TestVolumeCandidates:
         finding = candidates[0].finding
         assert finding.code == "muscles_untrained"
         assert finding.data["region"] == "upper"
-        assert finding.data["muscles"] == ["Göğüs"]
+        assert finding.data["muscles"] == ["chest"]
+        assert finding.data["muscles_tr"] == ["Göğüs"]
 
     def test_untrained_muscles_are_grouped_into_one_finding_per_region(self) -> None:
         """4 untrained lower-body muscles -> 1 finding, not 4."""
@@ -96,7 +97,8 @@ class TestVolumeCandidates:
         assert finding.code == "muscles_untrained"
         assert finding.data["region"] == "lower"
         assert finding.data["count"] == 4
-        assert set(finding.data["muscles"]) == {"Ön Bacak", "Arka Bacak", "Kalça", "Baldır"}
+        assert set(finding.data["muscles"]) == {"quads", "hamstrings", "glutes", "calves"}
+        assert set(finding.data["muscles_tr"]) == {"Ön Bacak", "Arka Bacak", "Kalça", "Baldır"}
 
     def test_overtrained_muscle_is_above_mrv(self) -> None:
         chest = _muscle(1, "chest", "Göğüs", "upper", mev=8, mav=14, mrv=22)
@@ -253,7 +255,8 @@ class TestUntrainedRegionsAndBudget:
         legs = next(f for f in volume_findings if f["data"].get("region") == "lower")
         assert legs["code"] == "muscles_untrained"
         assert legs["data"]["count"] == 4
-        assert set(legs["data"]["muscles"]) == {"Ön Bacak", "Arka Bacak", "Kalça", "Baldır"}
+        assert set(legs["data"]["muscles"]) == {"quads", "hamstrings", "glutes", "calves"}
+        assert set(legs["data"]["muscles_tr"]) == {"Ön Bacak", "Arka Bacak", "Kalça", "Baldır"}
 
 
 class TestReadiness:

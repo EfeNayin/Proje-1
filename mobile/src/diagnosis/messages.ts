@@ -66,7 +66,12 @@ export function describeFinding(finding: Finding): FindingCopy {
 
   switch (finding.code) {
     case "volume_below_mev": {
-      const muscle = data.muscle_tr as string;
+      // English, matching the rest of this file's copy — muscle_tr also
+      // comes down the wire (see backend/app/domains/analytics/service.py)
+      // but is reserved for the future translated implementation this file
+      // itself defers to (see the file header comment); mixing it into an
+      // otherwise-English sentence read as broken text, not localization.
+      const muscle = data.muscle as string;
       const avgSets = data.avg_sets as number;
       const mev = data.mev as number;
       const weeksTotal = data.weeks_total as number;
@@ -78,7 +83,7 @@ export function describeFinding(finding: Finding): FindingCopy {
     }
 
     case "volume_above_mrv": {
-      const muscle = data.muscle_tr as string;
+      const muscle = data.muscle as string;
       const avgSets = data.avg_sets as number;
       const mrv = data.mrv as number;
       return {
