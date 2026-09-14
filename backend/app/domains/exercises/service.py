@@ -19,6 +19,27 @@ from app.domains.exercises.schemas import (
 )
 from app.models import Exercise, ExerciseMuscleGroup, MuscleGroup
 
+# Adım 26: the picker groups the 17-muscle taxonomy into seven broad
+# categories for browsing, matching how people actually think about a
+# session ("chest day", "leg day") rather than the detailed breakdown used
+# for volume analytics. Two placements are judgement calls, not obvious from
+# the muscle name alone:
+#   - forearms -> biceps: forearm work (wrist curls etc.) is conventionally
+#     paired with an arm/biceps day in this app's catalogue, and the user's
+#     seven categories had no separate "forearms" or "arms" bucket.
+#   - traps -> back: shrugs and other trap work sit on a back day here rather
+#     than under "shoulders".
+# Every one of the 17 muscle_groups rows appears in exactly one category.
+CATEGORY_MUSCLES: dict[str, tuple[str, ...]] = {
+    "chest": ("chest",),
+    "back": ("upper_back", "lats", "lower_back", "traps"),
+    "biceps": ("biceps", "forearms"),
+    "triceps": ("triceps",),
+    "legs": ("quads", "hamstrings", "glutes", "calves"),
+    "abs": ("abs", "obliques"),
+    "shoulders": ("front_delts", "side_delts", "rear_delts"),
+}
+
 
 def _normalise(column: Any) -> ColumnElement[str]:
     """Lowercase and strip accents, so 'gogus' matches 'Göğüs'.
@@ -63,21 +84,35 @@ def _apply_filters(stmt: Select[Any], query: ExerciseQuery) -> Select[Any]:
             .exists()
         )
 
+    if query.category:
+        # Same EXISTS shape as `muscle` above, but matching any of the
+        # muscles that make up this broad category.
+        stmt = stmt.where(
+            select(1)
+            .select_from(ExerciseMuscleGroup)
+            .join(MuscleGroup, MuscleGroup.id == ExerciseMuscleGroup.muscle_group_id)
+            .where(
+                ExerciseMuscleGroup.exercise_id == Exercise.id,
+                MuscleGroup.name.in_(CATEGORY_MUSCLES[query.category]),
+            )
+            .exists()
+        )
+
     return stmt
 
 
 async def list_exercises(db: AsyncSession, query: ExerciseQuery) -> ExerciseListResponse:
     """Search, filter and page through the catalogue."""
-    total = await db.scalar(
-        _apply_filters(select(func.count()).select_from(Exercise), query)
-    )
+    total = await db.scalar(_apply_filters(select(func.count()).select_from(Exercise), query))
 
     stmt = _apply_filters(select(Exercise), query)
     # Compound movements first: they are what people log at the start of a
     # session, so they belong at the top of the picker.
-    stmt = stmt.order_by(Exercise.is_compound.desc(), Exercise.name).limit(
-        query.limit
-    ).offset(query.offset)
+    stmt = (
+        stmt.order_by(Exercise.is_compound.desc(), Exercise.name)
+        .limit(query.limit)
+        .offset(query.offset)
+    )
 
     rows = (await db.scalars(stmt)).all()
 

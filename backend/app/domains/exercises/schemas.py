@@ -7,6 +7,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 Equipment = Literal["barbell", "dumbbell", "machine", "cable", "bodyweight"]
 
+# Broad browsing categories (Adım 26): the 17-muscle taxonomy is too granular
+# for "find something to add" browsing, so the picker groups it into these
+# seven. See service.CATEGORY_MUSCLES for which of the 17 muscles fall under
+# each one.
+Category = Literal["chest", "back", "biceps", "triceps", "legs", "abs", "shoulders"]
+
 
 class MuscleGroupSummary(BaseModel):
     """A muscle group with its weekly volume landmarks.
@@ -91,6 +97,10 @@ class ExerciseQuery(BaseModel):
         default=None,
         max_length=30,
         description="Muscle group code, e.g. 'chest'.",
+    )
+    category: Category | None = Field(
+        default=None,
+        description="Broad browsing category, e.g. 'legs'. Coarser than `muscle`.",
     )
     limit: int = Field(default=50, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
