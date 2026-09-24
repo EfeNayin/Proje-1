@@ -50,6 +50,7 @@ import {
 import { buildTemplateExercisesFromWorkout } from "../../../src/workout/templateFromWorkout";
 import { getStartingPlan } from "../../../src/workout/startingPlan";
 import { compareWorkoutToPlan } from "../../../src/workout/planComparison";
+import { formatRecordedRir, parseRirInput } from "../../../src/workout/rir";
 import {
   clearTemplateSaveRequest,
   getTemplateSaveRequest,
@@ -270,12 +271,35 @@ function TitleField({
   );
 }
 
-/**
- * One logged set. Tap to correct it, long-press to delete.
- *
- * Editing in place rather than in a modal: fixing a mistyped rep count is a
- * two-second job and should not involve a screen transition.
- */
+/** Recorded effort is optional and never prefilled from a planned target. */
+function RirField({ value, onChangeText, disabled }: {
+  value: string;
+  onChangeText: (value: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <View style={styles.rirRow}>
+      <View>
+        <Text style={styles.fieldLabel}>RIR (optional)</Text>
+        <TextInput
+          accessibilityLabel="Recorded RIR, optional, 0 to 10"
+          style={[styles.fieldInput, styles.rirInput]}
+          value={value}
+          onChangeText={onChangeText}
+          editable={!disabled}
+          keyboardType="number-pad"
+          placeholder="—"
+          placeholderTextColor={colors.textMuted}
+        />
+      </View>
+      <Text style={styles.rirHelp}>
+        Reps left at the end of this set (0–10). Leave blank if unsure.
+      </Text>
+    </View>
+  );
+}
+
+/** One logged set, corrected in place or deleted with a long press. */
 function SetRow({
   set,
   unit,
@@ -284,86 +308,111 @@ function SetRow({
 }: {
   set: LoggedSet;
   unit: WeightUnit;
-  onSave: (setId: number, weightKg: number, reps: number) => Promise<void>;
+  onSave: (setId: number, weightKg: number, reps: number, rir: number | null) => Promise<void>;
   onDelete: (setId: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
   const [saving, setSaving] = useState(false);
+  const [rir, setRir] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveInFlight = useRef(false);
 
   const startEditing = () => {
     setWeight(formatWeightValue(Number(set.weight_kg), unit));
     setReps(String(set.reps));
+    setRir(set.rir === null ? "" : String(set.rir));
+    setSaveError(null);
     setEditing(true);
   };
 
   const save = async () => {
+    if (saveInFlight.current) return;
     const parsedWeightKg = parseWeightInput(weight, unit);
     const parsedReps = Number(reps);
 
     if (parsedWeightKg === null || parsedWeightKg < 0) return;
     if (!Number.isInteger(parsedReps) || parsedReps <= 0) return;
 
-    setSaving(true);
+    let parsedRir: number | null;
     try {
-      await onSave(set.id, parsedWeightKg, parsedReps);
+      parsedRir = parseRirInput(rir);
+    } catch (err) {
+      setSaveError((err as Error).message);
+      return;
+    }
+    saveInFlight.current = true;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave(set.id, parsedWeightKg, parsedReps, parsedRir);
       setEditing(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not update the set");
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   };
 
   if (editing) {
     return (
-      <View style={styles.setRowEditing}>
-        <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
-          {set.is_warmup ? "W" : set.set_number}
-        </Text>
+      <View>
+        <View style={styles.setRowEditing}>
+          <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
+            {set.is_warmup ? "W" : set.set_number}
+          </Text>
 
-        <TextInput
-          style={styles.editInput}
-          value={weight}
-          onChangeText={setWeight}
-          keyboardType="decimal-pad"
-          autoFocus
-          selectTextOnFocus
-        />
-        <Text style={styles.editUnit}>{unit} ×</Text>
-        <TextInput
-          style={styles.editInput}
-          value={reps}
-          onChangeText={setReps}
-          keyboardType="number-pad"
-          selectTextOnFocus
-          onSubmitEditing={() => void save()}
-        />
+          <TextInput
+            style={styles.editInput}
+            value={weight}
+            onChangeText={setWeight}
+            editable={!saving}
+            keyboardType="decimal-pad"
+            autoFocus
+            selectTextOnFocus
+          />
+          <Text style={styles.editUnit}>{unit} ×</Text>
+          <TextInput
+            style={styles.editInput}
+            value={reps}
+            onChangeText={setReps}
+            editable={!saving}
+            keyboardType="number-pad"
+            selectTextOnFocus
+            onSubmitEditing={() => void save()}
+          />
 
-        {/* Delete lives here, not only behind a long-press: holding for half a
-            second is easy to under-do, and a short press just opens this
-            editor, leaving no visible way out. */}
-        <Pressable
-          onPress={() =>
-            Alert.alert("Delete set?", undefined, [
-              { text: "Cancel", style: "cancel" },
-              { text: "Delete", style: "destructive", onPress: () => onDelete(set.id) },
-            ])
-          }
-          hitSlop={8}
-          style={styles.editAction}
-        >
-          <Ionicons name="trash-outline" size={19} color={colors.danger} />
-        </Pressable>
-        <Pressable onPress={() => setEditing(false)} hitSlop={8} style={styles.editAction}>
-          <Ionicons name="close" size={20} color={colors.textMuted} />
-        </Pressable>
-        <Pressable onPress={() => void save()} hitSlop={8} style={styles.editAction} disabled={saving}>
-          {saving ? (
-            <ActivityIndicator size="small" color={colors.accent} />
-          ) : (
-            <Ionicons name="checkmark" size={20} color={colors.accent} />
-          )}
-        </Pressable>
+          {/* Delete lives here, not only behind a long-press: holding for half a
+              second is easy to under-do, and a short press just opens this
+              editor, leaving no visible way out. */}
+          <Pressable
+            onPress={() =>
+              Alert.alert("Delete set?", undefined, [
+                { text: "Cancel", style: "cancel" },
+                { text: "Delete", style: "destructive", onPress: () => onDelete(set.id) },
+              ])
+            }
+            hitSlop={8}
+            style={styles.editAction}
+            disabled={saving}
+          >
+            <Ionicons name="trash-outline" size={19} color={colors.danger} />
+          </Pressable>
+          <Pressable onPress={() => setEditing(false)} hitSlop={8} style={styles.editAction} disabled={saving}>
+            <Ionicons name="close" size={20} color={colors.textMuted} />
+          </Pressable>
+          <Pressable onPress={() => void save()} hitSlop={8} style={styles.editAction} disabled={saving}>
+            {saving ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <Ionicons name="checkmark" size={20} color={colors.accent} />
+            )}
+          </Pressable>
+        </View>
+        <RirField value={rir} onChangeText={setRir} disabled={saving} />
+        {saveError ? <Text style={styles.error}>{saveError}</Text> : null}
       </View>
     );
   }
@@ -384,6 +433,7 @@ function SetRow({
       </Text>
       <Text style={styles.setDetail}>
         {formatWeight(Number(set.weight_kg), unit)} × {set.reps}
+        {formatRecordedRir(set.rir)}
       </Text>
     </Pressable>
   );
@@ -398,6 +448,7 @@ function ReadOnlySetRow({ set, unit }: { set: LoggedSet; unit: WeightUnit }) {
       </Text>
       <Text style={styles.setDetail}>
         {formatWeight(Number(set.weight_kg), unit)} × {set.reps}
+        {formatRecordedRir(set.rir)}
       </Text>
     </View>
   );
@@ -410,7 +461,7 @@ function SetForm({
   lastSet,
 }: {
   unit: WeightUnit;
-  onSubmit: (weightKg: number, reps: number, isWarmup: boolean) => void;
+  onSubmit: (weightKg: number, reps: number, isWarmup: boolean, rir: number | null) => Promise<void>;
   busy: boolean;
   lastSet: LoggedSet | undefined;
 }) {
@@ -419,65 +470,96 @@ function SetForm({
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
   const [isWarmup, setIsWarmup] = useState(false);
+  const [rir, setRir] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submitInFlight = useRef(false);
+  const disabled = busy || submitting;
 
   const weightHint = lastSet ? formatWeightValue(Number(lastSet.weight_kg), unit) : "0";
   const repsHint = lastSet ? String(lastSet.reps) : "8";
 
-  const submit = () => {
+  const submit = async () => {
+    if (busy || submitInFlight.current) return;
     const parsedWeightKg = parseWeightInput(weight === "" ? weightHint : weight, unit);
     const parsedReps = Number(reps === "" ? repsHint : reps);
 
     if (parsedWeightKg === null || parsedWeightKg < 0) return;
     if (!Number.isInteger(parsedReps) || parsedReps <= 0) return;
 
-    onSubmit(parsedWeightKg, parsedReps, isWarmup);
-    setWeight("");
-    setReps("");
+    let parsedRir: number | null;
+    try {
+      parsedRir = parseRirInput(rir);
+    } catch (err) {
+      setSubmitError((err as Error).message);
+      return;
+    }
+    submitInFlight.current = true;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onSubmit(parsedWeightKg, parsedReps, isWarmup, parsedRir);
+      setWeight("");
+      setReps("");
+      setRir("");
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Could not save the set");
+    } finally {
+      submitInFlight.current = false;
+      setSubmitting(false);
+    }
   };
 
   return (
-    <View style={styles.form}>
-      <View style={styles.field}>
-        <Text style={styles.fieldLabel}>{unit}</Text>
-        <TextInput
-          style={styles.fieldInput}
-          value={weight}
-          onChangeText={setWeight}
-          placeholder={weightHint}
-          placeholderTextColor={colors.textMuted}
-          keyboardType="decimal-pad"
-          returnKeyType="next"
-        />
+    <View>
+      <View style={styles.form}>
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>{unit}</Text>
+          <TextInput
+            style={styles.fieldInput}
+            value={weight}
+            onChangeText={setWeight}
+            editable={!disabled}
+            placeholder={weightHint}
+            placeholderTextColor={colors.textMuted}
+            keyboardType="decimal-pad"
+            returnKeyType="next"
+          />
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>reps</Text>
+          <TextInput
+            style={styles.fieldInput}
+            value={reps}
+            onChangeText={setReps}
+            editable={!disabled}
+            placeholder={repsHint}
+            placeholderTextColor={colors.textMuted}
+            keyboardType="number-pad"
+            returnKeyType="done"
+            onSubmitEditing={() => void submit()}
+          />
+        </View>
+
+        <Pressable
+          style={[styles.warmupToggle, isWarmup && styles.warmupActive]}
+          onPress={() => setIsWarmup((value) => !value)}
+          disabled={disabled}
+        >
+          <Text style={[styles.warmupText, isWarmup && styles.warmupTextActive]}>W</Text>
+        </Pressable>
+
+        <Pressable style={styles.addSet} onPress={() => void submit()} disabled={disabled}>
+          {disabled ? (
+            <ActivityIndicator color={colors.accentText} size="small" />
+          ) : (
+            <Ionicons name="add" size={22} color={colors.accentText} />
+          )}
+        </Pressable>
       </View>
-
-      <View style={styles.field}>
-        <Text style={styles.fieldLabel}>reps</Text>
-        <TextInput
-          style={styles.fieldInput}
-          value={reps}
-          onChangeText={setReps}
-          placeholder={repsHint}
-          placeholderTextColor={colors.textMuted}
-          keyboardType="number-pad"
-          returnKeyType="done"
-          onSubmitEditing={submit}
-        />
-      </View>
-
-      <Pressable
-        style={[styles.warmupToggle, isWarmup && styles.warmupActive]}
-        onPress={() => setIsWarmup((value) => !value)}
-      >
-        <Text style={[styles.warmupText, isWarmup && styles.warmupTextActive]}>W</Text>
-      </Pressable>
-
-      <Pressable style={styles.addSet} onPress={submit} disabled={busy}>
-        {busy ? (
-          <ActivityIndicator color={colors.accentText} size="small" />
-        ) : (
-          <Ionicons name="add" size={22} color={colors.accentText} />
-        )}
-      </Pressable>
+      <RirField value={rir} onChangeText={setRir} disabled={disabled} />
+      {submitError ? <Text style={styles.error}>{submitError}</Text> : null}
     </View>
   );
 }
@@ -789,7 +871,7 @@ export default function ActiveWorkoutScreen() {
   );
 
   const handleAddSet = useCallback(
-    async (exerciseId: string, weight: number, reps: number, isWarmup: boolean) => {
+    async (exerciseId: string, weight: number, reps: number, isWarmup: boolean, rir: number | null) => {
       setBusyExercise(exerciseId);
       setError(null);
       try {
@@ -798,10 +880,12 @@ export default function ActiveWorkoutScreen() {
           weight_kg: weight,
           reps,
           is_warmup: isWarmup,
+          rir,
         });
         setWorkout(updated);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not save the set");
+        throw err;
       } finally {
         setBusyExercise(null);
       }
@@ -810,10 +894,10 @@ export default function ActiveWorkoutScreen() {
   );
 
   const handleEditSet = useCallback(
-    async (setId: number, weight: number, reps: number) => {
+    async (setId: number, weight: number, reps: number, rir: number | null) => {
       setError(null);
       try {
-        setWorkout(await workoutsApi.updateSet(id, setId, { weight_kg: weight, reps }));
+        setWorkout(await workoutsApi.updateSet(id, setId, { weight_kg: weight, reps, rir }));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not update the set");
         throw err;
@@ -1019,8 +1103,8 @@ export default function ActiveWorkoutScreen() {
                     unit={unit}
                     busy={busyExercise === block.exerciseId}
                     lastSet={block.sets[block.sets.length - 1]}
-                    onSubmit={(weightKg, reps, isWarmup) =>
-                      void handleAddSet(block.exerciseId, weightKg, reps, isWarmup)
+                    onSubmit={(weightKg, reps, isWarmup, rir) =>
+                      handleAddSet(block.exerciseId, weightKg, reps, isWarmup, rir)
                     }
                   />
                 )}
@@ -1166,7 +1250,10 @@ const styles = StyleSheet.create({
   },
   setNumber: { color: colors.textMuted, width: 28, fontSize: 14, fontWeight: "600" },
   warmupLabel: { color: colors.textMuted, opacity: 0.7 },
-  setDetail: { color: colors.text, fontSize: 15 },
+  setDetail: { color: colors.text, fontSize: 15, flexShrink: 1 },
+  rirRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginVertical: spacing.sm },
+  rirInput: { width: 82 },
+  rirHelp: { color: colors.textMuted, fontSize: 12, lineHeight: 18, flex: 1 },
   editInput: {
     backgroundColor: colors.background,
     borderColor: colors.border,
