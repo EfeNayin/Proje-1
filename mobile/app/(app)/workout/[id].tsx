@@ -51,6 +51,7 @@ import { buildTemplateExercisesFromWorkout } from "../../../src/workout/template
 import { getStartingPlan } from "../../../src/workout/startingPlan";
 import { compareWorkoutToPlan } from "../../../src/workout/planComparison";
 import { formatRecordedRir, parseRirInput } from "../../../src/workout/rir";
+import { compareExerciseTargets, describeTargetComparison } from "../../../src/workout/targetComparison";
 import {
   clearTemplateSaveRequest,
   getTemplateSaveRequest,
@@ -1070,6 +1071,8 @@ export default function ActiveWorkoutScreen() {
           {blocks.map((block) => {
             const exerciseTargets = targets.filter((t) => t.exercise_id === block.exerciseId);
             const comparison = planComparison?.exercises.get(block.exerciseId);
+            const targetComparison = compareExerciseTargets(exerciseTargets, block.sets);
+            const targetLines = describeTargetComparison(targetComparison);
             return (
               <View key={block.exerciseId} style={styles.block}>
                 <Text style={styles.blockTitle}>{block.name}</Text>
@@ -1084,6 +1087,15 @@ export default function ActiveWorkoutScreen() {
                           ` · ${comparison.unrecordedSets} not recorded`)
                       : `Outside starting plan · ${comparison?.recordedSets ?? 0} working sets recorded`}
                   </Text>
+                ) : null}
+
+                {targetLines.length > 0 ? (
+                  <View style={styles.targetComparison}>
+                    <Text style={styles.planDetail}>
+                      All recorded working sets, including extras. Warm-ups and zero-rep entries excluded.
+                    </Text>
+                    {targetLines.map((line) => <Text key={line} style={styles.planDetail}>{line}</Text>)}
+                  </View>
                 ) : null}
 
                 {readOnly
@@ -1231,6 +1243,7 @@ const styles = StyleSheet.create({
   },
   planCount: { color: colors.text, fontSize: 14, lineHeight: 21 },
   planDetail: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
+  targetComparison: { gap: spacing.xs, marginBottom: spacing.sm },
   blockTarget: { color: colors.textMuted, fontSize: 12, marginBottom: spacing.sm },
 
   setRow: {
