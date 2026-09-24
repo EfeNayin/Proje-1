@@ -170,6 +170,21 @@ async def update_set(
     return await service.update_set(db, current_user.id, workout_id, set_id, payload)
 
 
+@router.put(
+    "/{workout_id}/sets/requests/{request_id}",
+    response_model=WorkoutDetail,
+    summary="Create a set once, safely retrying with the same request ID and details",
+)
+async def save_set_request(
+    workout_id: UUID,
+    request_id: UUID,
+    payload: SetCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> WorkoutDetail:
+    return await service.add_set(db, current_user.id, workout_id, payload, request_id=request_id)
+
+
 @router.delete(
     "/{workout_id}/sets/{set_id}",
     response_model=WorkoutDetail,

@@ -123,6 +123,12 @@ export function addSet(workoutId: string, set: NewSet): Promise<WorkoutDetail> {
   });
 }
 
+export function saveSetRequest(workoutId: string, requestId: string, set: NewSet): Promise<WorkoutDetail> {
+  return apiRequest<WorkoutDetail>(`/workouts/${workoutId}/sets/requests/${requestId}`, {
+    method: "PUT", body: set,
+  });
+}
+
 /**
  * Correct a logged set.
  *

@@ -52,6 +52,7 @@ import { getStartingPlan } from "../../../src/workout/startingPlan";
 import { compareWorkoutToPlan } from "../../../src/workout/planComparison";
 import { formatRecordedRir, parseRirInput } from "../../../src/workout/rir";
 import { PreviousExercise } from "../../../src/workout/PreviousExercise";
+import { getSetSaveRequest, prepareSetSaveRequest, sendSetSaveRequest, type SetSaveRequest } from "../../../src/workout/setSaveRequest";
 import { compareExerciseTargets, describeTargetComparison } from "../../../src/workout/targetComparison";
 import {
   clearTemplateSaveRequest,
@@ -460,11 +461,13 @@ function SetForm({
   unit,
   onSubmit,
   busy,
+  blocked = false,
   lastSet,
 }: {
   unit: WeightUnit;
   onSubmit: (weightKg: number, reps: number, isWarmup: boolean, rir: number | null) => Promise<void>;
   busy: boolean;
+  blocked?: boolean;
   lastSet: LoggedSet | undefined;
 }) {
   // Prefilled from the previous set: on a working set you usually repeat the
@@ -476,13 +479,13 @@ function SetForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submitInFlight = useRef(false);
-  const disabled = busy || submitting;
+  const disabled = busy || submitting || blocked;
 
   const weightHint = lastSet ? formatWeightValue(Number(lastSet.weight_kg), unit) : "0";
   const repsHint = lastSet ? String(lastSet.reps) : "8";
 
   const submit = async () => {
-    if (busy || submitInFlight.current) return;
+    if (busy || blocked || submitInFlight.current) return;
     const parsedWeightKg = parseWeightInput(weight === "" ? weightHint : weight, unit);
     const parsedReps = Number(reps === "" ? repsHint : reps);
 
@@ -553,7 +556,7 @@ function SetForm({
         </Pressable>
 
         <Pressable style={styles.addSet} onPress={() => void submit()} disabled={disabled}>
-          {disabled ? (
+          {busy || submitting ? (
             <ActivityIndicator color={colors.accentText} size="small" />
           ) : (
             <Ionicons name="add" size={22} color={colors.accentText} />
@@ -813,6 +816,18 @@ export default function ActiveWorkoutScreen() {
   // below); this is the escape hatch that lets it become editable again.
   const [editing, setEditing] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [pendingSetRequest, setPendingSetRequest] = useState<SetSaveRequest | null>(null);
+  const pendingSetRef = useRef<SetSaveRequest | null>(null);
+  const setSaveInFlight = useRef(false);
+  const [setFormVersions, setSetFormVersions] = useState<Record<string, number>>({});
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const userId = user?.id;
+  const viewGeneration = useRef(0);
+
+  useEffect(() => {
+    const generation = ++viewGeneration.current;
+    return () => { viewGeneration.current = generation + 1; };
+  }, [id, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -837,10 +852,18 @@ export default function ActiveWorkoutScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    workoutsApi
-      .getWorkout(id)
-      .then((data) => {
-        if (!cancelled) setWorkout(data);
+    Promise.all([
+      workoutsApi.getWorkout(id),
+      userId ? getSetSaveRequest(userId, id) : Promise.reject(new Error("Sign in to load this workout.")),
+    ])
+      .then(([data, savedRequest]) => {
+        if (!cancelled) {
+          setSaveInFlight.current = false;
+          setBusyExercise(null);
+          pendingSetRef.current = savedRequest;
+          setPendingSetRequest(savedRequest);
+          setWorkout(data);
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load workout");
@@ -851,18 +874,20 @@ export default function ActiveWorkoutScreen() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, userId, loadAttempt]);
 
   // Include saved plan exercises even before their first set is logged.
   // Recorded exercises keep logging order; remaining targets keep plan order.
   const blocks = useMemo(() => {
     if (!workout) return [];
     const targetExtras = targets.map((t) => ({ id: t.exercise_id, name: t.exercise_name }));
-    return groupByExercise(workout.sets, [...targetExtras, ...pending]);
-  }, [workout, pending, targets]);
+    const unsent = pendingSetRequest ? [{ id: pendingSetRequest.input.exercise_id, name: pendingSetRequest.exerciseName }] : [];
+    return groupByExercise(workout.sets, [...targetExtras, ...pending, ...unsent]);
+  }, [workout, pending, targets, pendingSetRequest]);
 
   const handleSaveTitle = useCallback(
     async (title: string | null) => {
+      if (setSaveInFlight.current || pendingSetRef.current) return;
       try {
         setWorkout(await workoutsApi.updateWorkout(id, { title }));
       } catch (err) {
@@ -872,31 +897,63 @@ export default function ActiveWorkoutScreen() {
     [id],
   );
 
-  const handleAddSet = useCallback(
-    async (exerciseId: string, weight: number, reps: number, isWarmup: boolean, rir: number | null) => {
-      setBusyExercise(exerciseId);
+  const handleSetSave = useCallback(
+    async (proposed?: { exerciseId: string; exerciseName: string; weight: number; reps: number; isWarmup: boolean; rir: number | null }) => {
+      if (!userId || setSaveInFlight.current || finishing) throw new Error("Please wait for the current save.");
+      if (proposed && pendingSetRef.current) throw new Error("Resolve the pending set first.");
+      setSaveInFlight.current = true;
+      const generation = viewGeneration.current;
+      setBusyExercise(proposed?.exerciseId ?? pendingSetRef.current?.input.exercise_id ?? null);
       setError(null);
       try {
-        const updated = await workoutsApi.addSet(id, {
-          exercise_id: exerciseId,
-          weight_kg: weight,
-          reps,
-          is_warmup: isWarmup,
-          rir,
-        });
+        const request = proposed ? await prepareSetSaveRequest(userId, id, proposed.exerciseName, {
+          exercise_id: proposed.exerciseId, weight_kg: proposed.weight, reps: proposed.reps,
+          is_warmup: proposed.isWarmup, rir: proposed.rir,
+        }) : pendingSetRef.current;
+        if (!request) throw new Error("No pending set to retry.");
+        if (generation !== viewGeneration.current) return;
+        pendingSetRef.current = request;
+        setPendingSetRequest(request);
+        const updated = await sendSetSaveRequest(userId, id, request);
+        if (generation !== viewGeneration.current) return;
         setWorkout(updated);
+        pendingSetRef.current = null;
+        setPendingSetRequest(null);
+        // Also clear the original form after a successful retry from the banner.
+        // A direct save lets SetForm clear itself and retain its warm-up toggle.
+        if (!proposed) {
+          setSetFormVersions(versions => ({
+            ...versions, [request.input.exercise_id]: (versions[request.input.exercise_id] ?? 0) + 1,
+          }));
+        }
       } catch (err) {
+        if (generation !== viewGeneration.current) throw err;
+        // A validation rejection may have cleared the receipt. Storage errors
+        // must instead keep logging blocked until the saved intent can be read.
+        try {
+          const saved = await getSetSaveRequest(userId, id);
+          if (generation !== viewGeneration.current) return;
+          pendingSetRef.current = saved;
+          setPendingSetRequest(saved);
+        } catch {
+          if (generation !== viewGeneration.current) return;
+          setWorkout(null);
+        }
         setError(err instanceof Error ? err.message : "Could not save the set");
         throw err;
       } finally {
-        setBusyExercise(null);
+        if (generation === viewGeneration.current) {
+          setSaveInFlight.current = false;
+          setBusyExercise(null);
+        }
       }
     },
-    [id],
+    [id, userId, finishing],
   );
 
   const handleEditSet = useCallback(
     async (setId: number, weight: number, reps: number, rir: number | null) => {
+      if (setSaveInFlight.current || pendingSetRef.current) throw new Error("Resolve the pending set first.");
       setError(null);
       try {
         setWorkout(await workoutsApi.updateSet(id, setId, { weight_kg: weight, reps, rir }));
@@ -910,6 +967,7 @@ export default function ActiveWorkoutScreen() {
 
   const handleDeleteSet = useCallback(
     async (setId: number) => {
+      if (setSaveInFlight.current || pendingSetRef.current) return;
       try {
         setWorkout(await workoutsApi.deleteSet(id, setId));
       } catch (err) {
@@ -920,6 +978,7 @@ export default function ActiveWorkoutScreen() {
   );
 
   const handleFinish = useCallback(async () => {
+    if (setSaveInFlight.current || pendingSetRef.current) return;
     // Guards against a double-tap firing this twice while the request is in
     // flight — finish is idempotent server-side, but there is no reason to
     // rely on that when a disabled button is just as easy.
@@ -967,6 +1026,9 @@ export default function ActiveWorkoutScreen() {
     return (
       <View style={styles.centered}>
         <Text style={styles.error}>{error ?? "Workout not found"}</Text>
+        <Pressable onPress={() => { setLoading(true); setError(null); setLoadAttempt(value => value + 1); }}>
+          <Text style={styles.finish}>Try again</Text>
+        </Pressable>
       </View>
     );
   }
@@ -976,6 +1038,7 @@ export default function ActiveWorkoutScreen() {
   // readOnly is false regardless of the (unused, in that case) editing flag.
   const isFinished = workout.finished_at !== null;
   const readOnly = isFinished && !editing;
+  const setSaveBlocked = pendingSetRequest !== null || busyExercise !== null;
 
   return (
     <>
@@ -1005,7 +1068,7 @@ export default function ActiveWorkoutScreen() {
                 );
               }
               return (
-                <Pressable onPress={confirmFinish} disabled={finishing} hitSlop={8}>
+                <Pressable onPress={confirmFinish} disabled={finishing || setSaveBlocked} hitSlop={8}>
                   {finishing ? (
                     <ActivityIndicator size="small" color={colors.accent} />
                   ) : (
@@ -1018,7 +1081,7 @@ export default function ActiveWorkoutScreen() {
         />
 
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          {readOnly ? (
+          {readOnly || setSaveBlocked ? (
             <Text style={styles.titleReadOnly}>{workout.title ?? "Workout"}</Text>
           ) : (
             <TitleField key={workout.title ?? ""} value={workout.title} onSave={(title) => void handleSaveTitle(title)} />
@@ -1068,6 +1131,23 @@ export default function ActiveWorkoutScreen() {
           {readOnly ? null : <RestTimer seconds={restSeconds} onChangeSeconds={handleChangeRest} />}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
+          {pendingSetRequest ? (
+            <View style={styles.planComparison}>
+              <Text style={styles.blockTitle}>Set awaiting confirmation</Text>
+              <Text style={styles.planDetail}>
+                {pendingSetRequest.exerciseName}: {formatWeight(pendingSetRequest.input.weight_kg, unit)} × {pendingSetRequest.input.reps}
+                {formatRecordedRir(pendingSetRequest.input.rir ?? null)}
+                {pendingSetRequest.input.is_warmup ? " · Warm-up" : " · Working set"}
+              </Text>
+              <Text style={styles.planDetail}>
+                This set may already be saved. Retry to confirm it before adding another set or finishing.
+              </Text>
+              <Pressable disabled={busyExercise !== null}
+                onPress={() => { void handleSetSave().catch(() => undefined); }} style={styles.addExercise}>
+                <Text style={styles.addExerciseText}>{busyExercise !== null ? "Confirming…" : "Retry pending set"}</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           {blocks.map((block) => {
             const exerciseTargets = targets.filter((t) => t.exercise_id === block.exerciseId);
@@ -1105,7 +1185,7 @@ export default function ActiveWorkoutScreen() {
                   currentSets={block.sets}
                 />
 
-                {readOnly
+                {readOnly || setSaveBlocked
                   ? block.sets.map((set) => <ReadOnlySetRow key={set.id} set={set} unit={unit} />)
                   : block.sets.map((set) => (
                       <SetRow
@@ -1119,11 +1199,13 @@ export default function ActiveWorkoutScreen() {
 
                 {readOnly ? null : (
                   <SetForm
+                    key={setFormVersions[block.exerciseId] ?? 0}
                     unit={unit}
-                    busy={busyExercise === block.exerciseId}
+                    busy={busyExercise !== null || finishing}
+                    blocked={pendingSetRequest !== null}
                     lastSet={block.sets[block.sets.length - 1]}
                     onSubmit={(weightKg, reps, isWarmup, rir) =>
-                      handleAddSet(block.exerciseId, weightKg, reps, isWarmup, rir)
+                      handleSetSave({ exerciseId: block.exerciseId, exerciseName: block.name, weight: weightKg, reps, isWarmup, rir })
                     }
                   />
                 )}

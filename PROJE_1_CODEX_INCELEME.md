@@ -33,14 +33,27 @@ Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antr
 
 ### Güncel adım sayısı ve bu geliştirme turunun önerilen sınırı — 24 Eylül 2026
 
-32 uygulama adımı tamamlandı. Bölüm 11'deki 6 başlık ana gelişim aşamalarıdır; toplam 6 uygulama işi veya belirlenmiş bir proje bitiş sayısı değildir. Adım sayısı düzeltmeler ve kullanıcı talepleriyle büyüdü. Projenin tamamı için kesin toplam henüz kararlaştırılmadı.
+33 uygulama adımı tamamlandı. Bölüm 11'deki 6 başlık ana gelişim aşamalarıdır; toplam 6 uygulama işi veya belirlenmiş bir proje bitiş sayısı değildir. Adım sayısı düzeltmeler ve kullanıcı talepleriyle büyüdü. Projenin tamamı için kesin toplam henüz kararlaştırılmadı.
 
 Bu turu açık uçlu büyütmemek için önerilen kalan sıra:
 
-1. **Adım 33 — Set oluşturmayı güvenli yeniden denemek:** Sunucu seti kaydettiği halde yanıt kaybolduğunda yeniden denemenin ikinci set oluşturmaması. Adım 29'un açık bıraktığı istemci/sunucu idempotency çalışması; yalnızca çift dokunmayı engellemek bu sorunu çözmüyor.
+1. **Adım 33 tamamlandı — Set oluşturmayı güvenli yeniden denemek:** Sunucu seti kaydettiği halde yanıt kaybolduğunda aynı işlem kimliğiyle yeniden deneme ikinci set oluşturmuyor. Kapsam ve sınırlar aşağıda.
 2. **Adım 34 — Uçtan uca doğrulama ve düzeltmeler:** Gerçek cihazda önceki seans, hedef karşılaştırması, kg/lb, RIR boş/sıfır, bağlantı kesilmesi ve yeniden deneme akışlarını birlikte kontrol etmek; bulunan sorunları kapatıp mevcut turu değerlendirmek.
 
-Bu iki madde öneridir; tamamlanmış sayılmaz. 34 bir kontrol noktasıdır, bütün projenin bittiği taahhüdü değildir. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
+Adım 34 sıradaki önerilen iştir; henüz tamamlanmış sayılmaz. 34 bir kontrol noktasıdır, bütün projenin bittiği taahhüdü değildir. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
+
+### Adım 33: Yanıt kaybından sonra set oluşturmayı güvenli yeniden denemek — 24 Eylül 2026
+
+- Mobil set ekleme akışı artık `PUT /workouts/{workout_id}/sets/requests/{request_id}` kullanıyor. UUID işlem kimliği, egzersiz adı ve gönderilecek değerler ağ isteğinden önce hesap/antrenman anahtarı altında SecureStore'a kaydediliyor. Yerel kayıt başarısızsa sunucuya izlenemeyen bir yazma isteği gönderilmiyor. `expo-crypto` eklendi; sürümü Expo 57'nin paket eşlemesine uygun, kilit dosyasında 57.0.3.
+- Sunucu, antrenman sahipliğini kontrol edip mevcut antrenman kilidi altında işlem kaydını ve seti aynı transaction'da oluşturuyor. Aynı kimlik ve aynı içerik tekrar geldiğinde ikinci set oluşturulmuyor; farklı içerik 409 veriyor. Ondalık yazım farkları ve eksik/varsayılan alanlar normalize ediliyor. Farklı işlem kimlikleriyle bilinçli kaydedilen aynı değerlere sahip yeni setler ayrı kalıyor.
+- İşlem kaydı sete bağlanmadığından set silinse de korunuyor. Tekrar yanıtta güncel antrenman dönüyor: sonraki düzenlemeler geri alınmıyor, silinmiş set diriltilmiyor. Antrenman silinirse işlem kayıtları da siliniyor ve eski antrenmana tekrar istek 404 alıyor. Eski `POST /sets` yolu uyumluluk için duruyor; yeni mobil akış başarısızlıkta o yola düşmüyor.
+- Sonucu belirsiz kayıt için `Set awaiting confirmation` kartı ağırlık/tekrar/RIR/ısınma ayrımını gösteriyor. Kullanıcı `Retry pending set` ile özgün kimlik ve değerleri yeniden gönderiyor. Çözülene kadar yeni set, set düzenleme/silme ve bitirme engelleniyor. Uygulama yeniden açıldığında ilk seti henüz sunucuda olmayan serbest egzersiz de bekleyen kayıttan geri kuruluyor. Henüz gönderilmemiş diğer egzersiz taslakları mevcut ekran belleğinde korunuyor; başarılı tekrar yalnızca ilgili formu temizliyor.
+- 422 doğrulama reddinde bekleyen işlem temizlenip düzeltmeye izin veriliyor. Ağ, oturum, 404/409 ve sunucu hataları belirsiz kaydı silmiyor. Sunucu başarı yanıtından sonra yerel temizleme hata verirse aynı işlem tekrar kullanılabiliyor. Aynı uygulamanın örtüşen ekranları depolama/ağ kilidini paylaşıyor; eski bir tekrar yeni bekleyen kaydı temizleyemiyor. Ekrandan ayrılmış bir işlemin yanıtı yeni ekran durumunu değiştirmiyor.
+- Yeni set ağırlıkları, kg/lb dönüşümünden sonra API'nin iki ondalıklı kilogram hassasiyetine yuvarlanarak saklanıyor ve gönderiliyor. RIR boş/sıfır ayrımı korunuyor; hedef veya önceki set RIR'ı otomatik doldurulmuyor.
+
+Doğrulama: 13 yeni mobil test dahil 138 mobil testi geçti; TypeScript ve sıfır uyarıyla tam ESLint temiz. PostgreSQL'de set/antrenman/önceki seans için 67 test geçti; son eklenen migration geri/ileri kontrolüyle yeni kayıt dosyasındaki 14 test ayrıca geçti (toplam 68 farklı backend vakası). Eşzamanlı aynı/farklı kimlikler, farklı içerik reddi, rollback, sahiplik, silme/düzeltme sonrası tekrar, cihaz yeniden açılışı, depolama hataları, eski ekran ve form temizliği kapsandı. Backend uygulamasının tamamında mypy (52 dosya), değişen dosyalarda Ruff kod ve biçim kontrolleri temiz. `a31d92f0c683` migration'ı yerel geliştirme veritabanına başarıyla uygulandı. Fiziksel telefonda görsel/ağ kesintisi kontrolü henüz yapılmadı; Adım 34'te ele alınacak.
+
+Sınır: Bu tam çevrimdışı kuyruk değildir; antrenman başına tek çözülmemiş set tutulur ve yeni kayıt için önce onun sonucu çözülür. Uygulama verisinin silinmesi/yeniden kurulması cihazdaki işlem kimliğini kaybettirebilir. Eski istemcilerin kimliksiz POST istekleri yeni garantiden yararlanmaz. Migration geri alınırsa antrenmanlar/setler korunur ama tekrar önleme kayıtları silinir; bekleyen işlemler varken geri alma yapılmamalıdır. Cihazda depolama bozulması veya 409 uyuşmazlığı otomatik olarak yok sayılmaz; kayıt incelenmelidir.
 
 ### Adım 32: Önceki seansla aynı tekrar ve kayıtlı RIR grubunda ağırlık karşılaştırması — 24 Eylül 2026
 

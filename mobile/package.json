@@ -25,6 +25,7 @@
     "@react-navigation/native": "^7.3.16",
     "expo": "~57.0.20",
     "expo-constants": "~57.0.17",
+    "expo-crypto": "~57.0.2",
     "expo-font": "~57.0.3",
     "expo-haptics": "~57.0.2",
     "expo-image": "~57.0.4",
@@ -50,9 +51,9 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.18",
-    "typescript": "~6.0.3",
     "eslint": "^9.25.0",
-    "eslint-config-expo": "~57.0.2"
+    "eslint-config-expo": "~57.0.2",
+    "typescript": "~6.0.3"
   },
   "private": true
 }

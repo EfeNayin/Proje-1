@@ -158,3 +158,15 @@ test('API preserves explicit RIR zero and null in create and update requests', a
   assert.equal(calls[1][1].body.rir, null);
   assert.equal(calls[1][1].method, 'PATCH');
 });
+
+test('unresolved set locks the form without showing a perpetual sending indicator', async () => {
+  let calls = 0;
+  const render = screen('SetForm', { unit: 'kg', busy: false, blocked: true, lastSet,
+    onSubmit: async () => { calls++; } });
+  assert.equal(add(render()).props.disabled, true);
+  assert.equal(field(render()).props.disabled, true);
+  add(render()).props.onPress();
+  await settle();
+  assert.equal(calls, 0);
+  assert.equal(nodes(render()).some(node => node.type === 'ActivityIndicator'), false);
+});

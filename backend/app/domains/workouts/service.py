@@ -12,6 +12,8 @@ Two invariants this module is responsible for:
    looked fine.
 """
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -20,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import NotFoundError, ValidationAppError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationAppError
 from app.domains.programs.schemas import WorkoutTemplateRead
 from app.domains.workouts.schemas import (
     PreviousExerciseSession,
@@ -34,7 +36,7 @@ from app.domains.workouts.schemas import (
     WorkoutSummary,
     WorkoutUpdate,
 )
-from app.models import Exercise, Set, Workout
+from app.models import Exercise, Set, SetSaveRequest, Workout
 
 
 async def _load_owned_workout(
@@ -385,10 +387,34 @@ async def get_active_workout(db: AsyncSession, user_id: UUID) -> WorkoutDetail |
 
 
 async def add_set(
-    db: AsyncSession, user_id: UUID, workout_id: UUID, payload: SetCreate
+    db: AsyncSession,
+    user_id: UUID,
+    workout_id: UUID,
+    payload: SetCreate,
+    request_id: UUID | None = None,
 ) -> WorkoutDetail:
     """Append a set and refresh the workout's totals."""
     workout = await _load_owned_workout(db, workout_id, user_id, for_update=True)
+    if request_id is not None:
+        canonical = payload.model_dump(mode="json")
+        canonical["weight_kg"] = format(payload.weight_kg, ".2f")
+        canonical["rpe"] = format(payload.rpe, ".1f") if payload.rpe is not None else None
+        request_hash = hashlib.sha256(
+            json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        # The owned-workout lock serializes both receipt lookup and set creation.
+        receipt = await db.get(SetSaveRequest, (workout_id, request_id))
+        if receipt is not None:
+            if receipt.request_hash != request_hash:
+                raise ConflictError("This set request was already used with different details.")
+            # Return today's log, not an old snapshot that could undo later edits
+            # in the client. A deleted set remains deleted.
+            detail = await _to_detail(db, workout)
+            await db.commit()
+            return detail
+        db.add(
+            SetSaveRequest(workout_id=workout_id, request_id=request_id, request_hash=request_hash)
+        )
     await _assert_exercises_exist(db, {payload.exercise_id})
 
     db.add(
@@ -406,9 +432,10 @@ async def add_set(
 
     await db.flush()
     await _recalculate_totals(db, workout)
+    detail = await _to_detail(db, workout)
     await db.commit()
 
-    return await _to_detail(db, workout)
+    return detail
 
 
 async def update_set(

@@ -33,6 +33,19 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
+class SetSaveRequest(Base):
+    """Receipts survive set deletion; retries must never resurrect deleted sets."""
+
+    __tablename__ = "set_save_requests"
+
+    workout_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("workouts.id", ondelete="CASCADE"), primary_key=True
+    )
+    request_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    request_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[created_at]
+
+
 class Workout(Base):
     """One training session.
 
@@ -116,9 +129,7 @@ class Workout(Base):
         Index(
             "idx_workouts_template", "template_id", postgresql_where=text("template_id IS NOT NULL")
         ),
-        Index(
-            "idx_workouts_unfinished", "user_id", postgresql_where=text("finished_at IS NULL")
-        ),
+        Index("idx_workouts_unfinished", "user_id", postgresql_where=text("finished_at IS NULL")),
     )
 
     def __repr__(self) -> str:
