@@ -167,3 +167,19 @@ test('a network failure while resolving from the server is swallowed, not thrown
 
   assert.equal(result, null);
 });
+
+test('failed local cleanup never reopens a server-confirmed finished session or fails the home screen', async () => {
+  const { deps, state } = fixture({ owner: 'alice',
+    workouts: { w1: { id: 'w1', owner: 'alice', finished_at: '2026-09-24T12:00:00Z' } } });
+  state.stored = 'w1';
+  deps.clearActiveWorkout = async () => { throw new Error('Storage unavailable'); };
+  assert.equal(await resolveActiveWorkoutId(deps), null);
+});
+
+test('failed stale-pointer cleanup still checks the current account on the server', async () => {
+  const { deps, state } = fixture({ owner: 'alice', workouts: {},
+    serverActive: { id: 'w2', owner: 'alice', finished_at: null } });
+  state.stored = 'deleted';
+  deps.clearActiveWorkout = async () => { throw new Error('Storage unavailable'); };
+  assert.equal(await resolveActiveWorkoutId(deps), 'w2');
+});

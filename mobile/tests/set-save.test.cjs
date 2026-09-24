@@ -131,7 +131,7 @@ test('overlapping screens cannot prepare two pending intents or let a stale retr
 });
 
 // Exercise the actual screen callback and state wiring; native layout is not simulated.
-function screen(helpers, initial = log([])) {
+function screen(helpers, initial = log([]), overrides = {}) {
   const parsed = ts.createSourceFile('screen.tsx', read('app/(app)/workout/[id].tsx'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const names = ['ActiveWorkoutScreen', 'groupByExercise'];
   const source = parsed.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text))
@@ -161,6 +161,7 @@ function screen(helpers, initial = log([])) {
   for (const name of ['View', 'Text', 'Pressable', 'ActivityIndicator', 'KeyboardAvoidingView',
     'ScrollView', 'TitleField', 'SessionDuration', 'FinishedDuration', 'RestTimer', 'PreviousExercise',
     'SetRow', 'ReadOnlySetRow', 'SetForm', 'Ionicons', 'SaveAsTemplateModal']) globals[name] = name;
+  Object.assign(globals, overrides);
   const component = load(source, globals).default;
   const render = () => { cursor = 0; effectCursor = 0; pending = []; const tree = component();
     pending.forEach(fn => fn()); return tree; };
@@ -239,4 +240,56 @@ test('retry resets only the saved exercise form, preserving other exercise draft
   retry(render()).props.onPress(); await settle();
   const forms = nodes(render()).filter(node => node.type === 'SetForm');
   assert.deepEqual(forms.map(node => node.props.key), [1, 0]);
+});
+
+function finishHarness(finish, cleanup = async () => {}) {
+  let choices;
+  const routes = [];
+  const initial = log([{ ...input, id: 1, exercise_name: 'Bench', set_number: 1 }]);
+  const render = screen(api(storage(), async () => initial), initial, {
+    Alert: { alert: (_, __, buttons) => { choices = buttons; } },
+    workoutsApi: { getWorkout: async () => initial, finishWorkout: finish },
+    clearActiveWorkout: cleanup, clearTemplateSaveRequest: async () => {},
+    useRouter: () => ({ dismissAll: () => routes.push('dismiss'), replace: route => routes.push(route) }),
+  });
+  return { render, routes, confirm() {
+    const header = nodes(render()).find(node => node.type === 'Screen').props.options.headerRight();
+    header.props.onPress();
+    return choices.find(choice => choice.text === 'Finish').onPress;
+  } };
+}
+
+test('confirmed finish still leaves the screen when local pointer cleanup fails', async () => {
+  const harness = finishHarness(async () => ({}), async () => { throw new Error('Storage unavailable'); });
+  harness.render(); await settle();
+  harness.confirm()(); await settle();
+  assert.deepEqual(harness.routes, ['dismiss', '/']);
+});
+
+test('repeated finish confirmation sends once and synchronously blocks a stale add callback', async () => {
+  let release;
+  let calls = 0;
+  const harness = finishHarness(() => { calls++; return new Promise(resolve => { release = resolve; }); });
+  harness.render(); await settle();
+  const add = form(harness.render()).props.onSubmit;
+  const confirm = harness.confirm();
+  confirm(); confirm();
+  assert.equal(calls, 1);
+  await assert.rejects(add(20, 8, false, 0), /Please wait/);
+  release({}); await settle();
+});
+
+test('failed server finish retains the session and releases the lock for an explicit retry', async () => {
+  let calls = 0, cleanups = 0;
+  const harness = finishHarness(async () => { if (++calls === 1) throw new Error('Offline'); return {}; },
+    async () => { cleanups++; });
+  harness.render(); await settle();
+  harness.confirm()(); await settle();
+  assert.equal(cleanups, 0);
+  assert.deepEqual(harness.routes, []);
+  assert.match(JSON.stringify(harness.render()), /Offline/);
+  harness.confirm()(); await settle();
+  assert.equal(calls, 2);
+  assert.equal(cleanups, 1);
+  assert.deepEqual(harness.routes, ['dismiss', '/']);
 });

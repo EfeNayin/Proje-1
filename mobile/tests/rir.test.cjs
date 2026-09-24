@@ -170,3 +170,27 @@ test('unresolved set locks the form without showing a perpetual sending indicato
   assert.equal(calls, 0);
   assert.equal(nodes(render()).some(node => node.type === 'ActivityIndicator'), false);
 });
+
+test('editing only RIR in lb preserves the exact stored kg despite rounded display', async () => {
+  const calls = [];
+  const render = screen('SetRow', { set: { ...lastSet, weight_kg: '20.04' }, unit: 'lb', onDelete() {},
+    onSave: async (...args) => { calls.push(args); } });
+  render().props.onPress();
+  field(render()).props.onChangeText('0');
+  confirm(render()).props.onPress(); await settle();
+  assert.equal(calls[0][1], 20.04);
+  assert.equal(calls[0][3], 0);
+});
+
+test('set update converts an edited lb weight to API precision and preserves omitted weight', async () => {
+  const calls = [];
+  const api = load(read('src/api/workouts.ts'), {}, { './client': {
+    apiRequest: async (...args) => { calls.push(args); return {}; },
+  } });
+  const changes = { weight_kg: units.parseWeightInput('45', 'lb'), reps: 8, rir: null };
+  await api.updateSet('workout', 1, changes);
+  assert.equal(calls[0][1].body.weight_kg, 20.41);
+  assert.equal(changes.weight_kg, 20.41165665);
+  await api.updateSet('workout', 1, { rir: 0 });
+  assert.equal('weight_kg' in calls[1][1].body, false);
+});

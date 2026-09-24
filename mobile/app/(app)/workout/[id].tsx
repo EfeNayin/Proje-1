@@ -332,7 +332,9 @@ function SetRow({
 
   const save = async () => {
     if (saveInFlight.current) return;
-    const parsedWeightKg = parseWeightInput(weight, unit);
+    // Editing reps/RIR must not round-trip an untouched, rounded display value.
+    const parsedWeightKg = weight === formatWeightValue(Number(set.weight_kg), unit)
+      ? Number(set.weight_kg) : parseWeightInput(weight, unit);
     const parsedReps = Number(reps);
 
     if (parsedWeightKg === null || parsedWeightKg < 0) return;
@@ -816,6 +818,7 @@ export default function ActiveWorkoutScreen() {
   // below); this is the escape hatch that lets it become editable again.
   const [editing, setEditing] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const finishInFlight = useRef(false);
   const [pendingSetRequest, setPendingSetRequest] = useState<SetSaveRequest | null>(null);
   const pendingSetRef = useRef<SetSaveRequest | null>(null);
   const setSaveInFlight = useRef(false);
@@ -859,6 +862,8 @@ export default function ActiveWorkoutScreen() {
       .then(([data, savedRequest]) => {
         if (!cancelled) {
           setSaveInFlight.current = false;
+          finishInFlight.current = false;
+          setFinishing(false);
           setBusyExercise(null);
           pendingSetRef.current = savedRequest;
           setPendingSetRequest(savedRequest);
@@ -899,7 +904,7 @@ export default function ActiveWorkoutScreen() {
 
   const handleSetSave = useCallback(
     async (proposed?: { exerciseId: string; exerciseName: string; weight: number; reps: number; isWarmup: boolean; rir: number | null }) => {
-      if (!userId || setSaveInFlight.current || finishing) throw new Error("Please wait for the current save.");
+      if (!userId || setSaveInFlight.current || finishInFlight.current || finishing) throw new Error("Please wait for the current save.");
       if (proposed && pendingSetRef.current) throw new Error("Resolve the pending set first.");
       setSaveInFlight.current = true;
       const generation = viewGeneration.current;
@@ -978,22 +983,25 @@ export default function ActiveWorkoutScreen() {
   );
 
   const handleFinish = useCallback(async () => {
-    if (setSaveInFlight.current || pendingSetRef.current) return;
+    if (finishInFlight.current || setSaveInFlight.current || pendingSetRef.current) return;
     // Guards against a double-tap firing this twice while the request is in
     // flight — finish is idempotent server-side, but there is no reason to
     // rely on that when a disabled button is just as easy.
+    finishInFlight.current = true;
     setFinishing(true);
+    setError(null);
     // Write to the server first: if it fails, the device keeps its active
     // workout pointer and the session is not lost, just not marked done yet.
     try {
       await workoutsApi.finishWorkout(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not finish the workout");
+      finishInFlight.current = false;
       setFinishing(false);
       return;
     }
-    await clearActiveWorkout();
-    // Cleanup failure must not turn a confirmed finish into a failed operation.
+    // Server completion is authoritative; local cleanup must not trap us here.
+    await clearActiveWorkout().catch(() => undefined);
     await clearTemplateSaveRequest(id).catch(() => undefined);
     router.dismissAll();
     router.replace("/");

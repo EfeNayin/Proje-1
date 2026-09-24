@@ -142,9 +142,12 @@ export function updateSet(
   setId: number,
   changes: { weight_kg?: number; reps?: number; rir?: number | null; is_warmup?: boolean },
 ): Promise<WorkoutDetail> {
+  const body = changes.weight_kg === undefined ? changes : {
+    ...changes, weight_kg: Math.round(changes.weight_kg * 100) / 100,
+  };
   return apiRequest<WorkoutDetail>(`/workouts/${workoutId}/sets/${setId}`, {
     method: "PATCH",
-    body: changes,
+    body,
   });
 }
 

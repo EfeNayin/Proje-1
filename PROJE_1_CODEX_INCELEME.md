@@ -40,7 +40,21 @@ Bu turu açık uçlu büyütmemek için önerilen kalan sıra:
 1. **Adım 33 tamamlandı — Set oluşturmayı güvenli yeniden denemek:** Sunucu seti kaydettiği halde yanıt kaybolduğunda aynı işlem kimliğiyle yeniden deneme ikinci set oluşturmuyor. Kapsam ve sınırlar aşağıda.
 2. **Adım 34 — Uçtan uca doğrulama ve düzeltmeler:** Gerçek cihazda önceki seans, hedef karşılaştırması, kg/lb, RIR boş/sıfır, bağlantı kesilmesi ve yeniden deneme akışlarını birlikte kontrol etmek; bulunan sorunları kapatıp mevcut turu değerlendirmek.
 
-Adım 34 sıradaki önerilen iştir; henüz tamamlanmış sayılmaz. 34 bir kontrol noktasıdır, bütün projenin bittiği taahhüdü değildir. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
+Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; gerçek telefon kontrolü beklediği için henüz tamamlanmış sayılmaz. 34 bir kontrol noktasıdır, bütün projenin bittiği taahhüdü değildir. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
+
+### Adım 34: Birlikte doğrulama ve kullanım akışı düzeltmeleri — 24 Eylül 2026
+
+**Durum: Otomatik kontroller tamamlandı; telefon kabul kontrolü bekliyor.** Bu ortamda telefona erişim veya Android cihaz aracı bulunamadı. Kullanıcıdan Expo Go ile kontrol yapıp yapamayacağı soruldu. `ADIM_34_CIHAZ_KONTROLU.md` dosyasındaki maddeler sonuç gelene kadar açık kalacak.
+
+- Backend testlerinin tamamı gerçek PostgreSQL test veritabanında çalıştırıldı: **375 test geçti**. Bu tur backend kodu değiştirilmedi. Bağımlılıklardan gelen mevcut `crypt`/`datetime.utcnow` kullanımdan kaldırma uyarıları var; test hatası yok.
+- Libreyle set düzenlemede iki sorun önce testle tekrarlandı ve düzeltildi: yalnızca tekrar/RIR düzenlenirken ekrandaki yuvarlanmış ağırlığı tekrar kg'ye çevirmek gerçek değeri değiştirebiliyordu; değiştirilen lb ağırlığı ise API'nin iki ondalık sınırını aşabiliyordu. Dokunulmayan ağırlık artık saklanan kg değerini koruyor; bilinçli değişiklik API'ye iki ondalıklı kg olarak gönderiliyor. Kısmi güncellemede hiç gönderilmemiş ağırlık alanı eklenmiyor.
+- Antrenman sunucuda bittikten sonra yerel aktif-antrenman işaretçisini temizlemek hata verirse ekrandan çıkış duruyordu. Sunucunun onayladığı bitirme artık yerel temizliğe bağlı değil. Ana ekranın aktif seans çözümlemesinde de temizleme hatası bitmiş seansı tekrar açmıyor veya ekran yüklemesini düşürmüyor. Yanlış/eski işaretçi temizlenemese bile mevcut hesabın sunucu kaydı kontrol ediliyor.
+- Bitirme işlemi için eşzamanlılık koruması yalnızca ekrandaki buton durumuna dayanıyordu. Senkron işlem kilidi eklendi: art arda aynı onay tek sunucu isteği oluşturuyor; daha önce oluşturulmuş bir set-ekleme callback'i de bitirme sürerken yeni kayıt başlatamıyor. Sunucu hatasında kilit açılıyor ve yeniden denemeye izin veriliyor.
+- Eklenen **7 regresyon testi** dahil tüm **145 mobil test geçti**. Tam TypeScript ve sıfır uyarıyla ESLint temiz. İlk dört test ve iki aktif-seans temizleme testi düzeltme öncesinde başarısız, sonrasında başarılı oldu; ayrıca sunucu bitirme hatasından sonra yeniden deneme sınandı.
+
+Paketleme: Son mobil kaynak için iOS ve Android üretim JavaScript/Hermes dışa aktarımı başarıyla tamamlandı (iOS 1245, Android 1369 modül). İlk denemedeki Windows Hermes çalıştırma izni sorunu, izinli çalıştırmayla çözüldü. Paketleme çıktısı yalnızca yerel doğrulama içindir, dağıtılmadı; test API adresi `127.0.0.1` kullanıldı ve projenin telefon bağlantı ayarı değiştirilmedi. Bu işlem APK/IPA üretimi veya gerçek cihaz testi değildir.
+
+Kalan: Telefonda lb düzenleme, boş/sıfır RIR, önceki seans ve hedef karşılaştırması, kesinti/yeniden açılma sonrası bekleyen setin çözülmesi, bitirme ve klavye/yerleşim kontrolü. Bu sonuçlar olmadan Adım 34 veya geliştirme turu tamamen bitti denmez.
 
 ### Adım 33: Yanıt kaybından sonra set oluşturmayı güvenli yeniden denemek — 24 Eylül 2026
 

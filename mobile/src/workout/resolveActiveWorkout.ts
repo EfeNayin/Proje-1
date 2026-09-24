@@ -77,12 +77,13 @@ export async function resolveActiveWorkoutId(
   try {
     const workout = await getWorkout(stored);
     if (workout.finished_at) {
-      await clearActiveWorkout();
+      // The server's confirmed state wins even when local cleanup is unavailable.
+      await clearActiveWorkout().catch(() => undefined);
       return null;
     }
     return stored;
   } catch {
-    await clearActiveWorkout();
+    await clearActiveWorkout().catch(() => undefined);
     return resolveFromServer();
   }
 }
