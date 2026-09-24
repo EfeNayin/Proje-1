@@ -23,6 +23,7 @@ from sqlalchemy.orm import selectinload
 from app.core.exceptions import NotFoundError, ValidationAppError
 from app.domains.programs.schemas import WorkoutTemplateRead
 from app.domains.workouts.schemas import (
+    PreviousExerciseSession,
     SetCreate,
     SetRead,
     SetUpdate,
@@ -123,9 +124,7 @@ async def _assert_exercises_exist(db: AsyncSession, exercise_ids: set[UUID]) -> 
     if not exercise_ids:
         return
 
-    found = set(
-        (await db.scalars(select(Exercise.id).where(Exercise.id.in_(exercise_ids)))).all()
-    )
+    found = set((await db.scalars(select(Exercise.id).where(Exercise.id.in_(exercise_ids)))).all())
     missing = exercise_ids - found
     if missing:
         raise ValidationAppError(
@@ -170,7 +169,8 @@ async def _to_detail(db: AsyncSession, workout: Workout) -> WorkoutDetail:
         template_id=workout.template_id,
         template_snapshot=(
             WorkoutTemplateRead.model_validate(workout.template_snapshot)
-            if workout.template_snapshot is not None else None
+            if workout.template_snapshot is not None
+            else None
         ),
         finished_at=workout.finished_at,
         finished_automatically=workout.finished_automatically,
@@ -180,6 +180,53 @@ async def _to_detail(db: AsyncSession, workout: Workout) -> WorkoutDetail:
 
 
 # ── Workouts ─────────────────────────────────────────────────────────────
+
+
+async def get_previous_exercise_session(
+    db: AsyncSession, user_id: UUID, workout_id: UUID, exercise_id: UUID
+) -> PreviousExerciseSession | None:
+    """Earlier by session start, never by list page or last edit time.
+
+    Closed sessions include automatic/legacy closures, explicitly identified
+    in the response. This is a record to consult, not a performance baseline.
+    Equal start times have no reliable chronology and are excluded.
+    """
+    current = await _load_owned_workout(db, workout_id, user_id)
+    if await db.get(Exercise, exercise_id) is None:
+        raise NotFoundError("Exercise not found")
+    eligible_sets = (
+        Set.exercise_id == exercise_id,
+        Set.is_warmup.is_(False),
+        Set.reps > 0,
+    )
+    previous = await db.scalar(
+        select(Workout)
+        .where(
+            Workout.user_id == user_id,
+            Workout.performed_at < current.performed_at,
+            Workout.finished_at.is_not(None),
+            select(Set.id).where(Set.workout_id == Workout.id, *eligible_sets).exists(),
+        )
+        .order_by(Workout.performed_at.desc(), Workout.id.desc())
+        .limit(1)
+    )
+    if previous is None:
+        return None
+    rows = (
+        await db.scalars(
+            select(Set)
+            .where(Set.workout_id == previous.id, *eligible_sets)
+            .options(selectinload(Set.exercise))
+            .order_by(Set.set_number, Set.id)
+        )
+    ).all()
+    return PreviousExerciseSession(
+        workout_id=previous.id,
+        title=previous.title,
+        performed_at=previous.performed_at,
+        finished_automatically=previous.finished_automatically,
+        sets=[_to_set_read(row) for row in rows],
+    )
 
 
 async def close_dangling_workouts(db: AsyncSession, user_id: UUID) -> None:
@@ -203,9 +250,7 @@ async def close_dangling_workouts(db: AsyncSession, user_id: UUID) -> None:
         workout.finished_automatically = True
 
 
-async def create_workout(
-    db: AsyncSession, user_id: UUID, payload: WorkoutCreate
-) -> WorkoutDetail:
+async def create_workout(db: AsyncSession, user_id: UUID, payload: WorkoutCreate) -> WorkoutDetail:
     """Log a session, optionally with all of its sets in one request."""
     await _assert_exercises_exist(db, {s.exercise_id for s in payload.sets})
     await close_dangling_workouts(db, user_id)
@@ -376,9 +421,7 @@ async def update_set(
     """
     workout = await _load_owned_workout(db, workout_id, user_id, for_update=True)
 
-    target = await db.scalar(
-        select(Set).where(Set.id == set_id, Set.workout_id == workout.id)
-    )
+    target = await db.scalar(select(Set).where(Set.id == set_id, Set.workout_id == workout.id))
     if target is None:
         raise NotFoundError("Set not found")
 
@@ -399,9 +442,7 @@ async def delete_set(
     """Remove a set, then close the gap it leaves in the numbering."""
     workout = await _load_owned_workout(db, workout_id, user_id, for_update=True)
 
-    target = await db.scalar(
-        select(Set).where(Set.id == set_id, Set.workout_id == workout.id)
-    )
+    target = await db.scalar(select(Set).where(Set.id == set_id, Set.workout_id == workout.id))
     if target is None:
         raise NotFoundError("Set not found")
 

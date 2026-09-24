@@ -19,6 +19,7 @@ from app.core.database import get_db
 from app.domains.auth.dependencies import CurrentUser
 from app.domains.workouts import service
 from app.domains.workouts.schemas import (
+    PreviousExerciseSession,
     SetCreate,
     SetUpdate,
     WorkoutCreate,
@@ -97,6 +98,20 @@ async def update_workout(
     db: DbSession,
 ) -> WorkoutDetail:
     return await service.update_workout(db, current_user.id, workout_id, payload)
+
+
+@router.get(
+    "/{workout_id}/exercises/{exercise_id}/previous",
+    response_model=PreviousExerciseSession | None,
+    summary="Get your previous closed session's working sets for an exercise",
+)
+async def get_previous_exercise_session(
+    workout_id: UUID,
+    exercise_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> PreviousExerciseSession | None:
+    return await service.get_previous_exercise_session(db, current_user.id, workout_id, exercise_id)
 
 
 @router.delete(

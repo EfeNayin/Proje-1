@@ -114,6 +114,16 @@ class WorkoutDetail(WorkoutSummary):
     template_snapshot: WorkoutTemplateRead | None = None
 
 
+class PreviousExerciseSession(BaseModel):
+    """The most recent earlier closed session with working sets of this exercise."""
+
+    workout_id: UUID
+    title: str | None
+    performed_at: datetime
+    finished_automatically: bool | None
+    sets: list[SetRead]
+
+
 class WorkoutListResponse(BaseModel):
     items: list[WorkoutSummary]
     total: int

@@ -50,6 +50,22 @@ export type WorkoutList = {
   offset: number;
 };
 
+export type PreviousExerciseSession = {
+  workout_id: string;
+  title: string | null;
+  performed_at: string;
+  finished_automatically: boolean | null;
+  sets: LoggedSet[];
+};
+
+export function getPreviousExerciseSession(
+  workoutId: string, exerciseId: string,
+): Promise<PreviousExerciseSession | null> {
+  return apiRequest<PreviousExerciseSession | null>(
+    `/workouts/${workoutId}/exercises/${exerciseId}/previous`,
+  );
+}
+
 export type NewSet = {
   exercise_id: string;
   weight_kg: number;

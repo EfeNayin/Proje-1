@@ -51,6 +51,7 @@ import { buildTemplateExercisesFromWorkout } from "../../../src/workout/template
 import { getStartingPlan } from "../../../src/workout/startingPlan";
 import { compareWorkoutToPlan } from "../../../src/workout/planComparison";
 import { formatRecordedRir, parseRirInput } from "../../../src/workout/rir";
+import { PreviousExercise } from "../../../src/workout/PreviousExercise";
 import { compareExerciseTargets, describeTargetComparison } from "../../../src/workout/targetComparison";
 import {
   clearTemplateSaveRequest,
@@ -1097,6 +1098,11 @@ export default function ActiveWorkoutScreen() {
                     {targetLines.map((line) => <Text key={line} style={styles.planDetail}>{line}</Text>)}
                   </View>
                 ) : null}
+
+                <PreviousExercise
+                  key={`${workout.id}:${workout.performed_at}:${block.exerciseId}`}
+                  workoutId={workout.id} exerciseId={block.exerciseId} unit={unit}
+                />
 
                 {readOnly
                   ? block.sets.map((set) => <ReadOnlySetRow key={set.id} set={set} unit={unit} />)
