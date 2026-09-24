@@ -49,6 +49,7 @@ import {
 } from "../../../src/workout/restPreference";
 import { buildTemplateExercisesFromWorkout } from "../../../src/workout/templateFromWorkout";
 import { getStartingPlan } from "../../../src/workout/startingPlan";
+import { compareWorkoutToPlan } from "../../../src/workout/planComparison";
 import {
   clearTemplateSaveRequest,
   getTemplateSaveRequest,
@@ -722,6 +723,7 @@ export default function ActiveWorkoutScreen() {
   const [error, setError] = useState<string | null>(null);
   const [restSeconds, setRestSecondsState] = useState(DEFAULT_REST_SECONDS);
   const { targets, description: planDescription } = useMemo(() => getStartingPlan(workout), [workout]);
+  const planComparison = useMemo(() => compareWorkoutToPlan(workout), [workout]);
   const [saveAsTemplateVisible, setSaveAsTemplateVisible] = useState(false);
   // A past session opens read-only by default (see isFinished/readOnly
   // below); this is the escape hatch that lets it become editable again.
@@ -960,17 +962,44 @@ export default function ActiveWorkoutScreen() {
             )}
           </View>
 
+          {planComparison ? (
+            <View style={styles.planComparison}>
+              <Text style={styles.blockTitle}>Plan and log</Text>
+              <Text style={styles.planCount}>
+                {planComparison.plannedSets > 0
+                  ? `${planComparison.recordedPlannedSets} of ${planComparison.plannedSets} planned working sets recorded`
+                  : "No working sets in the starting plan"}
+              </Text>
+              <Text style={styles.planDetail}>
+                {planComparison.unrecordedSets} planned sets not recorded · {planComparison.extraSets} extra working sets
+              </Text>
+              <Text style={styles.planDetail}>
+                Set counts only. Warm-ups and zero-rep entries are excluded.
+              </Text>
+            </View>
+          ) : null}
+
           {readOnly ? null : <RestTimer seconds={restSeconds} onChangeSeconds={handleChangeRest} />}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           {blocks.map((block) => {
-            const target = targets.find((t) => t.exercise_id === block.exerciseId);
+            const exerciseTargets = targets.filter((t) => t.exercise_id === block.exerciseId);
+            const comparison = planComparison?.exercises.get(block.exerciseId);
             return (
               <View key={block.exerciseId} style={styles.block}>
                 <Text style={styles.blockTitle}>{block.name}</Text>
-                {target ? (
-                  <Text style={styles.blockTarget}>Target: {formatTarget(target)}</Text>
+                {exerciseTargets.map((target) => (
+                  <Text key={target.id} style={styles.blockTarget}>Target: {formatTarget(target)}</Text>
+                ))}
+                {planComparison ? (
+                  <Text style={styles.blockTarget}>
+                    {comparison && comparison.plannedSets > 0
+                      ? `Recorded: ${comparison.recordedSets} / ${comparison.plannedSets} planned working sets` +
+                        (comparison.extraSets > 0 ? ` · ${comparison.extraSets} extra` :
+                          ` · ${comparison.unrecordedSets} not recorded`)
+                      : `Outside starting plan · ${comparison?.recordedSets ?? 0} working sets recorded`}
+                  </Text>
                 ) : null}
 
                 {readOnly
@@ -1107,6 +1136,17 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   blockTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
+  planComparison: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.xs,
+  },
+  planCount: { color: colors.text, fontSize: 14, lineHeight: 21 },
+  planDetail: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
   blockTarget: { color: colors.textMuted, fontSize: 12, marginBottom: spacing.sm },
 
   setRow: {
