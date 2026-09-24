@@ -30,6 +30,21 @@ const REGION_TITLES: Record<string, string> = {
   core: "Core",
 };
 
+/**
+ * `muscle.name` is the backend's machine code (e.g. "front_delts"), not a
+ * display string — every other piece of English copy on this screen is
+ * already a real title ("Upper body", "Not trained", ...). Splits on "_"
+ * and title-cases each word: "front_delts" -> "Front Delts", "biceps" ->
+ * "Biceps". Covers all 17 muscle codes in the catalogue without a lookup
+ * table, so a new one added later does not need this list updated.
+ */
+function formatMuscleName(name: string): string {
+  return name
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 function formatWeek(weekStart: string, offset: number): string {
   if (offset === 0) return "This week";
   if (offset === 1) return "Last week";
@@ -82,7 +97,7 @@ function MuscleRow({ muscle }: { muscle: MuscleWeeklyVolume }) {
   return (
     <View style={[styles.muscle, untrained && styles.muscleDim]}>
       <View style={styles.muscleHeader}>
-        <Text style={styles.muscleName}>{muscle.name}</Text>
+        <Text style={styles.muscleName}>{formatMuscleName(muscle.name)}</Text>
         <View style={styles.muscleNumbers}>
           <Text style={[styles.setCount, { color: statusColors[muscle.status] }]}>
             {muscle.direct_sets}
