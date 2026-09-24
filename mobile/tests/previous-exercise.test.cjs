@@ -19,8 +19,9 @@ function load(source, globals = {}, modules = {}) {
   return loaded.exports;
 }
 const units = load(read('src/units/weight.ts'));
+const comparison = load(read('src/workout/sessionComparison.ts'), {}, { '../units/weight': units });
 const react = { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) };
-function view(request, props = { workoutId: 'current', exerciseId: 'bench', unit: 'kg' }) {
+function view(request, props = { workoutId: 'current', exerciseId: 'bench', unit: 'kg', currentSets: [] }) {
   const state = [];
   const effects = [];
   let cursor = 0;
@@ -47,6 +48,7 @@ function view(request, props = { workoutId: 'current', exerciseId: 'bench', unit
       Text: 'Text', View: 'View', StyleSheet: { create: value => value } },
     '../api/workouts': { getPreviousExerciseSession: request },
     '../theme': { colors: {}, spacing: {} }, '../units/weight': units,
+    './sessionComparison': comparison,
   });
   return {
     render() {
@@ -69,8 +71,8 @@ const text = tree => JSON.stringify(tree);
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const previous = (changes = {}) => ({ workout_id: 'old', title: 'Push day',
   performed_at: '2026-08-01T12:00:00Z', finished_automatically: false,
-  sets: [ { id: 1, set_number: 2, weight_kg: '20', reps: 8, rir: 0 },
-    { id: 2, set_number: 3, weight_kg: '0', reps: 7, rir: null } ], ...changes });
+  sets: [ { id: 1, exercise_id: 'bench', set_number: 2, weight_kg: '20', reps: 8, rir: 0 },
+    { id: 2, exercise_id: 'bench', set_number: 3, weight_kg: '0', reps: 7, rir: null } ], ...changes });
 
 test('fetches only on demand, displays actual values and preserves zero vs unknown RIR', async () => {
   const calls = [];
@@ -129,7 +131,7 @@ test('unmount ignores a pending response', async () => {
 test('weight preferences and automatic or unknown closure are displayed explicitly', async () => {
   for (const closure of [true, null]) {
     const screen = view(async () => previous({ finished_automatically: closure }),
-      { workoutId: 'current', exerciseId: 'bench', unit: 'lb' });
+      { workoutId: 'current', exerciseId: 'bench', unit: 'lb', currentSets: [] });
     button(screen.render()).props.onPress(); screen.render(); await settle();
     const result = text(screen.render());
     assert.match(result, /44.1 lb/);
@@ -144,4 +146,23 @@ test('previous-session API uses the specific workout and exercise as its referen
   } });
   assert.equal(await api.getPreviousExerciseSession('old-workout', 'bench'), null);
   assert.deepEqual(calls, [['/workouts/old-workout/exercises/bench/previous']]);
+});
+
+test('comparison updates after set edits, RIR removal and deletion without refetching history', async () => {
+  let calls = 0;
+  const props = { workoutId: 'current', exerciseId: 'bench', unit: 'kg',
+    currentSets: [{ id: 10, exercise_id: 'bench', weight_kg: '22.5', reps: 8, rir: 0 }] };
+  const screen = view(async () => { calls++; return previous(); }, props);
+  button(screen.render()).props.onPress(); screen.render(); await settle();
+  assert.match(text(screen.render()), /Recorded weight \+2.5 kg/);
+  props.currentSets = [{ ...props.currentSets[0], weight_kg: '17.5' }];
+  assert.match(text(screen.render()), /Recorded weight −2.5 kg/);
+  props.unit = 'lb';
+  assert.match(text(screen.render()), /Recorded weight −5.5 lb/);
+  props.currentSets = [{ ...props.currentSets[0], rir: null }];
+  assert.match(text(screen.render()), /No matching working sets/);
+  assert.doesNotMatch(text(screen.render()), /Recorded weight −/);
+  props.currentSets = [];
+  assert.match(text(screen.render()), /No matching working sets/);
+  assert.equal(calls, 1);
 });

@@ -1102,6 +1102,7 @@ export default function ActiveWorkoutScreen() {
                 <PreviousExercise
                   key={`${workout.id}:${workout.performed_at}:${block.exerciseId}`}
                   workoutId={workout.id} exerciseId={block.exerciseId} unit={unit}
+                  currentSets={block.sets}
                 />
 
                 {readOnly

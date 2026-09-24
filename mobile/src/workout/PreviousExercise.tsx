@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { getPreviousExerciseSession, type PreviousExerciseSession } from "../api/workouts";
+import { getPreviousExerciseSession, type LoggedSet, type PreviousExerciseSession } from "../api/workouts";
 import { colors, spacing } from "../theme";
 import { formatWeight, type WeightUnit } from "../units/weight";
+import { compareSessionWeights, formatRecordedWeightChange } from "./sessionComparison";
 
 type Result = { status: "loading" } | { status: "error" } |
   { status: "ready"; session: PreviousExerciseSession | null };
 
 /** Mounted with a workout/date/exercise key so a new reference resets the view. */
-export function PreviousExercise({ workoutId, exerciseId, unit }: {
-  workoutId: string; exerciseId: string; unit: WeightUnit;
+export function PreviousExercise({ workoutId, exerciseId, unit, currentSets }: {
+  workoutId: string; exerciseId: string; unit: WeightUnit; currentSets: LoggedSet[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -27,6 +28,7 @@ export function PreviousExercise({ workoutId, exerciseId, unit }: {
   }, [expanded, attempt, workoutId, exerciseId]);
 
   const session = result.status === "ready" ? result.session : null;
+  const comparisons = session ? compareSessionWeights(exerciseId, currentSets, session.sets) : [];
   return (
     <View style={styles.container}>
       <Pressable accessibilityRole="button" accessibilityState={{ expanded }}
@@ -65,6 +67,30 @@ export function PreviousExercise({ workoutId, exerciseId, unit }: {
                 </Text>
               ))}
               <Text style={styles.detail}>Reference only: reps and effort may differ from this session.</Text>
+              <Text style={styles.title}>Recorded weight comparison</Text>
+              <Text style={styles.detail}>
+                Same reps and recorded RIR. Maximum recorded weight in each group; set counts may differ.
+              </Text>
+              {comparisons.length === 0 ? (
+                <Text style={styles.detail}>
+                  No matching working sets yet. Both sessions need sets with the same reps and recorded RIR.
+                </Text>
+              ) : comparisons.map(row => (
+                <View key={`${row.reps}:${row.rir}`} style={styles.content}>
+                  <Text style={styles.title}>{row.reps} reps · RIR {row.rir}</Text>
+                  <Text style={styles.detail}>
+                    Previous: {formatWeight(row.previousWeightKg, unit)} ({row.previousSetCount} {row.previousSetCount === 1 ? "set" : "sets"})
+                  </Text>
+                  <Text style={styles.detail}>
+                    This session: {formatWeight(row.currentWeightKg, unit)} ({row.currentSetCount} {row.currentSetCount === 1 ? "set" : "sets"})
+                  </Text>
+                  <Text style={styles.detail}>{formatRecordedWeightChange(row.deltaKg, unit)}</Text>
+                </View>
+              ))}
+              <Text style={styles.detail}>
+                Missing RIR is excluded. Body weight is not added to recorded loads.
+                This comparison alone does not establish strength progress.
+              </Text>
             </View>
           ) : null}
         </View>

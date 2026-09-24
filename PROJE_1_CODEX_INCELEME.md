@@ -31,6 +31,28 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 
 Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı. Bölüm 7'de listelenen güncelliğini yitirmiş belgeler Adım 14'te düzeltildi. Bölüm 8 madde G1'deki (kg/lb dönüşümü eksik) sorun Adım 15'te, madde G2'deki (teşhis metninde dil karışıklığı) sorun Adım 16'da, madde G3'teki (referans aralığı olmayan kasın yanlışlıkla "optimal" sayılması) sorun Adım 17'de giderildi. Bölüm 8 madde H'nin ilk maddesindeki (eşzamanlı set ekleme/değiştirmede denormalize toplam tutarlılığı) sorun Adım 18'de, ikinci maddesindeki (çoklu istemciden refresh çağrısında sunucu tarafı atomiklik) sorun Adım 19'da, üçüncü maddesindeki (aktif seans işaretçisinin hesap yerine cihaza bağlı olması) sorun Adım 20'de, dördüncü ve son maddesindeki (saat dilimi ayrışması, seyahat sırasında) sorun Adım 21'de giderildi — Bölüm 8 madde H'nin tamamı bu adımla kapandı. Bölüm 8'in A-H maddelerinin tamamı kapandıktan sonra kullanıcının kendisinden gelen yeni taleplerle devam edildi: egzersiz kataloğunun çok az olması Adım 22'de, haftalık hacim ekranındaki kas adlarının Türkçe/İngilizce tutarsızlığı (Adım 16'nın "Sınır" notunda ve Bölüm 8 madde G'de açık bırakılmıştı) Adım 23'te, egzersiz seçicideki son Türkçe isim kalıntısı Adım 24'te giderildi, kataloğa dış bir kaynaktan derlenen 50 egzersiz daha Adım 25'te eklendi, egzersiz seçicisinin tek düz liste olması yüzünden egzersiz bulmanın zorlaşması Adım 26'da yedi kaba kategoriye (göğüs/sırt/biceps/triceps/bacak/karın/omuz, İngilizce) ayrılarak giderildi (aynı adımın görsel çip kesilmesi hatası da aynı gün içinde düzeltildi), ve haftalık hacim ekranındaki kas adlarının ham kod olarak (`front_delts`, `biceps`) gösterilmesi Adım 27'de "Front Delts", "Biceps" biçiminde başlık harfli gösterime çevrilerek giderildi.
 
+### Güncel adım sayısı ve bu geliştirme turunun önerilen sınırı — 24 Eylül 2026
+
+32 uygulama adımı tamamlandı. Bölüm 11'deki 6 başlık ana gelişim aşamalarıdır; toplam 6 uygulama işi veya belirlenmiş bir proje bitiş sayısı değildir. Adım sayısı düzeltmeler ve kullanıcı talepleriyle büyüdü. Projenin tamamı için kesin toplam henüz kararlaştırılmadı.
+
+Bu turu açık uçlu büyütmemek için önerilen kalan sıra:
+
+1. **Adım 33 — Set oluşturmayı güvenli yeniden denemek:** Sunucu seti kaydettiği halde yanıt kaybolduğunda yeniden denemenin ikinci set oluşturmaması. Adım 29'un açık bıraktığı istemci/sunucu idempotency çalışması; yalnızca çift dokunmayı engellemek bu sorunu çözmüyor.
+2. **Adım 34 — Uçtan uca doğrulama ve düzeltmeler:** Gerçek cihazda önceki seans, hedef karşılaştırması, kg/lb, RIR boş/sıfır, bağlantı kesilmesi ve yeniden deneme akışlarını birlikte kontrol etmek; bulunan sorunları kapatıp mevcut turu değerlendirmek.
+
+Bu iki madde öneridir; tamamlanmış sayılmaz. 34 bir kontrol noktasıdır, bütün projenin bittiği taahhüdü değildir. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
+
+### Adım 32: Önceki seansla aynı tekrar ve kayıtlı RIR grubunda ağırlık karşılaştırması — 24 Eylül 2026
+
+- `Previous session` bölümüne mevcut seans ile önceki seansın kayıtlı ağırlık karşılaştırması eklendi. Aynı egzersiz, tam olarak aynı tekrar sayısı ve aynı gerçek RIR değerine sahip çalışma setleri gruplanıyor. Her ortak grupta iki seansın en yüksek kayıtlı ağırlığı, grubun set sayıları ve ağırlık farkı gösteriliyor. Sıralı set eşleştirmesi veya hedef RIR'dan gerçekleşen efor varsayımı yapılmıyor.
+- Isınma/sıfır tekrarlı setler ve boş RIR değerleri eşleştirmeye girmiyor; gerçek `RIR 0` geçerli. Kayıtlı ağırlığı sıfır olan set korunuyor, vücut ağırlığı eklenmiyor. Ortak grup bulunmazsa bunun nedeni açıklanıyor. En yüksek ağırlık farklı sayıda setten seçilmiş olabileceği için iki grubun set sayıları görünür tutuluyor.
+- Hesaplama veritabanının kilogram hassasiyetinde yapılıyor; gösterim kg/lb tercihini izliyor. Ağırlık farkı pozitif, negatif veya değişmedi olarak tarafsız gösteriliyor. Ekrandaki yuvarlama hassasiyetinden küçük gerçek farklar `+0` gibi yazılmıyor; `under 0.1` olarak belirtiliyor.
+- Set ekleme, düzenleme, silme, ısınma veya RIR değişikliği sonucu sunucudan gelen güncel setler karşılaştırmayı yeniden hesaplatıyor. Bunun için önceki seans tekrar tekrar istenmiyor. Önceki kaydı yenilemek için bölümü kapatıp açma davranışı korunuyor.
+
+Doğrulama: 9 yeni hesaplama testi ve 1 bileşen davranış testi dahil 125 mobil testi geçti. Testler grup maksimumları ve örnek sayıları, farklı tekrar/RIR'ın karışmaması, boş/sıfır RIR, ısınma/sıfır tekrar ayrımı, sıfır ağırlık, ondalık hassasiyet, kg/lb farkları, kararlı sıralama, girdilerin korunması ve canlı set düzeltme/silme akışını kapsıyor. Tam TypeScript ve sıfır uyarıyla tam ESLint temiz. Backend/API veya veritabanı değişmedi; backend testleri tekrar çalıştırılmadı. Fiziksel cihazda görsel kontrol henüz yapılmadı.
+
+Sınır: Aynı tekrar ve öz bildirilen RIR, bütün antrenman koşullarının eşit olduğunu kanıtlamaz. Bu adım kayıtlı ağırlık farkını gösterir; kuvvet artışı, kişisel rekor, e1RM veya otomatik antrenman önerisi üretmez. Önceki seansın otomatik/legacy kapanma açıklamaları görünmeye devam eder.
+
 ### Adım 31: Egzersizin önceki seanstaki kayıtlarına antrenman içinden erişim — 24 Eylül 2026
 
 - Her egzersiz bloğuna açılıp kapanabilen `Previous session` bölümü eklendi. Kullanıcı açtığında aynı hareketin önceki kapalı seansındaki çalışma setleri; seans adı, tarih/saat, ağırlık, tekrar ve gerçek RIR ile gösteriliyor. Kilogram/libre tercihi uygulanıyor; boş RIR `not recorded`, sıfır ise `RIR 0` olarak ayrılıyor. Önceki kayıtlar yeni set formuna kopyalanmıyor.
