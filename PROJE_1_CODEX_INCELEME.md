@@ -33,7 +33,7 @@ Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antr
 
 ### Güncel adım sayısı ve bu geliştirme turunun önerilen sınırı — 24 Eylül 2026
 
-33 uygulama adımı tamamlandı. Bölüm 11'deki 6 başlık ana gelişim aşamalarıdır; toplam 6 uygulama işi veya belirlenmiş bir proje bitiş sayısı değildir. Adım sayısı düzeltmeler ve kullanıcı talepleriyle büyüdü. Projenin tamamı için kesin toplam henüz kararlaştırılmadı.
+İlk 33 uygulama adımı tamamlandı. Adım 34 telefon kabul kontrolünü bekliyor; kullanıcının ekran görüntüsüyle istediği kart sadeleştirmesi Adım 35'te uygulandı. Bölüm 11'deki 6 başlık ana gelişim aşamalarıdır; toplam 6 uygulama işi veya belirlenmiş bir proje bitiş sayısı değildir. Adım sayısı düzeltmeler ve kullanıcı talepleriyle büyüdü. Projenin tamamı için kesin toplam henüz kararlaştırılmadı.
 
 Bu turu açık uçlu büyütmemek için önerilen kalan sıra:
 
@@ -41,6 +41,14 @@ Bu turu açık uçlu büyütmemek için önerilen kalan sıra:
 2. **Adım 34 — Uçtan uca doğrulama ve düzeltmeler:** Gerçek cihazda önceki seans, hedef karşılaştırması, kg/lb, RIR boş/sıfır, bağlantı kesilmesi ve yeniden deneme akışlarını birlikte kontrol etmek; bulunan sorunları kapatıp mevcut turu değerlendirmek.
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; gerçek telefon kontrolü beklediği için henüz tamamlanmış sayılmaz. 34 bir kontrol noktasıdır, bütün projenin bittiği taahhüdü değildir. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
+
+### Adım 35: Egzersiz kartlarının sadeleştirilmesi — 24 Eylül 2026
+
+- Kullanıcının ekran görüntüsünde işaret ettiği, egzersiz adı ile `Previous session` arasındaki metinler bütün egzersiz kartlarından kaldırıldı: `Target`, `Recorded`, çalışma seti kapsam açıklaması, tekrar ve RIR hedef karşılaştırmaları. Aynı kart yapısını kullanan aktif ve bitmiş antrenmanlarda uygulanır.
+- Egzersiz adının hemen ardından `Previous session` gelir; önceki seans içeriği, kaydedilmiş setler ve set giriş/düzenleme akışı korunur. Üstteki genel `Plan and log` özeti ayrı kalır. Saklanan başlangıç planı, hedef verileri ve karşılaştırma yardımcıları silinmedi; backend/API veya veritabanı değişmedi.
+- Kullanılmayan kart biçimlendirme işlevi, karşılaştırma çağrıları, import ve stiller kaldırıldı.
+
+Doğrulama: Mevcut **145 mobil test geçti**; tam TypeScript ve sıfır uyarıyla ESLint temiz. Yeni görünümün fiziksel telefonda kontrolü henüz yapılmadı. Kullanıcının paylaştığı önceki görünüm, Adım 34'teki bütün kabul senaryolarının geçtiğini göstermediğinden cihaz kontrol listesi açık kalır.
 
 ### Adım 34: Birlikte doğrulama ve kullanım akışı düzeltmeleri — 24 Eylül 2026
 

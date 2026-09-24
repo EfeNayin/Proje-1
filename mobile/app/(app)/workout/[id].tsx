@@ -27,7 +27,6 @@ import * as programsApi from "../../../src/api/programs";
 import { ApiError } from "../../../src/api/client";
 import type {
   ProgramDetail,
-  TemplateExerciseTarget,
 } from "../../../src/api/programs";
 import * as workoutsApi from "../../../src/api/workouts";
 import type { LoggedSet, WorkoutDetail } from "../../../src/api/workouts";
@@ -53,7 +52,6 @@ import { compareWorkoutToPlan } from "../../../src/workout/planComparison";
 import { formatRecordedRir, parseRirInput } from "../../../src/workout/rir";
 import { PreviousExercise } from "../../../src/workout/PreviousExercise";
 import { getSetSaveRequest, prepareSetSaveRequest, sendSetSaveRequest, type SetSaveRequest } from "../../../src/workout/setSaveRequest";
-import { compareExerciseTargets, describeTargetComparison } from "../../../src/workout/targetComparison";
 import {
   clearTemplateSaveRequest,
   getTemplateSaveRequest,
@@ -95,19 +93,6 @@ function groupByExercise(
   }
 
   return [...blocks.values()];
-}
-
-/** "4×6-8 @RIR2" — the template's goal for one exercise, not what was logged. */
-function formatTarget(target: TemplateExerciseTarget): string {
-  const { target_reps_min: min, target_reps_max: max } = target;
-  let reps: string;
-  if (min !== null && max !== null) reps = min === max ? String(min) : `${min}-${max}`;
-  else if (min !== null) reps = `${min}+`;
-  else if (max !== null) reps = `≤${max}`;
-  else reps = "?";
-
-  const rir = target.target_rir !== null ? ` @RIR${target.target_rir}` : "";
-  return `${target.target_sets}×${reps}${rir}`;
 }
 
 /**
@@ -1158,34 +1143,9 @@ export default function ActiveWorkoutScreen() {
           ) : null}
 
           {blocks.map((block) => {
-            const exerciseTargets = targets.filter((t) => t.exercise_id === block.exerciseId);
-            const comparison = planComparison?.exercises.get(block.exerciseId);
-            const targetComparison = compareExerciseTargets(exerciseTargets, block.sets);
-            const targetLines = describeTargetComparison(targetComparison);
             return (
               <View key={block.exerciseId} style={styles.block}>
                 <Text style={styles.blockTitle}>{block.name}</Text>
-                {exerciseTargets.map((target) => (
-                  <Text key={target.id} style={styles.blockTarget}>Target: {formatTarget(target)}</Text>
-                ))}
-                {planComparison ? (
-                  <Text style={styles.blockTarget}>
-                    {comparison && comparison.plannedSets > 0
-                      ? `Recorded: ${comparison.recordedSets} / ${comparison.plannedSets} planned working sets` +
-                        (comparison.extraSets > 0 ? ` · ${comparison.extraSets} extra` :
-                          ` · ${comparison.unrecordedSets} not recorded`)
-                      : `Outside starting plan · ${comparison?.recordedSets ?? 0} working sets recorded`}
-                  </Text>
-                ) : null}
-
-                {targetLines.length > 0 ? (
-                  <View style={styles.targetComparison}>
-                    <Text style={styles.planDetail}>
-                      All recorded working sets, including extras. Warm-ups and zero-rep entries excluded.
-                    </Text>
-                    {targetLines.map((line) => <Text key={line} style={styles.planDetail}>{line}</Text>)}
-                  </View>
-                ) : null}
 
                 <PreviousExercise
                   key={`${workout.id}:${workout.performed_at}:${block.exerciseId}`}
@@ -1340,8 +1300,6 @@ const styles = StyleSheet.create({
   },
   planCount: { color: colors.text, fontSize: 14, lineHeight: 21 },
   planDetail: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
-  targetComparison: { gap: spacing.xs, marginBottom: spacing.sm },
-  blockTarget: { color: colors.textMuted, fontSize: 12, marginBottom: spacing.sm },
 
   setRow: {
     flexDirection: "row",
