@@ -31,16 +31,32 @@ Sınır: Tam çevrimdışı antrenman kaydı eklenmedi. Sunucu refresh tokenı d
 
 Dönemsel değerlendirmede kilo ölçüm kapsamı Adım 5'te, tamamlanmış antrenman haftaları Adım 6'da, uyku kayıt kapsamı Adım 7'de, dönem isteklerinin ekranda tutarlı gösterimi Adım 8'de ele alındı. Bölüm 7'de listelenen güncelliğini yitirmiş belgeler Adım 14'te düzeltildi. Bölüm 8 madde G1'deki (kg/lb dönüşümü eksik) sorun Adım 15'te, madde G2'deki (teşhis metninde dil karışıklığı) sorun Adım 16'da, madde G3'teki (referans aralığı olmayan kasın yanlışlıkla "optimal" sayılması) sorun Adım 17'de giderildi. Bölüm 8 madde H'nin ilk maddesindeki (eşzamanlı set ekleme/değiştirmede denormalize toplam tutarlılığı) sorun Adım 18'de, ikinci maddesindeki (çoklu istemciden refresh çağrısında sunucu tarafı atomiklik) sorun Adım 19'da, üçüncü maddesindeki (aktif seans işaretçisinin hesap yerine cihaza bağlı olması) sorun Adım 20'de, dördüncü ve son maddesindeki (saat dilimi ayrışması, seyahat sırasında) sorun Adım 21'de giderildi — Bölüm 8 madde H'nin tamamı bu adımla kapandı. Bölüm 8'in A-H maddelerinin tamamı kapandıktan sonra kullanıcının kendisinden gelen yeni taleplerle devam edildi: egzersiz kataloğunun çok az olması Adım 22'de, haftalık hacim ekranındaki kas adlarının Türkçe/İngilizce tutarsızlığı (Adım 16'nın "Sınır" notunda ve Bölüm 8 madde G'de açık bırakılmıştı) Adım 23'te, egzersiz seçicideki son Türkçe isim kalıntısı Adım 24'te giderildi, kataloğa dış bir kaynaktan derlenen 50 egzersiz daha Adım 25'te eklendi, egzersiz seçicisinin tek düz liste olması yüzünden egzersiz bulmanın zorlaşması Adım 26'da yedi kaba kategoriye (göğüs/sırt/biceps/triceps/bacak/karın/omuz, İngilizce) ayrılarak giderildi (aynı adımın görsel çip kesilmesi hatası da aynı gün içinde düzeltildi), ve haftalık hacim ekranındaki kas adlarının ham kod olarak (`front_delts`, `biceps`) gösterilmesi Adım 27'de "Front Delts", "Biceps" biçiminde başlık harfli gösterime çevrilerek giderildi.
 
-### Güncel adım sayısı ve bu geliştirme turunun önerilen sınırı — 24 Eylül 2026
+### Güncel adım sayısı ve bu geliştirme turunun sınırı — 30 Eylül 2026
 
-İlk 33 uygulama adımı tamamlandı. Adım 34 telefon kabul kontrolünü bekliyor; kullanıcının ekran görüntüsüyle istediği kart sadeleştirmesi Adım 35'te uygulandı. Bölüm 11'deki 6 başlık ana gelişim aşamalarıdır; toplam 6 uygulama işi veya belirlenmiş bir proje bitiş sayısı değildir. Adım sayısı düzeltmeler ve kullanıcı talepleriyle büyüdü. Projenin tamamı için kesin toplam henüz kararlaştırılmadı.
+İlk 33 uygulama adımı tamamlandı. Adım 34, 30 Eylül 2026 tarihli kullanıcı telefon testi bildirimiyle kapatıldı; kullanıcının ekran görüntüsüyle istediği kart sadeleştirmesi Adım 35'te, set girişindeki hassasiyet ve doğrulama düzeltmeleri Adım 36'da uygulandı. Bölüm 11'deki 6 başlık ana gelişim aşamalarıdır; toplam 6 uygulama işi veya belirlenmiş bir proje bitiş sayısı değildir. Adım sayısı düzeltmeler ve kullanıcı talepleriyle büyüdü. Projenin tamamı için kesin toplam henüz kararlaştırılmadı.
 
-Bu turu açık uçlu büyütmemek için önerilen kalan sıra:
+Bu turun tamamlanan kontrol noktaları:
 
 1. **Adım 33 tamamlandı — Set oluşturmayı güvenli yeniden denemek:** Sunucu seti kaydettiği halde yanıt kaybolduğunda aynı işlem kimliğiyle yeniden deneme ikinci set oluşturmuyor. Kapsam ve sınırlar aşağıda.
-2. **Adım 34 — Uçtan uca doğrulama ve düzeltmeler:** Gerçek cihazda önceki seans, hedef karşılaştırması, kg/lb, RIR boş/sıfır, bağlantı kesilmesi ve yeniden deneme akışlarını birlikte kontrol etmek; bulunan sorunları kapatıp mevcut turu değerlendirmek.
+2. **Adım 34 tamamlandı — Uçtan uca doğrulama ve düzeltmeler:** Gerçek cihazda önceki seans, hedef karşılaştırması, kg/lb, RIR boş/sıfır, bağlantı kesilmesi ve yeniden deneme akışlarını birlikte kontrol etmek; bulunan sorunları kapatıp mevcut turu değerlendirmek.
 
-Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; gerçek telefon kontrolü beklediği için henüz tamamlanmış sayılmaz. 34 bir kontrol noktasıdır, bütün projenin bittiği taahhüdü değildir. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
+Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 henüz tanımlanmadı. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
+
+### Mac üzerinde yeniden doğrulama ve telefon kabulü — 30 Eylül 2026
+
+- Branch `fix/set-input-reliability`; Adım 36'nın dört dosyalık değişikliği incelendi. Mac üzerinde 149/149 mobil test, TypeScript ve sıfır uyarıyla ESLint geçti.
+- PostgreSQL dış port eşlemesinin kaldırılması ayrı Mac taşıma değişikliğidir. Docker servisleri çalışıyor; db ve redis sağlıklı, backend `/health` yanıtı başarılı. Bu tur backend testleri yeniden çalıştırılmadı.
+- Kullanıcı “tamamdır telefonda test edildi sıradaki adıma geçelin” diyerek telefon testinin tamamlandığını bildirdi. Adım 34 kullanıcı kabulüyle kapatıldı. Cihaz/işletim sistemi, Expo Go sürümü ve madde bazında sonuç verilmedi; Codex cihaz testi yapmış gibi raporlanmadı. Ayrıntılar `ADIM_34_CIHAZ_KONTROLU.md` içinde.
+- Aşağıdaki 24 Eylül girdileri, o tarihteki doğrulama durumunu anlatan tarihsel kayıtlardır; telefon kontrolünün beklediğini belirten ifadeler bu kabul kaydıyla güncellenmiştir.
+
+### Adım 36: Set girişinde hassasiyet ve anlaşılır doğrulama — 24 Eylül 2026
+
+- Yeni set formunda ağırlık yazılmadığında önceki setin saklanan kilogram değeri doğrudan kullanılıyor. Ekranda yuvarlanmış kg/lb ipucunu geri çevirerek ağırlık değiştirme sorunu giderildi: örneğin `20.04 kg` kaydı kg görünümünde tekrar eklenince `20 kg` olmuyor. Kullanıcı açıkça yeni bir ağırlık yazarsa kendi biriminden normal dönüşüm uygulanıyor.
+- Set ekleme ve düzenleme sırasında geçersiz/negatif ağırlık veya pozitif tam sayı olmayan tekrar için alanların yanında hata gösteriliyor. Kaydet düğmesi artık sessizce durmuyor; taslak korunuyor ve düzeltildikten sonra kaydetmek mümkün.
+- Düzenlemede silinmiş veya yalnızca boşluk içeren ağırlığın JavaScript dönüşümüyle `0` olarak kaydedilmesi engellendi. Bilinçli `0` girişi geçerli. Yeni egzersizde henüz önceki set yokken boş ağırlığın `0`, boş tekrarın `8` varsayılanı korunur; önceki setin RIR değeri otomatik kopyalanmaz.
+- Telefon kontrol listesi yeni doğrulama senaryolarıyla genişletildi; Adım 35'te kaldırılan kart hedef karşılaştırmasını bekleyen eski madde güncellendi.
+
+Doğrulama: 4 yeni davranış testi dahil **149 mobil test geçti**; tam TypeScript ve sıfır uyarıyla ESLint temiz. Yeni testlerin üçü düzeltme öncesinde gerçek hataları tekrarladı; diğer test yeni egzersizin sıfır ağırlık varsayılanını ve ondalık virgül girişini koruduğumuzu doğruladı. kg/lb tekrar kullanımı, açık ağırlık girişi, geçersiz değerlerde kayıt gönderilmemesi, hata gösterimi, taslağın korunması ve düzeltme sonrası başarı kapsandı. Backend veya veritabanı değişmedi. Gerçek telefon kabul kontrolü bekliyor.
 
 ### Adım 35: Egzersiz kartlarının sadeleştirilmesi — 24 Eylül 2026
 

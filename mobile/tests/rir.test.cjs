@@ -194,3 +194,77 @@ test('set update converts an edited lb weight to API precision and preserves omi
   await api.updateSet('workout', 1, { rir: 0 });
   assert.equal('weight_kg' in calls[1][1].body, false);
 });
+
+test('repeating the previous set preserves stored kg in either display unit', async () => {
+  for (const unit of ['kg', 'lb']) {
+    const calls = [];
+    const render = screen('SetForm', { unit, busy: false,
+      lastSet: { ...lastSet, weight_kg: '20.04' },
+      onSubmit: async (...args) => { calls.push(args); } });
+    add(render()).props.onPress(); await settle();
+    assert.equal(calls[0][0], 20.04);
+    assert.equal(calls[0][3], null);
+    // Explicitly typing the rounded hint is a new input, not a repeat request.
+    nodes(render()).find(node => node.type === 'TextInput')
+      .props.onChangeText(units.formatWeightValue(20.04, unit));
+    add(render()).props.onPress(); await settle();
+    assert.equal(calls[1][0], units.parseWeightInput(units.formatWeightValue(20.04, unit), unit));
+  }
+});
+
+test('a new exercise still defaults to a zero-weight set and accepts decimal comma input', async () => {
+  const calls = [];
+  const render = screen('SetForm', { unit: 'kg', busy: false, lastSet: undefined,
+    onSubmit: async (...args) => { calls.push(args); } });
+  add(render()).props.onPress(); await settle();
+  assert.deepEqual(calls[0], [0, 8, false, null]);
+  nodes(render()).find(node => node.type === 'TextInput').props.onChangeText('22,5');
+  add(render()).props.onPress(); await settle();
+  assert.equal(calls[1][0], 22.5);
+});
+
+test('invalid new-set weight and reps show errors, retain drafts and allow correction', async () => {
+  for (const [index, value, message] of [
+    [0, '-1', 'Enter a valid weight'], [0, 'abc', 'Enter a valid weight'],
+    [0, '  ', 'Enter a valid weight'],
+    [1, '0', 'Enter a whole number of reps'], [1, '2.5', 'Enter a whole number of reps'],
+  ]) {
+    let count = 0;
+    const render = screen('SetForm', { unit: 'kg', busy: false, lastSet,
+      onSubmit: async () => { count++; } });
+    const inputs = () => nodes(render()).filter(node => node.type === 'TextInput');
+    inputs()[index].props.onChangeText(value);
+    add(render()).props.onPress(); await settle();
+    assert.equal(count, 0);
+    assert.equal(inputs()[index].props.value, value);
+    assert.ok(JSON.stringify(render()).includes(message));
+    inputs()[index].props.onChangeText(index === 0 ? '0' : '8');
+    add(render()).props.onPress(); await settle();
+    assert.equal(count, 1);
+    assert.equal(JSON.stringify(render()).includes(message), false);
+  }
+});
+
+test('invalid set edits stay open with errors and blank weight cannot overwrite a saved weight', async () => {
+  for (const [index, value, message] of [
+    [0, '', 'Enter a valid weight'], [0, '  ', 'Enter a valid weight'],
+    [0, '-1', 'Enter a valid weight'], [0, 'abc', 'Enter a valid weight'],
+    [1, '', 'Enter a whole number of reps'], [1, '0', 'Enter a whole number of reps'],
+    [1, '2.5', 'Enter a whole number of reps'],
+  ]) {
+    let count = 0;
+    const render = screen('SetRow', { unit: 'kg', set: lastSet, onDelete() {},
+      onSave: async () => { count++; } });
+    render().props.onPress();
+    const inputs = () => nodes(render()).filter(node => node.type === 'TextInput');
+    inputs()[index].props.onChangeText(value);
+    confirm(render()).props.onPress(); await settle();
+    assert.equal(count, 0);
+    assert.equal(inputs()[index].props.value, value);
+    assert.ok(JSON.stringify(render()).includes(message));
+    inputs()[index].props.onChangeText(index === 0 ? '0' : '8');
+    confirm(render()).props.onPress(); await settle();
+    assert.equal(count, 1);
+    assert.equal(field(render()), undefined);
+  }
+});

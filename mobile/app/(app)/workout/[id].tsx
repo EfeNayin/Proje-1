@@ -322,8 +322,14 @@ function SetRow({
       ? Number(set.weight_kg) : parseWeightInput(weight, unit);
     const parsedReps = Number(reps);
 
-    if (parsedWeightKg === null || parsedWeightKg < 0) return;
-    if (!Number.isInteger(parsedReps) || parsedReps <= 0) return;
+    if (weight.trim() === "" || parsedWeightKg === null || !Number.isFinite(parsedWeightKg) || parsedWeightKg < 0) {
+      setSaveError("Enter a valid weight of 0 or more.");
+      return;
+    }
+    if (!Number.isInteger(parsedReps) || parsedReps <= 0) {
+      setSaveError("Enter a whole number of reps greater than 0.");
+      return;
+    }
 
     let parsedRir: number | null;
     try {
@@ -473,11 +479,20 @@ function SetForm({
 
   const submit = async () => {
     if (busy || blocked || submitInFlight.current) return;
-    const parsedWeightKg = parseWeightInput(weight === "" ? weightHint : weight, unit);
+    // Reuse the recorded value, not the rounded hint displayed in kg/lb.
+    const parsedWeightKg = weight === ""
+      ? (lastSet ? Number(lastSet.weight_kg) : 0)
+      : (weight.trim() === "" ? null : parseWeightInput(weight, unit));
     const parsedReps = Number(reps === "" ? repsHint : reps);
 
-    if (parsedWeightKg === null || parsedWeightKg < 0) return;
-    if (!Number.isInteger(parsedReps) || parsedReps <= 0) return;
+    if (parsedWeightKg === null || !Number.isFinite(parsedWeightKg) || parsedWeightKg < 0) {
+      setSubmitError("Enter a valid weight of 0 or more.");
+      return;
+    }
+    if (!Number.isInteger(parsedReps) || parsedReps <= 0) {
+      setSubmitError("Enter a whole number of reps greater than 0.");
+      return;
+    }
 
     let parsedRir: number | null;
     try {
