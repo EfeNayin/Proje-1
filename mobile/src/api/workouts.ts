@@ -66,6 +66,20 @@ export function getPreviousExerciseSession(
   );
 }
 
+export type ExerciseHistoryPage = {
+  items: PreviousExerciseSession[];
+  next_cursor: string | null;
+};
+
+export function getExerciseHistory(
+  workoutId: string, exerciseId: string, cursor: string | null = null,
+): Promise<ExerciseHistoryPage> {
+  const query = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+  return apiRequest<ExerciseHistoryPage>(
+    `/workouts/${workoutId}/exercises/${exerciseId}/history?limit=10${query}`,
+  );
+}
+
 export type NewSet = {
   exercise_id: string;
   weight_kg: number;

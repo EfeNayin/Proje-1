@@ -12,19 +12,24 @@ Two invariants this module is responsible for:
    looked fine.
 """
 
+import base64
+import binascii
 import hashlib
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationAppError
 from app.domains.programs.schemas import WorkoutTemplateRead
 from app.domains.workouts.schemas import (
+    ExerciseHistoryCursor,
+    ExerciseHistoryQuery,
+    ExerciseHistoryResponse,
     PreviousExerciseSession,
     SetCreate,
     SetRead,
@@ -187,11 +192,23 @@ async def _to_detail(db: AsyncSession, workout: Workout) -> WorkoutDetail:
 async def get_previous_exercise_session(
     db: AsyncSession, user_id: UUID, workout_id: UUID, exercise_id: UUID
 ) -> PreviousExerciseSession | None:
-    """Earlier by session start, never by list page or last edit time.
+    page = await get_exercise_history(
+        db, user_id, workout_id, exercise_id, ExerciseHistoryQuery(limit=1)
+    )
+    return page.items[0] if page.items else None
 
-    Closed sessions include automatic/legacy closures, explicitly identified
-    in the response. This is a record to consult, not a performance baseline.
-    Equal start times have no reliable chronology and are excluded.
+
+async def get_exercise_history(
+    db: AsyncSession,
+    user_id: UUID,
+    workout_id: UUID,
+    exercise_id: UUID,
+    query: ExerciseHistoryQuery,
+) -> ExerciseHistoryResponse:
+    """Earlier closed sessions, newest first, with a stable date/UUID cursor.
+
+    The cursor only narrows the owned reference query; it grants no access.
+    Equal reference start times are excluded, as in the previous-session API.
     """
     current = await _load_owned_workout(db, workout_id, user_id)
     if await db.get(Exercise, exercise_id) is None:
@@ -201,33 +218,61 @@ async def get_previous_exercise_session(
         Set.is_warmup.is_(False),
         Set.reps > 0,
     )
-    previous = await db.scalar(
-        select(Workout)
-        .where(
-            Workout.user_id == user_id,
-            Workout.performed_at < current.performed_at,
-            Workout.finished_at.is_not(None),
-            select(Set.id).where(Set.workout_id == Workout.id, *eligible_sets).exists(),
-        )
-        .order_by(Workout.performed_at.desc(), Workout.id.desc())
-        .limit(1)
+    stmt = select(Workout).where(
+        Workout.user_id == user_id,
+        Workout.performed_at < current.performed_at,
+        Workout.finished_at.is_not(None),
+        select(Set.id).where(Set.workout_id == Workout.id, *eligible_sets).exists(),
     )
-    if previous is None:
-        return None
+    if query.cursor is not None:
+        try:
+            cursor = ExerciseHistoryCursor.model_validate_json(
+                base64.b64decode(query.cursor, altchars=b"-_", validate=True)
+            )
+        except (ValueError, binascii.Error) as exc:
+            raise ValidationAppError("Invalid exercise history cursor") from exc
+        stmt = stmt.where(
+            tuple_(Workout.performed_at, Workout.id) < (cursor.performed_at, cursor.workout_id)
+        )
+    workouts = (
+        await db.scalars(
+            stmt.order_by(Workout.performed_at.desc(), Workout.id.desc()).limit(query.limit + 1)
+        )
+    ).all()
+    page = workouts[: query.limit]
+    if not page:
+        return ExerciseHistoryResponse(items=[], next_cursor=None)
     rows = (
         await db.scalars(
             select(Set)
-            .where(Set.workout_id == previous.id, *eligible_sets)
+            .where(Set.workout_id.in_([workout.id for workout in page]), *eligible_sets)
             .options(selectinload(Set.exercise))
             .order_by(Set.set_number, Set.id)
         )
     ).all()
-    return PreviousExerciseSession(
-        workout_id=previous.id,
-        title=previous.title,
-        performed_at=previous.performed_at,
-        finished_automatically=previous.finished_automatically,
-        sets=[_to_set_read(row) for row in rows],
+    grouped: dict[UUID, list[SetRead]] = {workout.id: [] for workout in page}
+    for row in rows:
+        grouped[row.workout_id].append(_to_set_read(row))
+    next_cursor = None
+    if len(workouts) > query.limit:
+        last = page[-1]
+        next_cursor = base64.urlsafe_b64encode(
+            ExerciseHistoryCursor(performed_at=last.performed_at, workout_id=last.id)
+            .model_dump_json()
+            .encode()
+        ).decode()
+    return ExerciseHistoryResponse(
+        items=[
+            PreviousExerciseSession(
+                workout_id=workout.id,
+                title=workout.title,
+                performed_at=workout.performed_at,
+                finished_automatically=workout.finished_automatically,
+                sets=grouped[workout.id],
+            )
+            for workout in page
+        ],
+        next_cursor=next_cursor,
     )
 
 

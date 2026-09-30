@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from app.domains.programs.schemas import WorkoutTemplateRead
 
@@ -122,6 +122,21 @@ class PreviousExerciseSession(BaseModel):
     performed_at: datetime
     finished_automatically: bool | None
     sets: list[SetRead]
+
+
+class ExerciseHistoryCursor(BaseModel):
+    performed_at: AwareDatetime
+    workout_id: UUID
+
+
+class ExerciseHistoryQuery(BaseModel):
+    limit: int = Field(default=10, ge=1, le=50)
+    cursor: str | None = Field(default=None, min_length=1, max_length=512)
+
+
+class ExerciseHistoryResponse(BaseModel):
+    items: list[PreviousExerciseSession]
+    next_cursor: str | None
 
 
 class WorkoutListResponse(BaseModel):

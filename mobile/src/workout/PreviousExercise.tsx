@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import { getPreviousExerciseSession, type LoggedSet, type PreviousExerciseSession } from "../api/workouts";
 import { colors, spacing } from "../theme";
 import { formatWeight, type WeightUnit } from "../units/weight";
+import { ExerciseHistory } from "./ExerciseHistory";
 import { compareSessionWeights, formatRecordedWeightChange } from "./sessionComparison";
 
 type Result = { status: "loading" } | { status: "error" } |
@@ -47,6 +48,10 @@ export function PreviousExercise({ workoutId, exerciseId, unit, currentSets }: {
                 <Text style={styles.link}>Try again</Text>
               </Pressable>
             </View>
+          ) : null}
+          {result.status === "ready" ? (
+            <ExerciseHistory key={`${workoutId}:${exerciseId}`} workoutId={workoutId}
+              exerciseId={exerciseId} unit={unit} />
           ) : null}
           {result.status === "ready" && !session ? (
             <Text style={styles.detail}>No earlier closed session with working sets for this exercise.</Text>

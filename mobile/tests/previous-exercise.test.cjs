@@ -49,6 +49,7 @@ function view(request, props = { workoutId: 'current', exerciseId: 'bench', unit
     '../api/workouts': { getPreviousExerciseSession: request },
     '../theme': { colors: {}, spacing: {} }, '../units/weight': units,
     './sessionComparison': comparison,
+    './ExerciseHistory': { ExerciseHistory: 'ExerciseHistory' },
   });
   return {
     render() {
