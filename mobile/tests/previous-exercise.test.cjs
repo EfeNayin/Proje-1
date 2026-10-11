@@ -21,7 +21,7 @@ function load(source, globals = {}, modules = {}) {
 const units = load(read('src/units/weight.ts'));
 const comparison = load(read('src/workout/sessionComparison.ts'), {}, { '../units/weight': units });
 const react = { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) };
-function view(request, props = { workoutId: 'current', exerciseId: 'bench', unit: 'kg', currentSets: [] }) {
+function view(request, props = { workoutId: 'current', exerciseId: 'bench', exerciseName: 'Bench Press', unit: 'kg', currentSets: [] }) {
   const state = [];
   const effects = [];
   let cursor = 0;
@@ -151,7 +151,7 @@ test('previous-session API uses the specific workout and exercise as its referen
 
 test('comparison updates after set edits, RIR removal and deletion without refetching history', async () => {
   let calls = 0;
-  const props = { workoutId: 'current', exerciseId: 'bench', unit: 'kg',
+  const props = { workoutId: 'current', exerciseId: 'bench', exerciseName: 'Bench Press', unit: 'kg',
     currentSets: [{ id: 10, exercise_id: 'bench', weight_kg: '22.5', reps: 8, rir: 0 }] };
   const screen = view(async () => { calls++; return previous(); }, props);
   button(screen.render()).props.onPress(); screen.render(); await settle();

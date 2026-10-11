@@ -11,8 +11,8 @@ type Result = { status: "loading" } | { status: "error" } |
   { status: "ready"; session: PreviousExerciseSession | null };
 
 /** Mounted with a workout/date/exercise key so a new reference resets the view. */
-export function PreviousExercise({ workoutId, exerciseId, unit, currentSets }: {
-  workoutId: string; exerciseId: string; unit: WeightUnit; currentSets: LoggedSet[];
+export function PreviousExercise({ workoutId, exerciseId, exerciseName, unit, currentSets }: {
+  workoutId: string; exerciseId: string; exerciseName: string; unit: WeightUnit; currentSets: LoggedSet[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -51,7 +51,7 @@ export function PreviousExercise({ workoutId, exerciseId, unit, currentSets }: {
           ) : null}
           {result.status === "ready" ? (
             <ExerciseHistory key={`${workoutId}:${exerciseId}`} workoutId={workoutId}
-              exerciseId={exerciseId} unit={unit} />
+              exerciseId={exerciseId} exerciseName={exerciseName} unit={unit} />
           ) : null}
           {result.status === "ready" && !session ? (
             <Text style={styles.detail}>No earlier closed session with working sets for this exercise.</Text>

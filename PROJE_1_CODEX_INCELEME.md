@@ -40,7 +40,55 @@ Bu turun tamamlanan kontrol noktaları:
 1. **Adım 33 tamamlandı — Set oluşturmayı güvenli yeniden denemek:** Sunucu seti kaydettiği halde yanıt kaybolduğunda aynı işlem kimliğiyle yeniden deneme ikinci set oluşturmuyor. Kapsam ve sınırlar aşağıda.
 2. **Adım 34 tamamlandı — Uçtan uca doğrulama ve düzeltmeler:** Gerçek cihazda önceki seans, hedef karşılaştırması, kg/lb, RIR boş/sıfır, bağlantı kesilmesi ve yeniden deneme akışlarını birlikte kontrol etmek; bulunan sorunları kapatıp mevcut turu değerlendirmek.
 
-Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi; yeni görünümün telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
+Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
+
+### Adım 38: Egzersiz geçmişini ayrı panelde göster — 30 Eylül 2026
+
+- Adım 37'de kart içinde büyüyen "All earlier sessions" listesi, `ExerciseHistory`
+  içinde React Native `Modal` + `FlatList` ile ekranın büyük bölümünü kaplayan
+  ayrı bir panele taşındı. Sabit başlık (gerçek egzersiz adıyla), erişilebilir
+  kapatma düğmesi ve tek yönlü kayan `FlatList`; kapatma düğmesi, Android geri
+  tuşu ve arka plana dokunma aynı kapatma akışını paylaşıyor. Panel açılmadan
+  istek gönderilmiyor; sayfalama, hata sonrası yeniden deneme, çift istek
+  engeli ve kapatıp-açma sonrası baştan yenileme davranışları korundu.
+  Antrenman ekranı, set taslakları ve dinlenme sayacı yeniden mount edilmedi.
+- Bu turda panel sertleştirildi: kullanımdan kaldırılmış (deprecated) ve yalnızca
+  iOS'ta çalışan React Native `SafeAreaView` yerine mevcut bağımlılık
+  `react-native-safe-area-context` (`SafeAreaProvider` + `SafeAreaView`)
+  kullanıldı; arka plan paneli saran `Pressable` olmaktan çıkarılıp kardeş
+  eleman yapıldı (liste kaydırması arka plana ulaşamaz); egzersiz adı 2 satıra
+  kadar gösteriliyor; kapatma düğmesinin etiketi "Close exercise history"; ilk
+  yükleme hatası ile sonraki sayfa hatası ayrı metinlerle gösteriliyor.
+
+Doğrulama: **164 mobil test geçti** (egzersiz geçmişi testlerine panel yapısı,
+çift dokunuş, yinelenen seans, geç yanıt ve ilk sayfa hatası testleri eklendi);
+`tsc --noEmit` ve sıfır uyarıyla ESLint temiz; `git diff --check` temiz.
+Backend/API/bağımlılık değişmedi. Expo `~57.0.20`, RN 0.86.3 doğrulandı.
+**Gerçek telefon veya simülatörde denenmedi** (bu makinede açık simülatör ve
+`adb` yok); testler bileşenleri stub'lı hook'larla çalıştırıyor, native
+düzeni kanıtlamaz. Telefonda bakılacaklar: panel yüksekliği ve alt güvenli
+alan (Android gezinme çubuğu), büyük yazı boyutu, uzun liste kaydırması,
+klavye açıkken panel açma (klavye kapanır, taslaklar kalmalı), Android geri
+tuşu, açıp kapattıktan sonra set taslağı / açık düzenleyici / dinlenme sayacı.
+
+**Kod incelemesi (commit öncesi):** Somut hata bulunmadı, ürün kodu değişmedi.
+- `Keyboard.dismiss()`: tek `onBlur` işleyicisi `TitleField`'da (başlık, zaten
+  yazılmış değer değiştiyse kaydediliyor — tasarlanmış blur-kayıt davranışı).
+  Ağırlık/tekrar/RIR alanlarında (`SetForm`, `SetRow`) blur işleyicisi yok;
+  taslaklar bileşen state'inde, panel onları mount/unmount etmiyor.
+- Eski istekler: her istek kendi `active` bayrağıyla iptal ediliyor (kapanış,
+  yeniden açılış, unmount, tekrar deneme). Egzersiz/antrenman/tarih ayrımı
+  bileşen içinde değil, çağıranın `key`'leriyle (`workout.id:performed_at:
+  exerciseId`) sağlanıyor; bu `key`'ler kodda mevcut ama yalnızca statik
+  olarak doğrulandı.
+- Testlerin sınırı: testler gerçek React yerine elle yazılmış hook çalıştırıcısı
+  kullanıyor. İstek/sayfalama/hata/çift basış mantığı davranış olarak sınanıyor;
+  paneldeki yapı ve `key` testleri statik kontroldür. Set taslağı, açık
+  düzenleyici ve dinlenme sayacının korunması, safe-area, Android geri tuşu ve
+  klavye otomatik testle KANITLANMADI — yalnızca kod okumasıyla çıkarıldı.
+- Cihaz doğrulaması: kullanıcı yalnızca sıradaki adıma geçmek istediğini bildirdi;
+  hangi telefon senaryolarının denendiği bildirilmedi, bu yüzden telefon
+  kontrolü hâlâ bekliyor sayılıyor.
 
 ### Adım 37: Egzersizin daha eski seanslarını görüntüleme — 30 Eylül 2026
 
