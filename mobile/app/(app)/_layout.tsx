@@ -66,7 +66,8 @@ export default function AppLayout() {
         name="workout/checkin"
         options={{ title: "Check-in", presentation: "modal" }}
       />
-      <Stack.Screen name="program/[id]" options={{ title: "Program" }} />
+      {/* Draws its own bar (back arrow, delete, editable name); a native header too would show the name twice. */}
+      <Stack.Screen name="program/[id]" options={{ title: "Program", headerShown: false }} />
       <Stack.Screen name="program/template/[id]" options={{ title: "Template" }} />
       <Stack.Screen
         name="profile/edit"

@@ -35,6 +35,8 @@ export default function TabsLayout() {
         name="programs"
         options={{
           title: "Programs",
+          // Draws its own title bar; a native header as well would show "Programs" twice.
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="clipboard" size={size} color={color} />
           ),
