@@ -30,6 +30,8 @@ npm run lint                   # expo lint
 
 npm run test:session           # oturum/refresh davranışı
 npm run test:history           # antrenman geçmişi sayfalama
+npm run test:research-feed      # araştırma ekranı sayfalama / geç yanıt / PubMed bağlantısı
+npm run test:research-navigation # Research geri davranışı (push + anchor + native ok)
 npm run test:diagnosis         # teşhis ekranı metinleri
 npm run test:diagnosis-requests # dönem isteklerinde son-yanıt tutarlılığı
 npm run test:lifecycle         # bileşen yaşam döngüsü

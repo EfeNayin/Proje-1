@@ -250,6 +250,14 @@ export default function TrainingHome() {
               </>
             )}
 
+            <Pressable style={styles.card} onPress={() => router.push("/research")}>
+              <View style={styles.cardMain}>
+                <Text style={styles.cardTitle}>Research</Text>
+                <Text style={styles.cardMeta}>Explore training research</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </Pressable>
+
             <Text style={styles.sectionTitle}>History</Text>
           </View>
         }

@@ -9,10 +9,26 @@
 import { Redirect, Stack } from "expo-router";
 
 import { useAuth } from "../../src/auth/AuthContext";
+import { roman, romanFont, useRomanFonts } from "../../src/romanTheme";
 import { colors } from "../../src/theme";
+
+/**
+ * Deep links (and reloads) that land on a screen below the tabs, such as
+ * /research, have no history of their own, so the stack would show no back
+ * control. Anchoring on (tabs) puts the tabs — Training first — underneath
+ * the linked screen, and the native back arrow, swipe-back gesture and Android
+ * back button all return there. In-app navigation is unaffected: router.push
+ * from a tab already stacks on top of it.
+ */
+export const unstable_settings = {
+  anchor: "(tabs)",
+};
 
 export default function AppLayout() {
   const { status } = useAuth();
+  // Registers the bundled fonts for the native header below; a deep link to
+  // Research would otherwise draw its header before any screen had done so.
+  useRomanFonts();
 
   if (status === "signedOut") {
     return <Redirect href="/login" />;
@@ -32,6 +48,15 @@ export default function AppLayout() {
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="diagnosis" options={{ title: "Diagnosis" }} />
+      <Stack.Screen
+        name="research"
+        options={{
+          title: "Research",
+          headerStyle: { backgroundColor: roman.background },
+          headerTitleStyle: { color: roman.gold, fontFamily: romanFont.title, fontSize: 18 },
+          contentStyle: { backgroundColor: roman.background },
+        }}
+      />
       <Stack.Screen name="workout/[id]" options={{ title: "Workout" }} />
       <Stack.Screen
         name="workout/exercise-picker"

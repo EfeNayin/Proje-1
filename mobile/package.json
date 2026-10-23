@@ -10,6 +10,8 @@
     "test:diagnosis-requests": "node --test tests/diagnosis-requests.test.cjs",
     "test:diagnosis": "node --test tests/diagnosis.test.cjs",
     "test:history": "node --test tests/history.test.cjs",
+    "test:research-feed": "node --test tests/research-feed.test.cjs",
+    "test:research-navigation": "node --test tests/research-navigation.test.cjs",
     "test:session": "node --test tests/session.test.cjs",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
