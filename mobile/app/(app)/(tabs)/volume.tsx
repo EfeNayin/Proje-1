@@ -3,6 +3,10 @@
  *
  * The screen the product exists for. Each muscle shows how many *direct* sets
  * it got that week and where that sits between MEV, MAV and MRV.
+ *
+ * All numbers come from the API as they are; src/volume holds the wording and
+ * marker rules, and the loader that keeps late responses and failed refreshes
+ * from putting the wrong data on screen.
  */
 
 import { Ionicons } from "@expo/vector-icons";
@@ -17,12 +21,23 @@ import {
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as analyticsApi from "../../../src/api/analytics";
-import type { MuscleWeeklyVolume, WeeklyVolume } from "../../../src/api/analytics";
-import { colors, radius, spacing, statusColors, statusLabels } from "../../../src/theme";
+import type { MuscleWeeklyVolume } from "../../../src/api/analytics";
+import { roman, useRomanFonts } from "../../../src/romanTheme";
+import { statusColors } from "../../../src/theme";
+import { createWeeklyVolumeLoader, initialVolumeState } from "../../../src/volume/weeklyVolumeLoader";
+import {
+  describeMuscle,
+  formatWeekRange,
+  formatWeekTitle,
+  resolveOffset,
+  stepWeek,
+} from "../../../src/volume/volumePresentation";
 
 const WEEKS_TO_LOAD = 8;
+const MIN_TOUCH = 44;
 
 const REGION_TITLES: Record<string, string> = {
   upper: "Upper body",
@@ -30,139 +45,170 @@ const REGION_TITLES: Record<string, string> = {
   core: "Core",
 };
 
-/**
- * `muscle.name` is the backend's machine code (e.g. "front_delts"), not a
- * display string — every other piece of English copy on this screen is
- * already a real title ("Upper body", "Not trained", ...). Splits on "_"
- * and title-cases each word: "front_delts" -> "Front Delts", "biceps" ->
- * "Biceps". Covers all 17 muscle codes in the catalogue without a lookup
- * table, so a new one added later does not need this list updated.
- */
-function formatMuscleName(name: string): string {
-  return name
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
+type Fonts = ReturnType<typeof useRomanFonts>;
 
-function formatWeek(weekStart: string, offset: number): string {
-  if (offset === 0) return "This week";
-  if (offset === 1) return "Last week";
-
-  const start = new Date(`${weekStart}T00:00:00`);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
-
-  const format = (date: Date) =>
-    date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-  return `${format(start)} – ${format(end)}`;
+// Status colours are the app's existing semantic ones; a dim grey for "no sets"
+// would fail contrast as text, so that one uses the muted silver. The label
+// beside every colour carries the meaning.
+function statusTextColor(status: MuscleWeeklyVolume["status"]): string {
+  return status === "untrained" ? roman.textMuted : statusColors[status];
 }
 
 /**
- * A bar showing where the week's sets fall between the landmarks.
+ * Where the week's sets fall between the landmarks.
  *
- * The track runs to MRV, with ticks at MEV and MAV, so the shape of the bar
- * answers "am I doing enough" without reading any numbers. Sets past MRV
- * simply fill the track — the colour carries that message.
+ * Fill and marks share one real axis (see describeMuscle): sets over MRV run
+ * past the MRV mark rather than being clipped, and nothing is drawn when the
+ * API supplies no complete reference.
  */
 function LandmarkBar({ muscle }: { muscle: MuscleWeeklyVolume }) {
-  const { direct_sets: sets, mev, mav, mrv, status } = muscle;
+  const { bar } = describeMuscle(muscle);
+  if (!bar) return null;
 
-  if (mev === null || mav === null || mrv === null) {
-    return null;
-  }
-
-  // React Native types percentages as the literal `${number}%`, so a plain
-  // string will not do here.
-  const percent = (value: number): `${number}%` =>
-    `${Math.min(100, (value / mrv) * 100)}%`;
+  // React Native types percentages as the literal `${number}%`.
+  const percent = (fraction: number): `${number}%` => `${fraction * 100}%`;
 
   return (
-    <View style={styles.track}>
-      <View
-        style={[styles.fill, { width: percent(sets), backgroundColor: statusColors[status] }]}
-      />
-      <View style={[styles.tick, { left: percent(mev) }]} />
-      <View style={[styles.tick, { left: percent(mav) }]} />
+    <View style={styles.track} importantForAccessibility="no-hide-descendants">
+      <View style={styles.trackBar}>
+        <View
+          style={[
+            styles.fill,
+            { width: percent(bar.fill), backgroundColor: statusColors[muscle.status] },
+          ]}
+        />
+      </View>
+      <View style={[styles.tick, { left: percent(bar.mev) }]} />
+      <View style={[styles.tick, { left: percent(bar.mav) }]} />
+      <View style={[styles.tick, { left: percent(bar.mrv) }]} />
     </View>
   );
 }
 
-function MuscleRow({ muscle }: { muscle: MuscleWeeklyVolume }) {
-  const untrained = muscle.status === "untrained";
-  // Sets the muscle only assisted on. Worth surfacing so a user does not
-  // "fix" low direct triceps volume that pressing is already covering.
-  const assisted = muscle.involved_sets - muscle.direct_sets;
+function MuscleRow({ muscle, font }: { muscle: MuscleWeeklyVolume; font: Fonts }) {
+  const view = describeMuscle(muscle);
+  const color = statusTextColor(muscle.status);
 
   return (
-    <View style={[styles.muscle, untrained && styles.muscleDim]}>
+    // One element for screen readers: the full sentence also carries the
+    // marker values the bar can only show visually.
+    <View accessible accessibilityLabel={view.accessibilityLabel} style={styles.muscle}>
       <View style={styles.muscleHeader}>
-        <Text style={styles.muscleName}>{formatMuscleName(muscle.name)}</Text>
-        <View style={styles.muscleNumbers}>
-          <Text style={[styles.setCount, { color: statusColors[muscle.status] }]}>
-            {muscle.direct_sets}
+        <Text style={[styles.muscleName, font.semibold]}>{view.name}</Text>
+        <View style={styles.count}>
+          <Text style={[styles.setCount, font.semibold]}>{view.directSets}</Text>
+          <Text style={[styles.setUnit, font.regular]}>
+            {view.directSets === 1 ? "direct set" : "direct sets"}
           </Text>
-          {muscle.mav !== null ? <Text style={styles.setTarget}> / {muscle.mav}</Text> : null}
         </View>
       </View>
+
+      <Text style={[styles.statusText, font.semibold, { color }]}>{view.statusLabel}</Text>
 
       <LandmarkBar muscle={muscle} />
 
-      <View style={styles.muscleFooter}>
-        <Text style={[styles.statusText, { color: statusColors[muscle.status] }]}>
-          {statusLabels[muscle.status]}
-        </Text>
+      {view.references.length > 0 ? (
+        <View style={styles.references}>
+          {view.references.map((reference) => (
+            <Text key={reference} style={[styles.referenceText, font.medium]}>
+              {reference}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
+      {view.indirectSets > 0 || view.effectiveness !== null ? (
         <View style={styles.muscleMeta}>
-          {assisted > 0 ? <Text style={styles.metaText}>+{assisted} indirect</Text> : null}
-          {muscle.avg_effectiveness !== null ? (
+          {/* Sets the muscle only assisted on: shown so a user does not "fix"
+              low direct volume that pressing already covers, never counted. */}
+          {view.indirectSets > 0 ? (
+            <Text style={[styles.metaText, font.regular]}>+{view.indirectSets} indirect</Text>
+          ) : null}
+          {view.effectiveness !== null ? (
             <View style={styles.quality}>
-              <Ionicons name="star" size={11} color={colors.textMuted} />
-              <Text style={styles.metaText}>{muscle.avg_effectiveness.toFixed(1)}</Text>
+              <Ionicons name="star" size={11} color={roman.textMuted} />
+              <Text style={[styles.metaText, font.regular]}>{view.effectiveness.toFixed(1)}</Text>
             </View>
           ) : null}
         </View>
-      </View>
+      ) : null}
+    </View>
+  );
+}
+
+function ErrorBlock({
+  message,
+  busy,
+  onRetry,
+  prefix,
+  font,
+}: {
+  message: string;
+  busy: boolean;
+  onRetry: () => void;
+  prefix?: string;
+  font: Fonts;
+}) {
+  return (
+    <View style={styles.errorBlock}>
+      <Text
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        style={[styles.errorText, font.medium]}
+      >
+        {prefix ? `${prefix} ${message}` : message}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Try loading volume again"
+        disabled={busy}
+        style={styles.retryButton}
+        onPress={onRetry}
+      >
+        {busy ? (
+          <ActivityIndicator color={roman.goldLight} size="small" />
+        ) : (
+          <Text style={[styles.retryText, font.semibold]}>Try again</Text>
+        )}
+      </Pressable>
     </View>
   );
 }
 
 export default function VolumeScreen() {
   const router = useRouter();
-  const [weeks, setWeeks] = useState<WeeklyVolume[]>([]);
-  const [offset, setOffset] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
+  const font = useRomanFonts();
 
-  const load = useCallback(async () => {
-    const data = await analyticsApi.fetchWeeklyVolume(WEEKS_TO_LOAD);
-    setWeeks(data.weeks);
-  }, []);
+  const [state, setState] = useState(initialVolumeState);
+  const [loader] = useState(() =>
+    createWeeklyVolumeLoader(() => analyticsApi.fetchWeeklyVolume(WEEKS_TO_LOAD), setState),
+  );
+  // The chosen week is kept by its start date, so a reload can never leave the
+  // selection pointing at a different week.
+  const [selectedStart, setSelectedStart] = useState<string | null>(null);
+  const [pulling, setPulling] = useState(false);
+  const [explainOpen, setExplainOpen] = useState(false);
 
   // Reload on focus so sets logged a moment ago are already reflected.
   useFocusEffect(
     useCallback(() => {
-      let cancelled = false;
-      setLoading(true);
-      load()
-        .catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Could not load volume");
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }, [load]),
+      void loader.load();
+      return () => loader.invalidate();
+    }, [loader]),
   );
 
   const handleRefresh = async () => {
-    setRefreshing(true);
-    await load().catch(() => undefined);
-    setRefreshing(false);
+    setPulling(true);
+    try {
+      await loader.load();
+    } finally {
+      setPulling(false);
+    }
   };
 
+  const weeks = useMemo(() => state.data?.weeks ?? [], [state.data]);
+  const offset = resolveOffset(weeks, selectedStart);
   const week = weeks[offset];
 
   const byRegion = useMemo(() => {
@@ -176,190 +222,402 @@ export default function VolumeScreen() {
       .filter((group) => group.muscles.length > 0);
   }, [week]);
 
-  if (loading) {
+  const topBar = (
+    <View style={[styles.topBar, { paddingTop: insets.top }]}>
+      <View style={styles.topBarRow}>
+        <Text accessibilityRole="header" style={[styles.topBarTitle, font.title]}>
+          Volume
+        </Text>
+      </View>
+    </View>
+  );
+
+  if (state.loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.accent} />
+      <View style={styles.screen}>
+        {topBar}
+        <View style={styles.centered}>
+          <ActivityIndicator color={roman.gold} />
+        </View>
       </View>
     );
   }
 
   if (!week) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.error}>{error ?? "No data yet."}</Text>
+      <View style={styles.screen}>
+        {topBar}
+        <View style={styles.centered}>
+          {state.error ? (
+            <ErrorBlock
+              message={state.error}
+              busy={state.refreshing}
+              onRetry={() => void loader.load()}
+              font={font}
+            />
+          ) : (
+            <Text style={[styles.emptyText, font.regular]}>No weekly data yet.</Text>
+          )}
+        </View>
       </View>
     );
   }
 
   const trainedCount = week.muscles.filter((muscle) => muscle.direct_sets > 0).length;
+  // Indirect-only work is still a record of the week, so it keeps the list.
+  const hasRecords = week.muscles.some((muscle) => muscle.direct_sets > 0 || muscle.involved_sets > 0);
+  const olderDisabled = offset >= weeks.length - 1;
+  const newerDisabled = offset === 0;
+  const range = formatWeekRange(week.week_start);
+  const title = formatWeekTitle(week.week_start, offset);
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
-      }
-    >
-      <Pressable style={styles.diagnosisEntry} onPress={() => router.push("/diagnosis")}>
-        <View style={styles.diagnosisEntryText}>
-          <Text style={styles.diagnosisEntryTitle}>Why am I not growing?</Text>
-          <Text style={styles.diagnosisEntrySubtitle}>
-            Volume, recovery and weight trend, combined
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-      </Pressable>
-
-      <View style={styles.weekBar}>
+    <View style={styles.screen}>
+      {topBar}
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={pulling}
+            onRefresh={() => void handleRefresh()}
+            tintColor={roman.gold}
+            colors={[roman.gold]}
+            progressBackgroundColor={roman.surface}
+          />
+        }
+      >
         <Pressable
-          onPress={() => setOffset((value) => Math.min(weeks.length - 1, value + 1))}
-          disabled={offset >= weeks.length - 1}
-          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityHint="Opens the training review"
+          style={({ pressed }) => [styles.diagnosisEntry, pressed && styles.pressed]}
+          onPress={() => router.push("/diagnosis")}
         >
+          <View style={styles.diagnosisEntryText}>
+            <Text style={[styles.diagnosisEntryTitle, font.semibold]}>Why am I not growing?</Text>
+            <Text style={[styles.diagnosisEntrySubtitle, font.regular]}>
+              Volume, recovery and weight trend, combined
+            </Text>
+          </View>
+          <View style={styles.chevron}>
+            <Ionicons name="chevron-forward" size={20} color={roman.gold} />
+          </View>
+        </Pressable>
+
+        <View style={styles.weekBar}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Earlier week"
+            accessibilityState={{ disabled: olderDisabled }}
+            disabled={olderDisabled}
+            style={styles.iconButton}
+            onPress={() => setSelectedStart(stepWeek(weeks, selectedStart, 1))}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={22}
+              color={olderDisabled ? roman.border : roman.text}
+            />
+          </Pressable>
+
+          <View style={styles.weekLabel}>
+            <Text accessibilityRole="header" style={[styles.weekTitle, font.semibold]}>
+              {title}
+            </Text>
+            {title !== range ? (
+              <Text style={[styles.weekRange, font.regular]}>{range}</Text>
+            ) : null}
+            <Text style={[styles.weekSubtitle, font.regular]}>
+              {trainedCount === 0
+                ? "No direct sets recorded"
+                : `${trainedCount} muscle${trainedCount === 1 ? "" : "s"} with direct sets`}
+            </Text>
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Later week"
+            accessibilityState={{ disabled: newerDisabled }}
+            disabled={newerDisabled}
+            style={styles.iconButton}
+            onPress={() => setSelectedStart(stepWeek(weeks, selectedStart, -1))}
+          >
+            <Ionicons
+              name="chevron-forward"
+              size={22}
+              color={newerDisabled ? roman.border : roman.text}
+            />
+          </Pressable>
+        </View>
+
+        {offset > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back to this week"
+            style={styles.thisWeekButton}
+            onPress={() => setSelectedStart(weeks[0].week_start)}
+          >
+            <Ionicons name="return-down-back" size={16} color={roman.goldLight} />
+            <Text style={[styles.thisWeekText, font.semibold]}>Back to this week</Text>
+          </Pressable>
+        ) : null}
+
+        {state.error ? (
+          <ErrorBlock
+            message={state.error}
+            busy={state.refreshing}
+            onRetry={() => void loader.load()}
+            prefix="Showing the last loaded data. Could not refresh:"
+            font={font}
+          />
+        ) : null}
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: explainOpen }}
+          style={({ pressed }) => [styles.explainHeader, pressed && styles.pressed]}
+          onPress={() => setExplainOpen((open) => !open)}
+        >
+          <Ionicons name="information-circle-outline" size={20} color={roman.gold} />
+          <Text style={[styles.explainTitle, font.semibold]}>How volume is counted</Text>
           <Ionicons
-            name="chevron-back"
-            size={22}
-            color={offset >= weeks.length - 1 ? colors.border : colors.text}
+            name={explainOpen ? "chevron-up" : "chevron-down"}
+            size={18}
+            color={roman.textMuted}
           />
         </Pressable>
+        {explainOpen ? (
+          <View style={styles.explainBody}>
+            <Text style={[styles.explainText, font.regular]}>
+              Each number is the working sets in the week where the exercise lists the muscle as a
+              primary target (direct sets). Warm-up sets and sets with 0 reps are not counted.
+            </Text>
+            <Text style={[styles.explainText, font.regular]}>
+              Sets where a muscle only assists are shown as “+N indirect” and are not added to the
+              count, because MEV, MAV and MRV already allow for that work.
+            </Text>
+            <Text style={[styles.explainText, font.regular]}>
+              MEV, MAV and MRV are the reference values stored for each muscle, not personal
+              targets. Weeks start on Monday in your timezone.
+            </Text>
+          </View>
+        ) : null}
 
-        <View style={styles.weekLabel}>
-          <Text style={styles.weekTitle}>{formatWeek(week.week_start, offset)}</Text>
-          <Text style={styles.weekSubtitle}>{trainedCount} muscles trained</Text>
-        </View>
-
-        <Pressable
-          onPress={() => setOffset((value) => Math.max(0, value - 1))}
-          disabled={offset === 0}
-          hitSlop={12}
-        >
-          <Ionicons name="chevron-forward" size={22} color={offset === 0 ? colors.border : colors.text} />
-        </Pressable>
-      </View>
-
-      {byRegion.map((group) => (
-        <View key={group.region} style={styles.region}>
-          <Text style={styles.regionTitle}>{REGION_TITLES[group.region] ?? group.region}</Text>
-          {group.muscles.map((muscle) => (
-            <MuscleRow key={muscle.muscle_group_id} muscle={muscle} />
-          ))}
-        </View>
-      ))}
-
-      <Text style={styles.legend}>
-        Counts direct sets only. Assistance work is already accounted for in the MEV/MAV/MRV
-        numbers, so counting it twice would overstate your volume.
-      </Text>
-    </ScrollView>
+        {!hasRecords ? (
+          <View style={styles.emptyWeek}>
+            <Text style={[styles.emptyWeekTitle, font.semibold]}>No direct sets recorded</Text>
+            <Text style={[styles.emptyText, font.regular]}>
+              Sets logged in Training appear here once they are recorded for this week.
+            </Text>
+          </View>
+        ) : (
+          byRegion.map((group) => (
+            <View key={group.region} style={styles.region}>
+              <Text accessibilityRole="header" style={[styles.regionTitle, font.semibold]}>
+                {REGION_TITLES[group.region] ?? group.region}
+              </Text>
+              {group.muscles.map((muscle) => (
+                <MuscleRow key={muscle.muscle_group_id} muscle={muscle} font={font} />
+              ))}
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: spacing.xl },
-  centered: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.background,
-    padding: spacing.lg,
+  screen: { flex: 1, backgroundColor: roman.background },
+  flex: { flex: 1 },
+  content: { paddingHorizontal: 16, paddingBottom: 32 },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
+  pressed: { backgroundColor: roman.surfaceRaised },
+
+  topBar: { backgroundColor: roman.background, paddingHorizontal: 16 },
+  topBarRow: { minHeight: 56, flexDirection: "row", alignItems: "center" },
+  topBarTitle: {
+    flexShrink: 1,
+    color: roman.gold,
+    fontSize: 22,
+    fontWeight: "600",
+    letterSpacing: 2,
+    textTransform: "uppercase",
   },
-  error: { color: colors.danger, textAlign: "center" },
 
   diagnosisEntry: {
+    minHeight: 64,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.surface,
-    borderColor: colors.accentDark,
+    backgroundColor: roman.surface,
+    borderColor: roman.gold,
     borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingLeft: 16,
+    paddingRight: 4,
+    marginTop: 8,
+    marginBottom: 16,
   },
-  diagnosisEntryText: { flex: 1 },
-  diagnosisEntryTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
-  diagnosisEntrySubtitle: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  diagnosisEntryText: { flex: 1, rowGap: 2 },
+  diagnosisEntryTitle: { color: roman.text, fontSize: 16, lineHeight: 22 },
+  diagnosisEntrySubtitle: { color: roman.textMuted, fontSize: 13, lineHeight: 18 },
+  chevron: { width: MIN_TOUCH, height: MIN_TOUCH, alignItems: "center", justifyContent: "center" },
 
   weekBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
     borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 12,
   },
-  weekLabel: { alignItems: "center" },
-  weekTitle: { color: colors.text, fontSize: 16, fontWeight: "700" },
-  weekSubtitle: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  iconButton: {
+    width: MIN_TOUCH,
+    height: MIN_TOUCH,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  weekLabel: { flex: 1, alignItems: "center", rowGap: 2, paddingVertical: 4 },
+  weekTitle: { color: roman.text, fontSize: 16, lineHeight: 22, textAlign: "center" },
+  weekRange: { color: roman.textMuted, fontSize: 13, textAlign: "center" },
+  weekSubtitle: { color: roman.gold, fontSize: 12, textAlign: "center" },
+  thisWeekButton: {
+    minHeight: MIN_TOUCH,
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "center",
+    columnGap: 6,
+    paddingHorizontal: 12,
+  },
+  thisWeekText: { color: roman.goldLight, fontSize: 14 },
 
-  region: { marginBottom: spacing.lg },
-  regionTitle: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: "700",
+  errorBlock: {
+    backgroundColor: roman.surface,
+    borderColor: roman.danger,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    rowGap: 4,
+  },
+  errorText: { color: roman.danger, fontSize: 14, lineHeight: 20 },
+  retryButton: {
+    minHeight: MIN_TOUCH,
+    alignSelf: "flex-start",
+    justifyContent: "center",
+    paddingRight: 12,
+  },
+  retryText: { color: roman.goldLight, fontSize: 14 },
+
+  explainHeader: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginBottom: 16,
+  },
+  explainTitle: {
+    flex: 1,
+    color: roman.text,
+    fontSize: 13,
+    letterSpacing: 0.8,
     textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: spacing.sm,
+  },
+  explainBody: {
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    rowGap: 10,
+    marginTop: -8,
+    marginBottom: 16,
+  },
+  explainText: { color: roman.textMuted, fontSize: 14, lineHeight: 20 },
+
+  emptyWeek: {
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    rowGap: 6,
+  },
+  emptyWeekTitle: { color: roman.text, fontSize: 16, lineHeight: 22 },
+  emptyText: { color: roman.textMuted, fontSize: 14, lineHeight: 20, textAlign: "center" },
+
+  region: { marginBottom: 16 },
+  regionTitle: {
+    color: roman.gold,
+    fontSize: 12,
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+    marginBottom: 12,
   },
 
   muscle: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
     borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    rowGap: 6,
   },
-  muscleDim: { opacity: 0.55 },
   muscleHeader: {
     flexDirection: "row",
-    alignItems: "baseline",
+    alignItems: "flex-start",
     justifyContent: "space-between",
+    columnGap: 12,
   },
-  muscleName: { color: colors.text, fontSize: 15, fontWeight: "600" },
-  muscleNumbers: { flexDirection: "row", alignItems: "baseline" },
-  setCount: { fontSize: 20, fontWeight: "700" },
-  setTarget: { color: colors.textMuted, fontSize: 13 },
+  muscleName: { flex: 1, color: roman.text, fontSize: 16, lineHeight: 22 },
+  count: { flexDirection: "row", alignItems: "baseline", columnGap: 6, flexShrink: 0 },
+  setCount: { color: roman.text, fontSize: 22, lineHeight: 28 },
+  setUnit: { color: roman.textMuted, fontSize: 12 },
+  statusText: { fontSize: 13, lineHeight: 18 },
 
-  track: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.background,
-    marginTop: spacing.sm,
+  track: { height: 14, marginTop: 4, position: "relative" },
+  trackBar: {
+    position: "absolute",
+    top: 3,
+    left: 0,
+    right: 0,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: roman.background,
+    borderColor: roman.border,
+    borderWidth: 1,
     overflow: "hidden",
-    position: "relative",
   },
-  fill: { height: "100%", borderRadius: 3 },
+  fill: { height: "100%" },
   tick: {
     position: "absolute",
     top: 0,
-    bottom: 0,
-    width: 1.5,
-    backgroundColor: colors.border,
+    height: 14,
+    width: 2,
+    marginLeft: -1,
+    backgroundColor: roman.textMuted,
   },
-
-  muscleFooter: {
+  references: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: spacing.sm,
+    flexWrap: "wrap",
+    columnGap: 14,
+    rowGap: 2,
   },
-  statusText: { fontSize: 12, fontWeight: "600" },
-  muscleMeta: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  metaText: { color: colors.textMuted, fontSize: 12 },
-  quality: { flexDirection: "row", alignItems: "center", gap: 3 },
+  referenceText: { color: roman.textMuted, fontSize: 12, lineHeight: 16 },
 
-  legend: {
-    color: colors.textMuted,
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: "center",
-    marginTop: spacing.sm,
-  },
+  muscleMeta: { flexDirection: "row", alignItems: "center", columnGap: 12 },
+  metaText: { color: roman.textMuted, fontSize: 12 },
+  quality: { flexDirection: "row", alignItems: "center", columnGap: 3 },
 });

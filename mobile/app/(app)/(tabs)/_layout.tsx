@@ -46,6 +46,8 @@ export default function TabsLayout() {
         name="volume"
         options={{
           title: "Volume",
+          // Draws its own title bar; a native header as well would show "Volume" twice.
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="stats-chart" size={size} color={color} />
           ),
