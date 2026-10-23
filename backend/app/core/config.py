@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 14
 
+    # ── NCBI E-utilities (PubMed) ──
+    # Both optional. An API key raises NCBI's per-IP limit from 3 to 10
+    # requests/second; it lives only here on the backend, never in the mobile
+    # bundle. Leave unset to use the anonymous limit.
+    NCBI_API_KEY: str | None = None
+    NCBI_EMAIL: str | None = None
+
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
