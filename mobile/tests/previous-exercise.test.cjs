@@ -47,7 +47,7 @@ function view(request, props = { workoutId: 'current', exerciseId: 'bench', exer
     'react-native': { ActivityIndicator: 'ActivityIndicator', Pressable: 'Pressable',
       Text: 'Text', View: 'View', StyleSheet: { create: value => value } },
     '../api/workouts': { getPreviousExerciseSession: request },
-    '../theme': { colors: {}, spacing: {} }, '../units/weight': units,
+    '../romanTheme': { roman: {}, romanFont: {} }, '../units/weight': units,
     './sessionComparison': comparison,
     './ExerciseHistory': { ExerciseHistory: 'ExerciseHistory' },
   });

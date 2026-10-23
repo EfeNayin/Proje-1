@@ -156,7 +156,8 @@ function screen(helpers, initial = log([]), overrides = {}) {
     ...load(read('src/units/weight.ts')), ...load(read('src/workout/rir.ts')),
     React: { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) },
     Platform: { OS: 'ios' }, Stack: { Screen: 'Screen' },
-    styles: new Proxy({}, { get: (_, key) => key }), colors: {},
+    styles: new Proxy({}, { get: (_, key) => key }), roman: {},
+    useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
   };
   for (const name of ['View', 'Text', 'Pressable', 'ActivityIndicator', 'KeyboardAvoidingView',
     'ScrollView', 'TitleField', 'SessionDuration', 'FinishedDuration', 'RestTimer', 'PreviousExercise',
@@ -242,6 +243,28 @@ test('retry resets only the saved exercise form, preserving other exercise draft
   assert.deepEqual(forms.map(node => node.props.key), [1, 0]);
 });
 
+const titleField = tree => nodes(tree).find(node => node.type === 'TitleField');
+
+test('name field stays mounted but locks while a set is unresolved, and is plain text once finished', async () => {
+  const idle = screen(api(storage(), async () => log([])), log([]));
+  idle(); await settle();
+  assert.equal(titleField(idle()).props.editable, true);
+
+  const helpers = api(storage(), async () => log([]));
+  await helpers.prepareSetSaveRequest('user', 'workout', 'Bench', input);
+  const blocked = screen(helpers);
+  blocked(); await settle();
+  assert.equal(titleField(blocked()).props.editable, false); // locked, not replaced: its draft survives
+
+  const finishedLog = { ...log([]), finished_at: '2026-09-24T13:00:00Z' };
+  const finished = screen(api(storage(), async () => log([])), finishedLog,
+    { formatSessionDate: () => 'Thu, 24 Sep' });
+  finished(); await settle();
+  assert.equal(titleField(finished()), undefined);
+  assert.match(JSON.stringify(finished()), /Edit workout/);
+  assert.doesNotMatch(JSON.stringify(finished()), /Finish workout/);
+});
+
 function finishHarness(finish, cleanup = async () => {}) {
   let choices;
   const routes = [];
@@ -253,8 +276,9 @@ function finishHarness(finish, cleanup = async () => {}) {
     useRouter: () => ({ dismissAll: () => routes.push('dismiss'), replace: route => routes.push(route) }),
   });
   return { render, routes, confirm() {
-    const header = nodes(render()).find(node => node.type === 'Screen').props.options.headerRight();
-    header.props.onPress();
+    const finish = nodes(render()).find(node => node.type === 'Pressable' &&
+      node.props.accessibilityLabel === 'Finish workout');
+    finish.props.onPress();
     return choices.find(choice => choice.text === 'Finish').onPress;
   } };
 }

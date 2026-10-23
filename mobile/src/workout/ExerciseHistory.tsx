@@ -13,7 +13,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { getExerciseHistory, type PreviousExerciseSession } from "../api/workouts";
-import { colors, radius, spacing } from "../theme";
+import { roman, romanFont } from "../romanTheme";
 import { formatWeight, type WeightUnit } from "../units/weight";
 
 type HistoryState = {
@@ -147,7 +147,7 @@ export function ExerciseHistory({ workoutId, exerciseId, exerciseName, unit }: {
                   }
                   ListFooterComponent={
                     <View style={styles.footer}>
-                      {history.status === "loading" ? <ActivityIndicator color={colors.accent} /> : null}
+                      {history.status === "loading" ? <ActivityIndicator color={roman.gold} /> : null}
                       {history.status === "error" ? (
                         <View>
                           <Text style={styles.detail}>
@@ -184,36 +184,38 @@ export function ExerciseHistory({ workoutId, exerciseId, exerciseName, unit }: {
 }
 
 const styles = StyleSheet.create({
-  container: { marginBottom: spacing.sm },
-  button: { paddingVertical: spacing.sm, minHeight: 44, justifyContent: "center" },
-  link: { color: colors.accent, fontSize: 14 },
+  container: { marginBottom: 8 },
+  button: { paddingVertical: 8, minHeight: 44, justifyContent: "center" },
+  link: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 14 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   panel: {
     height: "85%",
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.md,
-    borderTopRightRadius: radius.md,
+    backgroundColor: roman.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderTopColor: roman.gold,
+    borderTopWidth: 1,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: roman.border,
   },
-  headerText: { flex: 1, marginRight: spacing.sm },
-  headerTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
-  headerSubtitle: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+  headerText: { flex: 1, marginRight: 8 },
+  headerTitle: { color: roman.text, fontFamily: romanFont.title, fontSize: 18, letterSpacing: 0.5 },
+  headerSubtitle: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, marginTop: 2 },
   closeButton: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
-  closeIcon: { color: colors.text, fontSize: 18 },
+  closeIcon: { color: roman.text, fontSize: 18 },
   list: { flex: 1 },
-  listContent: { paddingHorizontal: spacing.md, paddingBottom: spacing.md },
-  footer: { paddingVertical: spacing.sm },
-  session: { gap: spacing.xs, paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  title: { color: colors.text, fontSize: 14 },
-  detail: { color: colors.textMuted, fontSize: 12, lineHeight: 18, paddingVertical: spacing.xs },
+  listContent: { paddingHorizontal: 16, paddingBottom: 16 },
+  footer: { paddingVertical: 8 },
+  session: { gap: 4, paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: roman.border },
+  title: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 14 },
+  detail: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 12, lineHeight: 18, paddingVertical: 4 },
 });

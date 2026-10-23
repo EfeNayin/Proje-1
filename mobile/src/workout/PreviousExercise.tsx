@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { getPreviousExerciseSession, type LoggedSet, type PreviousExerciseSession } from "../api/workouts";
-import { colors, spacing } from "../theme";
+import { roman, romanFont } from "../romanTheme";
 import { formatWeight, type WeightUnit } from "../units/weight";
 import { ExerciseHistory } from "./ExerciseHistory";
 import { compareSessionWeights, formatRecordedWeightChange } from "./sessionComparison";
@@ -39,7 +39,7 @@ export function PreviousExercise({ workoutId, exerciseId, exerciseName, unit, cu
       </Pressable>
       {expanded ? (
         <View style={styles.content}>
-          {result.status === "loading" ? <ActivityIndicator color={colors.accent} /> : null}
+          {result.status === "loading" ? <ActivityIndicator color={roman.gold} /> : null}
           {result.status === "error" ? (
             <View>
               <Text style={styles.detail}>Could not load previous sets.</Text>
@@ -105,10 +105,10 @@ export function PreviousExercise({ workoutId, exerciseId, exerciseName, unit, cu
 }
 
 const styles = StyleSheet.create({
-  container: { marginBottom: spacing.sm },
-  button: { paddingVertical: spacing.sm, minHeight: 44, justifyContent: "center" },
-  link: { color: colors.accent, fontSize: 14 },
-  content: { gap: spacing.xs },
-  title: { color: colors.text, fontSize: 14 },
-  detail: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
+  container: { marginBottom: 8 },
+  button: { paddingVertical: 8, minHeight: 44, justifyContent: "center" },
+  link: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 14 },
+  content: { gap: 4 },
+  title: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 14 },
+  detail: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 12, lineHeight: 18 },
 });

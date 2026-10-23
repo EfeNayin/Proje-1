@@ -60,7 +60,7 @@ function screen(name, props) {
     React: { createElement: (type, properties, ...children) => ({ type, props: { ...properties, children } }) },
     View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable',
     ActivityIndicator: 'ActivityIndicator', Ionicons: 'Ionicons',
-    Alert: { alert() {} }, colors: {},
+    Alert: { alert() {} }, roman: {},
     styles: new Proxy({}, { get: (_, key) => key }),
   });
   return () => { cursor = 0; return api[name](props); };

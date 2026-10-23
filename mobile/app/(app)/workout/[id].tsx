@@ -22,6 +22,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as programsApi from "../../../src/api/programs";
 import { ApiError } from "../../../src/api/client";
@@ -31,7 +32,7 @@ import type {
 import * as workoutsApi from "../../../src/api/workouts";
 import type { LoggedSet, WorkoutDetail } from "../../../src/api/workouts";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { colors, radius, spacing } from "../../../src/theme";
+import { roman, romanFont } from "../../../src/romanTheme";
 import {
   formatWeight,
   formatWeightValue,
@@ -48,7 +49,6 @@ import {
 } from "../../../src/workout/restPreference";
 import { buildTemplateExercisesFromWorkout } from "../../../src/workout/templateFromWorkout";
 import { getStartingPlan } from "../../../src/workout/startingPlan";
-import { compareWorkoutToPlan } from "../../../src/workout/planComparison";
 import { formatRecordedRir, parseRirInput } from "../../../src/workout/rir";
 import { PreviousExercise } from "../../../src/workout/PreviousExercise";
 import { getSetSaveRequest, prepareSetSaveRequest, sendSetSaveRequest, type SetSaveRequest } from "../../../src/workout/setSaveRequest";
@@ -137,7 +137,8 @@ function SessionDuration({ startedAt }: { startedAt: string }) {
   const elapsed = useElapsedSeconds(new Date(startedAt).getTime());
 
   return (
-    <View>
+    <View style={styles.summaryItem}>
+      <Ionicons name="time-outline" size={16} color={roman.gold} />
       <Text style={styles.summaryValue}>{formatDuration(elapsed)}</Text>
       <Text style={styles.summaryLabel}>duration</Text>
     </View>
@@ -152,7 +153,8 @@ function FinishedDuration({ startedAt, endedAt }: { startedAt: string; endedAt: 
   );
 
   return (
-    <View>
+    <View style={styles.summaryItem}>
+      <Ionicons name="timer-outline" size={16} color={roman.gold} />
       <Text style={styles.summaryValue}>{formatDuration(seconds)}</Text>
       <Text style={styles.summaryLabel}>duration</Text>
     </View>
@@ -198,25 +200,38 @@ function RestTimer({
 
   return (
     <View style={styles.rest}>
-      <Pressable style={styles.restDuration} onPress={chooseDuration} hitSlop={6}>
-        <Ionicons name="time-outline" size={16} color={colors.textMuted} />
-        <Text style={styles.restLabel}>Rest</Text>
-        <Text style={styles.restValue}>{formatRest(seconds)}</Text>
-        <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
-      </Pressable>
+      <View style={styles.restInfo}>
+        <Text style={styles.restTitle}>Rest timer</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Rest target ${formatRest(seconds)}. Change`}
+          style={styles.restDuration}
+          onPress={chooseDuration}
+          hitSlop={6}
+        >
+          <Text style={styles.restTarget}>Target {formatRest(seconds)}</Text>
+          <Ionicons name="chevron-down" size={14} color={roman.textMuted} />
+        </Pressable>
+      </View>
 
-      <Text style={[styles.restCountdown, finished && styles.restDone]}>
-        {formatRest(remaining)}
-      </Text>
+      <View style={styles.restCountdownBox}>
+        <Text style={[styles.restCountdown, finished && styles.restDone]}>
+          {formatRest(remaining)}
+        </Text>
+        {/* Finished is spelled out, not only coloured. */}
+        {finished ? <Text style={styles.restOver}>Rest over</Text> : null}
+      </View>
 
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={running ? "Stop rest timer" : "Start rest timer"}
         style={[styles.restButton, running && styles.restButtonActive]}
         onPress={() => setStartedAt(running ? null : Date.now())}
       >
         <Ionicons
           name={running ? "stop" : "play"}
-          size={16}
-          color={running ? colors.text : colors.accentText}
+          size={18}
+          color={running ? roman.text : roman.background}
         />
       </Pressable>
     </View>
@@ -228,13 +243,18 @@ function RestTimer({
  *
  * Saved on blur rather than per keystroke: a request per character would be
  * wasteful, and there is no meaningful moment to autosave mid-word.
+ *
+ * Stays mounted while a set save is running (`editable` goes false) so a draft
+ * is not thrown away by the swap.
  */
 function TitleField({
   value,
   onSave,
+  editable,
 }: {
   value: string | null;
   onSave: (title: string | null) => void;
+  editable: boolean;
 }) {
   const [draft, setDraft] = useState(value ?? "");
 
@@ -245,17 +265,24 @@ function TitleField({
   };
 
   return (
-    <TextInput
-      style={styles.titleInput}
-      value={draft}
-      onChangeText={setDraft}
-      onBlur={commit}
-      onSubmitEditing={commit}
-      placeholder="Name this workout"
-      placeholderTextColor={colors.textMuted}
-      returnKeyType="done"
-      maxLength={200}
-    />
+    <View style={styles.titleWrap}>
+      <TextInput
+        accessibilityLabel="Workout name"
+        style={styles.titleInput}
+        value={draft}
+        onChangeText={setDraft}
+        onBlur={commit}
+        onSubmitEditing={commit}
+        editable={editable}
+        placeholder="Name this workout"
+        placeholderTextColor={roman.placeholder}
+        selectionColor={roman.gold}
+        returnKeyType="done"
+        maxLength={200}
+      />
+      {/* The pencil is what says the name can be edited. */}
+      {editable ? <Ionicons name="create-outline" size={16} color={roman.textMuted} /> : null}
+    </View>
   );
 }
 
@@ -266,23 +293,19 @@ function RirField({ value, onChangeText, disabled }: {
   disabled: boolean;
 }) {
   return (
-    <View style={styles.rirRow}>
-      <View>
-        <Text style={styles.fieldLabel}>RIR (optional)</Text>
-        <TextInput
-          accessibilityLabel="Recorded RIR, optional, 0 to 10"
-          style={[styles.fieldInput, styles.rirInput]}
-          value={value}
-          onChangeText={onChangeText}
-          editable={!disabled}
-          keyboardType="number-pad"
-          placeholder="—"
-          placeholderTextColor={colors.textMuted}
-        />
-      </View>
-      <Text style={styles.rirHelp}>
-        Reps left at the end of this set (0–10). Leave blank if unsure.
-      </Text>
+    <View style={styles.entryField}>
+      <Text style={styles.fieldLabel}>RIR (optional)</Text>
+      <TextInput
+        accessibilityLabel="Recorded RIR, optional, 0 to 10"
+        style={styles.fieldInput}
+        value={value}
+        onChangeText={onChangeText}
+        editable={!disabled}
+        keyboardType="number-pad"
+        placeholder="—"
+        placeholderTextColor={roman.placeholder}
+        selectionColor={roman.gold}
+      />
     </View>
   );
 }
@@ -354,67 +377,105 @@ function SetRow({
 
   if (editing) {
     return (
-      <View>
-        <View style={styles.setRowEditing}>
-          <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
-            {set.is_warmup ? "W" : set.set_number}
+      <View style={styles.setRowEditing}>
+        {/* Spelled out as well as tinted, so the editing row is not marked by colour alone. */}
+        <View style={styles.editingHeader}>
+          <Ionicons name="create-outline" size={15} color={roman.gold} />
+          <Text style={styles.editingLabel}>
+            Editing set {set.is_warmup ? "(warm-up)" : set.set_number}
           </Text>
+        </View>
 
-          <TextInput
-            style={styles.editInput}
-            value={weight}
-            onChangeText={setWeight}
-            editable={!saving}
-            keyboardType="decimal-pad"
-            autoFocus
-            selectTextOnFocus
-          />
-          <Text style={styles.editUnit}>{unit} ×</Text>
-          <TextInput
-            style={styles.editInput}
-            value={reps}
-            onChangeText={setReps}
-            editable={!saving}
-            keyboardType="number-pad"
-            selectTextOnFocus
-            onSubmitEditing={() => void save()}
-          />
+        <View style={styles.entryRow}>
+          <View style={styles.entryField}>
+            <Text style={styles.fieldLabel}>Weight ({unit})</Text>
+            <TextInput
+              accessibilityLabel={`Weight in ${unit}`}
+              style={styles.fieldInput}
+              value={weight}
+              onChangeText={setWeight}
+              editable={!saving}
+              keyboardType="decimal-pad"
+              selectionColor={roman.gold}
+              autoFocus
+              selectTextOnFocus
+            />
+          </View>
+          <View style={styles.entryField}>
+            <Text style={styles.fieldLabel}>Reps</Text>
+            <TextInput
+              accessibilityLabel="Reps"
+              style={styles.fieldInput}
+              value={reps}
+              onChangeText={setReps}
+              editable={!saving}
+              keyboardType="number-pad"
+              selectionColor={roman.gold}
+              selectTextOnFocus
+              onSubmitEditing={() => void save()}
+            />
+          </View>
+          <RirField value={rir} onChangeText={setRir} disabled={saving} />
+        </View>
 
-          {/* Delete lives here, not only behind a long-press: holding for half a
-              second is easy to under-do, and a short press just opens this
-              editor, leaving no visible way out. */}
+        {/* Delete lives here, not only behind a long-press: holding for half a
+            second is easy to under-do, and a short press just opens this
+            editor, leaving no visible way out. */}
+        <View style={styles.editActions}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Delete set"
             onPress={() =>
               Alert.alert("Delete set?", undefined, [
                 { text: "Cancel", style: "cancel" },
                 { text: "Delete", style: "destructive", onPress: () => onDelete(set.id) },
               ])
             }
-            hitSlop={8}
             style={styles.editAction}
             disabled={saving}
           >
-            <Ionicons name="trash-outline" size={19} color={colors.danger} />
+            <Ionicons name="trash-outline" size={18} color={roman.danger} />
+            <Text style={[styles.editActionText, styles.editActionDanger]}>Delete</Text>
           </Pressable>
-          <Pressable onPress={() => setEditing(false)} hitSlop={8} style={styles.editAction} disabled={saving}>
-            <Ionicons name="close" size={20} color={colors.textMuted} />
-          </Pressable>
-          <Pressable onPress={() => void save()} hitSlop={8} style={styles.editAction} disabled={saving}>
-            {saving ? (
-              <ActivityIndicator size="small" color={colors.accent} />
-            ) : (
-              <Ionicons name="checkmark" size={20} color={colors.accent} />
-            )}
-          </Pressable>
+          <View style={styles.editActionsRight}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel editing"
+              onPress={() => setEditing(false)}
+              style={styles.editAction}
+              disabled={saving}
+            >
+              <Ionicons name="close" size={20} color={roman.textMuted} />
+              <Text style={styles.editActionText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Save set"
+              onPress={() => void save()}
+              style={[styles.editAction, styles.editActionPrimary]}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color={roman.background} />
+              ) : (
+                <Ionicons name="checkmark" size={20} color={roman.background} />
+              )}
+              <Text style={[styles.editActionText, styles.editActionPrimaryText]}>Save</Text>
+            </Pressable>
+          </View>
         </View>
-        <RirField value={rir} onChangeText={setRir} disabled={saving} />
-        {saveError ? <Text style={styles.error}>{saveError}</Text> : null}
+        {saveError ? (
+          <Text accessibilityRole="alert" style={styles.error}>{saveError}</Text>
+        ) : null}
       </View>
     );
   }
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Set ${set.is_warmup ? "warm-up" : set.set_number}, ${formatWeight(Number(set.weight_kg), unit)} for ${set.reps} reps. Tap to edit`}
+      accessibilityHint="Long press to delete"
       style={styles.setRow}
       onPress={startEditing}
       onLongPress={() =>
@@ -424,13 +485,14 @@ function SetRow({
         ])
       }
     >
-      <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
-        {set.is_warmup ? "W" : set.set_number}
-      </Text>
-      <Text style={styles.setDetail}>
-        {formatWeight(Number(set.weight_kg), unit)} × {set.reps}
-        {formatRecordedRir(set.rir)}
-      </Text>
+      <View style={[styles.setBadge, set.is_warmup && styles.warmupBadge]}>
+        <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
+          {set.is_warmup ? "W" : set.set_number}
+        </Text>
+      </View>
+      <Text style={styles.setWeight}>{formatWeight(Number(set.weight_kg), unit)}</Text>
+      <Text style={styles.setReps}>× {set.reps}</Text>
+      <Text style={styles.setRir}>{formatRecordedRir(set.rir)}</Text>
     </Pressable>
   );
 }
@@ -439,13 +501,14 @@ function SetRow({
 function ReadOnlySetRow({ set, unit }: { set: LoggedSet; unit: WeightUnit }) {
   return (
     <View style={styles.setRow}>
-      <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
-        {set.is_warmup ? "W" : set.set_number}
-      </Text>
-      <Text style={styles.setDetail}>
-        {formatWeight(Number(set.weight_kg), unit)} × {set.reps}
-        {formatRecordedRir(set.rir)}
-      </Text>
+      <View style={[styles.setBadge, set.is_warmup && styles.warmupBadge]}>
+        <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
+          {set.is_warmup ? "W" : set.set_number}
+        </Text>
+      </View>
+      <Text style={styles.setWeight}>{formatWeight(Number(set.weight_kg), unit)}</Text>
+      <Text style={styles.setReps}>× {set.reps}</Text>
+      <Text style={styles.setRir}>{formatRecordedRir(set.rir)}</Text>
     </View>
   );
 }
@@ -518,55 +581,80 @@ function SetForm({
   };
 
   return (
-    <View>
-      <View style={styles.form}>
-        <View style={styles.field}>
-          <Text style={styles.fieldLabel}>{unit}</Text>
+    <View style={styles.entryPanel}>
+      <View style={styles.entryRow}>
+        <View style={styles.entryField}>
+          <Text style={styles.fieldLabel}>Weight ({unit})</Text>
           <TextInput
+            accessibilityLabel={`Weight in ${unit}`}
             style={styles.fieldInput}
             value={weight}
             onChangeText={setWeight}
             editable={!disabled}
             placeholder={weightHint}
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={roman.placeholder}
+            selectionColor={roman.gold}
             keyboardType="decimal-pad"
             returnKeyType="next"
           />
         </View>
 
-        <View style={styles.field}>
-          <Text style={styles.fieldLabel}>reps</Text>
+        <View style={styles.entryField}>
+          <Text style={styles.fieldLabel}>Reps</Text>
           <TextInput
+            accessibilityLabel="Reps"
             style={styles.fieldInput}
             value={reps}
             onChangeText={setReps}
             editable={!disabled}
             placeholder={repsHint}
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={roman.placeholder}
+            selectionColor={roman.gold}
             keyboardType="number-pad"
             returnKeyType="done"
             onSubmitEditing={() => void submit()}
           />
         </View>
 
+        <RirField value={rir} onChangeText={setRir} disabled={disabled} />
+      </View>
+
+      <View style={styles.entryActions}>
+        {/* A box and the words, so the on/off state is not carried by colour alone. */}
         <Pressable
+          accessibilityRole="checkbox"
+          accessibilityLabel="Warm-up set"
+          accessibilityState={{ checked: isWarmup, disabled }}
           style={[styles.warmupToggle, isWarmup && styles.warmupActive]}
           onPress={() => setIsWarmup((value) => !value)}
           disabled={disabled}
         >
-          <Text style={[styles.warmupText, isWarmup && styles.warmupTextActive]}>W</Text>
+          <Ionicons
+            name={isWarmup ? "checkbox" : "square-outline"}
+            size={22}
+            color={isWarmup ? roman.gold : roman.textMuted}
+          />
+          <Text style={[styles.warmupText, isWarmup && styles.warmupTextActive]}>Warm-up set</Text>
         </Pressable>
 
-        <Pressable style={styles.addSet} onPress={() => void submit()} disabled={disabled}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Log set"
+          style={styles.addSet}
+          onPress={() => void submit()}
+          disabled={disabled}
+        >
           {busy || submitting ? (
-            <ActivityIndicator color={colors.accentText} size="small" />
+            <ActivityIndicator color={roman.background} size="small" />
           ) : (
-            <Ionicons name="add" size={22} color={colors.accentText} />
+            <Ionicons name="add" size={20} color={roman.background} />
           )}
+          <Text style={styles.addSetText}>Log set</Text>
         </Pressable>
       </View>
-      <RirField value={rir} onChangeText={setRir} disabled={disabled} />
-      {submitError ? <Text style={styles.error}>{submitError}</Text> : null}
+      {submitError ? (
+        <Text accessibilityRole="alert" style={styles.error}>{submitError}</Text>
+      ) : null}
     </View>
   );
 }
@@ -726,13 +814,13 @@ function SaveAsTemplateModal({
                 onChangeText={setName}
                 placeholder="Template name"
                 editable={!saving && !pendingSave && saveRequestLoaded}
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={roman.textMuted}
               />
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
 
               {loadingPrograms ? (
-                <ActivityIndicator color={colors.accent} style={styles.sheetLoading} />
+                <ActivityIndicator color={roman.gold} style={styles.sheetLoading} />
               ) : programs.length === 0 && pendingSave ? (
                 <Text style={styles.sheetLabel}>Continue to check your previous save.</Text>
               ) : programs.length === 0 ? (
@@ -760,7 +848,7 @@ function SaveAsTemplateModal({
                     >
                       <Text style={styles.sheetRowText}>{program.name}</Text>
                       {selectedProgramId === program.id ? (
-                        <Ionicons name="checkmark" size={18} color={colors.accent} />
+                        <Ionicons name="checkmark" size={18} color={roman.gold} />
                       ) : null}
                     </Pressable>
                   ))}
@@ -786,7 +874,7 @@ function SaveAsTemplateModal({
                   (!pendingSave && (loadingPrograms || programs.length === 0))}
               >
                 {saving ? (
-                  <ActivityIndicator color={colors.accentText} />
+                  <ActivityIndicator color={roman.background} />
                 ) : (
                   <Text style={styles.modalButtonText}>{pendingSave ? "Continue save" : "Save"}</Text>
                 )}
@@ -801,6 +889,7 @@ function SaveAsTemplateModal({
 
 export default function ActiveWorkoutScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const unit: WeightUnit = user?.weight_unit ?? "kg";
@@ -812,7 +901,6 @@ export default function ActiveWorkoutScreen() {
   const [error, setError] = useState<string | null>(null);
   const [restSeconds, setRestSecondsState] = useState(DEFAULT_REST_SECONDS);
   const { targets, description: planDescription } = useMemo(() => getStartingPlan(workout), [workout]);
-  const planComparison = useMemo(() => compareWorkoutToPlan(workout), [workout]);
   const [saveAsTemplateVisible, setSaveAsTemplateVisible] = useState(false);
   // A past session opens read-only by default (see isFinished/readOnly
   // below); this is the escape hatch that lets it become editable again.
@@ -1025,7 +1113,8 @@ export default function ActiveWorkoutScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator color={colors.accent} />
+        <Stack.Screen options={{ headerShown: false }} />
+        <ActivityIndicator color={roman.gold} />
       </View>
     );
   }
@@ -1033,9 +1122,22 @@ export default function ActiveWorkoutScreen() {
   if (!workout) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.error}>{error ?? "Workout not found"}</Text>
-        <Pressable onPress={() => { setLoading(true); setError(null); setLoadAttempt(value => value + 1); }}>
-          <Text style={styles.finish}>Try again</Text>
+        <Stack.Screen options={{ headerShown: false }} />
+        <Text accessibilityRole="alert" style={styles.error}>{error ?? "Workout not found"}</Text>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.centeredAction}
+          onPress={() => { setLoading(true); setError(null); setLoadAttempt(value => value + 1); }}
+        >
+          <Text style={styles.finishText}>Try again</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={styles.centeredAction}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backText}>Go back</Text>
         </Pressable>
       </View>
     );
@@ -1053,61 +1155,94 @@ export default function ActiveWorkoutScreen() {
       <KeyboardAvoidingView
         style={styles.screen}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={90}
       >
-        <Stack.Screen
-          options={{
-            title: workout.title ?? "Workout",
-            headerRight: () => {
-              if (readOnly) {
-                return (
-                  <Pressable onPress={() => setEditing(true)} hitSlop={8}>
-                    <Text style={styles.finish}>Edit</Text>
-                  </Pressable>
-                );
-              }
-              if (isFinished) {
-                // Editing an already-finished workout: exit just leaves edit
-                // mode, it must not call finish again.
-                return (
-                  <Pressable onPress={() => setEditing(false)} hitSlop={8}>
-                    <Text style={styles.finish}>Done</Text>
-                  </Pressable>
-                );
-              }
-              return (
-                <Pressable onPress={confirmFinish} disabled={finishing || setSaveBlocked} hitSlop={8}>
-                  {finishing ? (
-                    <ActivityIndicator size="small" color={colors.accent} />
-                  ) : (
-                    <Text style={styles.finish}>Finish</Text>
-                  )}
-                </Pressable>
-              );
-            },
-          }}
-        />
+        {/* The screen draws its own top bar (back, name, finish) below, so the
+            native header is off: both together would show the name twice. */}
+        <Stack.Screen options={{ headerShown: false }} />
 
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          {readOnly || setSaveBlocked ? (
-            <Text style={styles.titleReadOnly}>{workout.title ?? "Workout"}</Text>
-          ) : (
-            <TitleField key={workout.title ?? ""} value={workout.title} onSave={(title) => void handleSaveTitle(title)} />
-          )}
+        <View style={[styles.topBar, { paddingTop: insets.top }]}>
+          <View style={styles.topBarRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              style={styles.topBarBack}
+              onPress={() => router.back()}
+            >
+              <Ionicons name="chevron-back" size={24} color={roman.text} />
+            </Pressable>
 
+            <View style={styles.topBarTitle}>
+              {readOnly ? (
+                <Text accessibilityRole="header" numberOfLines={2} style={styles.titleReadOnly}>
+                  {workout.title ?? "Workout"}
+                </Text>
+              ) : (
+                <TitleField
+                  key={workout.title ?? ""}
+                  value={workout.title}
+                  editable={!setSaveBlocked}
+                  onSave={(title) => void handleSaveTitle(title)}
+                />
+              )}
+            </View>
+
+            {readOnly ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Edit workout"
+                style={styles.topBarGhost}
+                onPress={() => setEditing(true)}
+              >
+                <Text style={styles.topBarGhostText}>Edit</Text>
+              </Pressable>
+            ) : isFinished ? (
+              // Editing an already-finished workout: exit just leaves edit
+              // mode, it must not call finish again.
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Done editing"
+                style={styles.topBarGhost}
+                onPress={() => setEditing(false)}
+              >
+                <Text style={styles.topBarGhostText}>Done</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Finish workout"
+                accessibilityState={{ busy: finishing, disabled: finishing || setSaveBlocked }}
+                style={[styles.finishButton, (finishing || setSaveBlocked) && styles.finishButtonDisabled]}
+                onPress={confirmFinish}
+                disabled={finishing || setSaveBlocked}
+              >
+                {finishing ? (
+                  <ActivityIndicator size="small" color={roman.background} />
+                ) : (
+                  <Text style={styles.finishText}>Finish</Text>
+                )}
+              </Pressable>
+            )}
+          </View>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 32 }]}
+          keyboardShouldPersistTaps="handled"
+        >
           {readOnly ? <Text style={styles.sessionDate}>{formatSessionDate(workout.performed_at)}</Text> : null}
           {planDescription ? <Text style={styles.sessionDate}>{planDescription}</Text> : null}
 
           <View style={styles.summary}>
-            <View>
+            <View style={styles.summaryItem}>
               <Text style={styles.summaryValue}>{workout.total_sets}</Text>
               <Text style={styles.summaryLabel}>working sets</Text>
             </View>
+            <View style={styles.summaryDivider} />
             {isFinished && workout.finished_at ? (
               workout.finished_automatically === false ? (
                 <FinishedDuration startedAt={workout.performed_at} endedAt={workout.finished_at} />
               ) : (
-                <View>
+                <View style={styles.summaryItem}>
                   <Text style={styles.summaryValue}>—</Text>
                   <Text style={styles.summaryLabel}>
                     {workout.finished_automatically ? "auto-closed" : "duration unavailable"}
@@ -1119,26 +1254,9 @@ export default function ActiveWorkoutScreen() {
             )}
           </View>
 
-          {planComparison ? (
-            <View style={styles.planComparison}>
-              <Text style={styles.blockTitle}>Plan and log</Text>
-              <Text style={styles.planCount}>
-                {planComparison.plannedSets > 0
-                  ? `${planComparison.recordedPlannedSets} of ${planComparison.plannedSets} planned working sets recorded`
-                  : "No working sets in the starting plan"}
-              </Text>
-              <Text style={styles.planDetail}>
-                {planComparison.unrecordedSets} planned sets not recorded · {planComparison.extraSets} extra working sets
-              </Text>
-              <Text style={styles.planDetail}>
-                Set counts only. Warm-ups and zero-rep entries are excluded.
-              </Text>
-            </View>
-          ) : null}
-
           {readOnly ? null : <RestTimer seconds={restSeconds} onChangeSeconds={handleChangeRest} />}
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {pendingSetRequest ? (
             <View style={styles.planComparison}>
               <Text style={styles.blockTitle}>Set awaiting confirmation</Text>
@@ -1197,8 +1315,8 @@ export default function ActiveWorkoutScreen() {
           })}
 
           {readOnly ? null : (
-            <Pressable style={styles.addExercise} onPress={openPicker}>
-              <Ionicons name="add" size={20} color={colors.accent} />
+            <Pressable accessibilityRole="button" style={styles.addExercise} onPress={openPicker}>
+              <Ionicons name="add" size={20} color={roman.gold} />
               <Text style={styles.addExerciseText}>Add exercise</Text>
             </Pressable>
           )}
@@ -1223,259 +1341,440 @@ export default function ActiveWorkoutScreen() {
   );
 }
 
+const MIN_TOUCH = 44;
+
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: roman.background },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
+    backgroundColor: roman.background,
+    padding: 24,
   },
-  content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
-  finish: { color: colors.accent, fontSize: 16, fontWeight: "700" },
+  centeredAction: { minHeight: MIN_TOUCH, justifyContent: "center", paddingHorizontal: 16 },
+  content: { paddingHorizontal: 14, paddingTop: 12 },
 
+  topBar: {
+    backgroundColor: roman.background,
+    borderBottomColor: roman.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+  },
+  topBarRow: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 4 },
+  topBarBack: {
+    width: MIN_TOUCH,
+    height: MIN_TOUCH,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  topBarTitle: { flex: 1, minWidth: 0, alignItems: "center", justifyContent: "center" },
+  topBarGhost: {
+    minWidth: MIN_TOUCH,
+    minHeight: MIN_TOUCH,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  topBarGhostText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 15 },
+  finishButton: {
+    minWidth: 76,
+    minHeight: MIN_TOUCH,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: roman.gold,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+  },
+  finishButtonDisabled: { opacity: 0.5 },
+  finishText: {
+    color: roman.background,
+    fontFamily: romanFont.semibold,
+    fontSize: 13,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  backText: { color: roman.textMuted, fontFamily: romanFont.medium, fontSize: 15 },
+
+  titleWrap: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "100%" },
   titleInput: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.sm,
+    flexShrink: 1,
+    minHeight: MIN_TOUCH,
+    color: roman.text,
+    fontFamily: romanFont.title,
+    fontSize: 18,
+    letterSpacing: 0.5,
+    textAlign: "center",
+    paddingVertical: 8,
   },
   titleReadOnly: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
-    paddingVertical: spacing.sm,
+    color: roman.text,
+    fontFamily: romanFont.title,
+    fontSize: 18,
+    letterSpacing: 0.5,
+    textAlign: "center",
   },
-  sessionDate: { color: colors.textMuted, fontSize: 13, marginBottom: spacing.sm },
+  sessionDate: {
+    color: roman.textMuted,
+    fontFamily: romanFont.regular,
+    fontSize: 13,
+    marginBottom: 8,
+  },
 
   summary: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    gap: 8,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
     borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 12,
   },
-  summaryValue: { color: colors.text, fontSize: 20, fontWeight: "700" },
-  summaryLabel: { color: colors.textMuted, fontSize: 12 },
+  summaryItem: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 },
+  summaryDivider: { width: 1, alignSelf: "stretch", minHeight: 16, backgroundColor: roman.border },
+  summaryValue: {
+    color: roman.text,
+    fontFamily: romanFont.semibold,
+    fontSize: 16,
+    fontVariant: ["tabular-nums"],
+  },
+  summaryLabel: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 12, flexShrink: 1 },
+
   rest: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    gap: 8,
+    backgroundColor: roman.surface,
+    borderColor: roman.gold,
     borderWidth: 1,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 12,
   },
-  restDuration: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  restLabel: { color: colors.textMuted, fontSize: 14 },
-  restValue: { color: colors.text, fontSize: 14, fontWeight: "600" },
+  restInfo: { flexShrink: 1 },
+  restTitle: {
+    color: roman.gold,
+    fontFamily: romanFont.semibold,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
+  restDuration: {
+    minHeight: MIN_TOUCH,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  restTarget: { color: roman.textMuted, fontFamily: romanFont.medium, fontSize: 13 },
+  restCountdownBox: { alignItems: "center" },
   restCountdown: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
+    color: roman.text,
+    fontFamily: romanFont.semibold,
+    fontSize: 28,
     fontVariant: ["tabular-nums"],
   },
-  restDone: { color: colors.accent },
+  restDone: { color: roman.goldLight },
+  restOver: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 11 },
   restButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.accent,
+    width: MIN_TOUCH,
+    height: MIN_TOUCH,
+    borderRadius: 10,
+    backgroundColor: roman.gold,
     alignItems: "center",
     justifyContent: "center",
   },
-  restButtonActive: { backgroundColor: colors.border },
-  error: { color: colors.danger, marginBottom: spacing.md },
+  restButtonActive: { backgroundColor: roman.surfaceRaised, borderColor: roman.border, borderWidth: 1 },
+  error: { color: roman.danger, fontFamily: romanFont.medium, fontSize: 13, marginTop: 8, marginBottom: 8 },
 
   block: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
     borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
   },
-  blockTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
+  blockTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 17, marginBottom: 2 },
   planComparison: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: roman.surface,
+    borderColor: roman.gold,
     borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    gap: spacing.xs,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    gap: 4,
   },
-  planCount: { color: colors.text, fontSize: 14, lineHeight: 21 },
-  planDetail: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
+  planDetail: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
 
   setRow: {
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: spacing.sm,
-    borderBottomColor: colors.border,
+    gap: 8,
+    paddingVertical: 6,
+    borderBottomColor: roman.border,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  setRowEditing: {
-    flexDirection: "row",
+  setBadge: {
+    width: 30,
+    height: 28,
+    borderRadius: 6,
     alignItems: "center",
-    gap: spacing.xs,
-    paddingVertical: spacing.xs,
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    justifyContent: "center",
   },
-  setNumber: { color: colors.textMuted, width: 28, fontSize: 14, fontWeight: "600" },
-  warmupLabel: { color: colors.textMuted, opacity: 0.7 },
-  setDetail: { color: colors.text, fontSize: 15, flexShrink: 1 },
-  rirRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginVertical: spacing.sm },
-  rirInput: { width: 82 },
-  rirHelp: { color: colors.textMuted, fontSize: 12, lineHeight: 18, flex: 1 },
-  editInput: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
-    fontSize: 15,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    minWidth: 62,
-    textAlign: "center",
-  },
-  editUnit: { color: colors.textMuted, fontSize: 13 },
-  editAction: { paddingHorizontal: spacing.xs },
-
-  form: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm, marginTop: spacing.md },
-  field: { flex: 1 },
-  fieldLabel: { color: colors.textMuted, fontSize: 11, marginBottom: 2 },
-  fieldInput: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
+  warmupBadge: { borderColor: roman.border, borderWidth: 1 },
+  setNumber: { color: roman.textMuted, fontFamily: romanFont.semibold, fontSize: 14 },
+  warmupLabel: { color: roman.goldLight },
+  setWeight: {
+    width: 92,
+    textAlign: "right",
+    color: roman.text,
+    fontFamily: romanFont.semibold,
     fontSize: 16,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
+    fontVariant: ["tabular-nums"],
+  },
+  setReps: {
+    width: 56,
+    color: roman.text,
+    fontFamily: romanFont.semibold,
+    fontSize: 16,
+    fontVariant: ["tabular-nums"],
+  },
+  setRir: {
+    flex: 1,
+    color: roman.textMuted,
+    fontFamily: romanFont.regular,
+    fontSize: 14,
+    fontVariant: ["tabular-nums"],
+  },
+
+  // The set being corrected: boxed and tinted, and named in words by the label.
+  setRowEditing: {
+    backgroundColor: roman.goldTint,
+    borderColor: roman.gold,
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderRadius: 10,
+    padding: 12,
+    marginVertical: 6,
+  },
+  editingHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
+  editingLabel: {
+    color: roman.goldLight,
+    fontFamily: romanFont.semibold,
+    fontSize: 12,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  editActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginTop: 10,
+  },
+  editActionsRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  editAction: {
+    minHeight: MIN_TOUCH,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  editActionPrimary: { backgroundColor: roman.gold },
+  editActionText: { color: roman.textMuted, fontFamily: romanFont.semibold, fontSize: 13 },
+  editActionDanger: { color: roman.danger },
+  editActionPrimaryText: { color: roman.background },
+
+  entryPanel: {
+    backgroundColor: roman.background,
+    borderColor: roman.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+  },
+  entryRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  entryField: { flex: 1, minWidth: 0 },
+  fieldLabel: {
+    color: roman.textMuted,
+    fontFamily: romanFont.medium,
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  fieldInput: {
+    minHeight: 48,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
+    borderWidth: 1,
+    borderRadius: 10,
+    color: roman.text,
+    fontFamily: romanFont.semibold,
+    fontSize: 18,
+    fontVariant: ["tabular-nums"],
+    textAlign: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  entryActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginTop: 10,
   },
   warmupToggle: {
-    width: 42,
-    height: 42,
-    borderRadius: radius.sm,
-    borderColor: colors.border,
-    borderWidth: 1,
+    minHeight: MIN_TOUCH,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 8,
+    paddingRight: 8,
   },
-  warmupActive: { backgroundColor: colors.border },
-  warmupText: { color: colors.textMuted, fontWeight: "700" },
-  warmupTextActive: { color: colors.text },
+  warmupActive: {},
+  warmupText: { color: roman.textMuted, fontFamily: romanFont.medium, fontSize: 13 },
+  warmupTextActive: { color: roman.goldLight },
   addSet: {
-    width: 42,
-    height: 42,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
+    minHeight: MIN_TOUCH,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
+    backgroundColor: roman.gold,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+  },
+  addSetText: {
+    color: roman.background,
+    fontFamily: romanFont.semibold,
+    fontSize: 13,
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
 
   addExercise: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    borderColor: colors.border,
+    gap: 6,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderColor: roman.gold,
     borderWidth: 1,
     borderStyle: "dashed",
   },
-  addExerciseText: { color: colors.accent, fontSize: 16, fontWeight: "600" },
-  hint: { color: colors.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.md },
+  addExerciseText: {
+    color: roman.goldLight,
+    fontFamily: romanFont.semibold,
+    fontSize: 14,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  hint: {
+    color: roman.textMuted,
+    fontFamily: romanFont.regular,
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 14,
+  },
 
   sheetAvoider: { flex: 1 },
   sheetBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
   },
   sheet: {
     maxHeight: "80%",
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.md,
-    borderTopRightRadius: radius.md,
-    paddingTop: spacing.lg,
+    backgroundColor: roman.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderTopColor: roman.gold,
+    borderTopWidth: 1,
+    paddingTop: 24,
   },
   sheetScroll: { flexShrink: 1 },
-  sheetScrollContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
-  sheetTitle: { color: colors.text, fontSize: 18, fontWeight: "700", marginBottom: spacing.md },
+  sheetScrollContent: { paddingHorizontal: 24, paddingBottom: 8 },
+  sheetTitle: { color: roman.text, fontFamily: romanFont.title, fontSize: 20, marginBottom: 16 },
   sheetInput: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
+    minHeight: 48,
+    backgroundColor: roman.background,
+    borderColor: roman.border,
     borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
+    borderRadius: 10,
+    color: roman.text,
+    fontFamily: romanFont.regular,
     fontSize: 16,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 16,
   },
   sheetLabel: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontWeight: "600",
+    color: roman.textMuted,
+    fontFamily: romanFont.semibold,
+    fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: spacing.xs,
+    letterSpacing: 1,
+    marginBottom: 6,
   },
   sheetRow: {
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: spacing.sm,
-    borderBottomColor: colors.border,
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomColor: roman.border,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  sheetRowText: { color: colors.text, fontSize: 16 },
-  sheetEmpty: { color: colors.textMuted, marginBottom: spacing.sm },
-  sheetLoading: { marginVertical: spacing.md },
+  sheetRowText: { flex: 1, color: roman.text, fontFamily: romanFont.medium, fontSize: 16 },
+  sheetEmpty: { color: roman.textMuted, fontFamily: romanFont.regular, marginBottom: 8 },
+  sheetLoading: { marginVertical: 16 },
   sheetCreateProgram: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
+    minHeight: MIN_TOUCH,
+    justifyContent: "center",
+    backgroundColor: roman.background,
+    borderColor: roman.border,
     borderWidth: 1,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
+    borderRadius: 10,
+    paddingHorizontal: 12,
     alignItems: "center",
   },
-  sheetCreateProgramText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
+  sheetCreateProgramText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
 
   modalActions: {
     flexDirection: "row",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 32,
   },
   modalButton: {
     flex: 1,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    minHeight: 52,
+    justifyContent: "center",
+    backgroundColor: roman.gold,
+    borderRadius: 12,
+    padding: 14,
     alignItems: "center",
   },
   modalButtonSecondary: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
     borderWidth: 1,
   },
   modalButtonDisabled: { opacity: 0.7 },
-  modalButtonText: { color: colors.accentText, fontSize: 16, fontWeight: "700" },
-  modalButtonSecondaryText: { color: colors.accent, fontSize: 16, fontWeight: "700" },
+  modalButtonText: { color: roman.background, fontFamily: romanFont.semibold, fontSize: 15 },
+  modalButtonSecondaryText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 15 },
 });
