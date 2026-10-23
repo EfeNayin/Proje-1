@@ -57,6 +57,8 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: "Profile",
+          // Draws its own title bar; a native header as well would show "Profile" twice.
+          headerShown: false,
           tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
         }}
       />
