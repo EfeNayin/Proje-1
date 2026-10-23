@@ -42,6 +42,14 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 39: Roman tema, Research ekranı ve commit kapsamı — 23 Ekim 2026
+
+- Backend: PubMed (NCBI E-utilities) yayın kayıtlarını sunan `research` domain'i ve `NCBI_API_KEY` / `NCBI_EMAIL` ayarları; `httpx` artık çalışma zamanı bağımlılığı.
+- Mobil: cursor sayfalamalı Research ekranı (PMID ile tekrar önleme, hata sonrası yeniden deneme, geç yanıt koruması, PMID eşleşmesi doğrulanan PubMed bağlantısı), Training'den açılış ve geçmişsiz deep-link için `(tabs)` çapası.
+- Roman tema (`romanTheme.ts`, yerel Cinzel ve Plus Jakarta Sans fontları) giriş, kayıt, Training, aktif antrenman, Programs, program detayı, Volume, Profile ve Research ekranlarına uygulandı; `theme.ts` değişmedi. Geri düğmesi yalnızca ok gösteriyor; RIR açıklama satırı ve "Plan and log" kart başlığı kaldırıldı (RIR alanı duruyor).
+- Doğrulama: 243 mobil test, typecheck ve sıfır uyarılı lint geçti; backend 424 test, `ruff check` ve mypy geçti. `research-navigation` testi kaynak-metin taramasıdır, native gezinme kanıtı değildir.
+- Sınır: Bu ekranların hiçbiri telefonda veya simülatörde denenmedi; canlı PubMed bağlantısı da denenmedi. Docker Compose'daki yerel PostgreSQL port değişikliği commit dışında bırakıldı.
+
 ### Adım 38: Egzersiz geçmişini ayrı panelde göster — 30 Eylül 2026
 
 - Adım 37'de kart içinde büyüyen "All earlier sessions" listesi, `ExerciseHistory`
