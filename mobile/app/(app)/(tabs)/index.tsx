@@ -3,8 +3,10 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -13,19 +15,26 @@ import {
   SectionList,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as programsApi from "../../../src/api/programs";
 import type { ProgramDetail } from "../../../src/api/programs";
 import * as readinessApi from "../../../src/api/readiness";
 import * as workoutsApi from "../../../src/api/workouts";
 import type { WorkoutSummary } from "../../../src/api/workouts";
-import { colors, radius, spacing } from "../../../src/theme";
+import { roman, useRomanFonts } from "../../../src/romanTheme";
 import { clearActiveWorkout, getActiveWorkout, setActiveWorkout } from "../../../src/workout/activeWorkout";
 import { isReadinessCheckinEnabled } from "../../../src/workout/readinessPreference";
 import { resolveActiveWorkoutId } from "../../../src/workout/resolveActiveWorkout";
 import { createWorkoutHistory } from "../../../src/workout/workoutHistory";
+
+// Same bundled photo the sign-in screen uses; shown here darkened and faded.
+const heroImage = require("../../../assets/images/login/hercules-bronze.jpg");
+
+const MIN_TOUCH = 44;
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -78,6 +87,22 @@ function formatCardDuration(performedAt: string, finishedAt: string): string {
   return `${minutes}m`;
 }
 
+/**
+ * The line under a card's title. The day is already the section header above;
+ * each row adds what the header can't — its duration once finished, or its
+ * start time while it's the one still in progress.
+ */
+function cardMetaFor(item: WorkoutSummary): { icon: "timer-outline" | "time-outline" | "information-circle-outline"; text: string } {
+  if (!item.finished_at) return { icon: "time-outline", text: formatTimeOfDay(item.performed_at) };
+  if (item.finished_automatically === false) {
+    return { icon: "timer-outline", text: formatCardDuration(item.performed_at, item.finished_at) };
+  }
+  return {
+    icon: "information-circle-outline",
+    text: item.finished_automatically ? "Auto-closed · duration unknown" : "Duration unavailable",
+  };
+}
+
 type HistorySection = { title: string; data: WorkoutSummary[] };
 
 /**
@@ -103,6 +128,9 @@ function groupByDay(workouts: WorkoutSummary[]): HistorySection[] {
 
 export default function TrainingHome() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const font = useRomanFonts();
   const [history] = useState(() => createWorkoutHistory(workoutsApi.listWorkouts));
   const { items: workouts, loading, loadingMore, hasMore, error } = useSyncExternalStore(
     history.subscribe, history.getSnapshot,
@@ -111,6 +139,17 @@ export default function TrainingHome() {
   const [activeProgram, setActiveProgram] = useState<ProgramDetail | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [starting, setStarting] = useState(false);
+  // State only updates on the next render, so a fast double tap could pass a
+  // `starting` check twice. The refs close that gap.
+  const startingRef = useRef(false);
+  const navigatingRef = useRef(false);
+
+  /** Navigates at most once per visit to this screen: a double tap must not stack two copies. */
+  const go = (navigate: () => void) => {
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+    navigate();
+  };
 
   const load = useCallback(async () => {
     // See src/workout/resolveActiveWorkout.ts for what this reconciles and
@@ -143,6 +182,7 @@ export default function TrainingHome() {
   // Re-run on every focus so finishing a workout is reflected on return.
   useFocusEffect(
     useCallback(() => {
+      navigatingRef.current = false;
       void history.refresh();
       void load().catch(() => undefined);
       return () => {
@@ -158,6 +198,8 @@ export default function TrainingHome() {
 
   /** templateId omitted starts a free session; given, starts from that template. */
   const handleStart = async (templateId?: string) => {
+    if (startingRef.current) return;
+    startingRef.current = true;
     setStarting(true);
     try {
       let showCheckin = false;
@@ -189,24 +231,54 @@ export default function TrainingHome() {
       // Errors surface on the workout screen itself; nothing useful to show
       // here beyond letting the user tap again.
     } finally {
+      startingRef.current = false;
       setStarting(false);
     }
   };
 
+  const topBar = (
+    <View style={[styles.topBar, { paddingTop: insets.top }]}>
+      <View style={styles.topBarRow}>
+        <Text accessibilityRole="header" style={[styles.topBarTitle, font.title]}>
+          Training
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open profile"
+          hitSlop={4}
+          onPress={() => go(() => router.navigate("/profile"))}
+          style={styles.profileButton}
+        >
+          <View style={styles.profileDot}>
+            <Ionicons name="person" size={18} color={roman.background} />
+          </View>
+        </Pressable>
+      </View>
+    </View>
+  );
+
   if (loading && workouts.length === 0) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.accent} />
+      <View style={styles.screen}>
+        {topBar}
+        <View style={styles.centered}>
+          <ActivityIndicator color={roman.gold} />
+        </View>
       </View>
     );
   }
 
   const sections = groupByDay(workouts);
+  // The statue sits behind the first screenful and is gone by the time the
+  // history starts; the start button clears the face on short screens too.
+  const heroHeight = 380;
+  const heroInset = Math.min(150, Math.round(windowHeight * 0.17));
 
   return (
-    <>
+    <View style={styles.screen}>
+      {topBar}
       <SectionList
-        style={styles.screen}
+        style={styles.list}
         contentContainerStyle={styles.content}
         sections={sections}
         keyExtractor={(item) => item.id}
@@ -214,107 +286,185 @@ export default function TrainingHome() {
         onEndReached={() => { void history.loadMore(); }}
         onEndReachedThreshold={0.4}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={handleRefresh} tintColor={colors.accent} />
+          <RefreshControl refreshing={loading} onRefresh={handleRefresh} tintColor={roman.gold} />
         }
         ListHeaderComponent={
           <View>
-            {activeId ? (
-              <Pressable style={styles.resume} onPress={() => router.push(`/workout/${activeId}`)}>
-                <View style={styles.resumeText}>
-                  <Text style={styles.resumeTitle}>Workout in progress</Text>
-                  <Text style={styles.resumeSubtitle}>Tap to continue</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={22} color={colors.accentText} />
-              </Pressable>
-            ) : (
-              <>
-                <Pressable style={styles.start} onPress={() => void handleStart()} disabled={starting}>
-                  {starting ? (
-                    <ActivityIndicator color={colors.accentText} />
-                  ) : (
-                    <Text style={styles.startText}>Start workout</Text>
-                  )}
-                </Pressable>
+            {/* Decorative: no touches, hidden from screen readers. */}
+            <View
+              pointerEvents="none"
+              accessible={false}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              style={[styles.hero, { height: heroHeight }]}
+            >
+              <Image
+                source={heroImage}
+                style={[StyleSheet.absoluteFill, styles.heroImage]}
+                contentFit="cover"
+                contentPosition="top"
+                accessible={false}
+              />
+              <LinearGradient
+                colors={[roman.backgroundClear, "rgba(9, 9, 11, 0.7)", roman.background]}
+                locations={[0.15, 0.65, 1]}
+                style={StyleSheet.absoluteFill}
+              />
+            </View>
 
-                {activeProgram ? (
+            <View style={{ paddingTop: heroInset }}>
+              {activeId ? (
+                <View>
+                  <View style={styles.progressRow}>
+                    <View style={styles.progressDot} />
+                    <Text style={[styles.progressLabel, font.semibold]}>Workout in progress</Text>
+                  </View>
                   <Pressable
-                    style={styles.programChip}
-                    onPress={() => setSheetVisible(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Resume workout"
+                    style={({ pressed }) => [styles.primary, pressed && styles.primaryPressed]}
+                    onPress={() => go(() => router.push(`/workout/${activeId}`))}
+                  >
+                    <Ionicons name="play" size={18} color={roman.background} />
+                    <Text style={[styles.primaryText, font.semibold]}>Resume workout</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Start workout"
+                    accessibilityState={{ busy: starting, disabled: starting }}
+                    style={({ pressed }) => [
+                      styles.primary,
+                      pressed && styles.primaryPressed,
+                      starting && styles.primaryBusy,
+                    ]}
+                    onPress={() => void handleStart()}
                     disabled={starting}
                   >
-                    <Ionicons name="clipboard-outline" size={16} color={colors.text} />
-                    <Text style={styles.programChipText}>{activeProgram.name}</Text>
-                    <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
+                    {starting ? (
+                      <ActivityIndicator color={roman.background} />
+                    ) : (
+                      <>
+                        <Ionicons name="add-circle-outline" size={20} color={roman.background} />
+                        <Text style={[styles.primaryText, font.semibold]}>Start workout</Text>
+                      </>
+                    )}
                   </Pressable>
-                ) : null}
-              </>
-            )}
 
-            <Pressable style={styles.card} onPress={() => router.push("/research")}>
-              <View style={styles.cardMain}>
-                <Text style={styles.cardTitle}>Research</Text>
-                <Text style={styles.cardMeta}>Explore training research</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-            </Pressable>
+                  {activeProgram ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityHint="Choose a template to start from"
+                      style={styles.programChip}
+                      onPress={() => setSheetVisible(true)}
+                      disabled={starting}
+                    >
+                      <Ionicons name="clipboard-outline" size={16} color={roman.gold} />
+                      <Text style={[styles.programChipText, font.medium]}>{activeProgram.name}</Text>
+                      <Ionicons name="chevron-down" size={16} color={roman.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </>
+              )}
 
-            <Text style={styles.sectionTitle}>History</Text>
+              <Pressable
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.researchCard, pressed && styles.cardPressed]}
+                onPress={() => go(() => router.push("/research"))}
+              >
+                <View style={styles.researchIcon}>
+                  <Ionicons name="book-outline" size={22} color={roman.gold} />
+                </View>
+                <View style={styles.researchText}>
+                  <Text style={[styles.researchTitle, font.title]}>Research</Text>
+                  <Text style={[styles.cardMeta, font.regular]}>Explore training research</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={roman.textMuted} />
+              </Pressable>
+
+              <Text accessibilityRole="header" style={[styles.sectionTitle, font.title]}>
+                Recent workouts
+              </Text>
+
+              {error === "refresh" ? (
+                <View style={styles.errorBanner}>
+                  <Text accessibilityRole="alert" style={[styles.errorText, font.medium]}>
+                    Could not refresh your history.
+                  </Text>
+                  <Pressable accessibilityRole="button" style={styles.retry} onPress={handleRefresh}>
+                    <Text style={[styles.retryText, font.semibold]}>Try again</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
           </View>
         }
         ListEmptyComponent={
-          !error ? <Text style={styles.empty}>No workouts yet. Start one and it will show up here.</Text> : null
+          !error ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="barbell-outline" size={26} color={roman.gold} />
+              <Text style={[styles.emptyTitle, font.title]}>No workouts yet</Text>
+              <Text style={[styles.emptyText, font.regular]}>
+                No workouts yet. Start one and it will show up here.
+              </Text>
+            </View>
+          ) : null
         }
         ListFooterComponent={
           <View style={styles.historyFooter}>
-            {error ? (
+            {error === "more" ? (
               <>
-                <Text style={styles.historyError}>
-                  {error === "more" ? "Could not load older workouts." : "Could not refresh your history."}
-                </Text>
-                <Pressable accessibilityRole="button" style={styles.historyRetry}
-                  onPress={() => { if (error === "refresh") handleRefresh(); else void history.loadMore(true); }}>
-                  <Text style={styles.historyRetryText}>Try again</Text>
+                <Text style={[styles.errorText, font.medium]}>Could not load older workouts.</Text>
+                <Pressable accessibilityRole="button" style={styles.retry}
+                  onPress={() => { void history.loadMore(true); }}>
+                  <Text style={[styles.retryText, font.semibold]}>Try again</Text>
                 </Pressable>
               </>
             ) : loadingMore ? (
-              <ActivityIndicator color={colors.accent} />
-            ) : !loading && hasMore ? (
-              <Pressable accessibilityRole="button" style={styles.historyRetry}
+              <ActivityIndicator color={roman.gold} />
+            ) : !error && !loading && hasMore ? (
+              <Pressable accessibilityRole="button" style={styles.retry}
                 onPress={() => { void history.loadMore(); }}>
-                <Text style={styles.historyRetryText}>Load older workouts</Text>
+                <Text style={[styles.retryText, font.semibold]}>Load older workouts</Text>
               </Pressable>
-            ) : !loading && workouts.length > 0 ? (
-              <Text style={styles.cardMeta}>All workouts loaded</Text>
+            ) : !error && !loading && workouts.length > 0 ? (
+              <Text style={[styles.cardMeta, font.regular]}>All workouts loaded</Text>
             ) : null}
           </View>
         }
         renderSectionHeader={({ section }) => (
-          <Text style={styles.dayHeader}>{section.title}</Text>
+          <Text style={[styles.dayHeader, font.semibold]}>{section.title}</Text>
         )}
-        renderItem={({ item }) => (
-          <Pressable style={styles.card} onPress={() => router.push(`/workout/${item.id}`)}>
-            <View style={styles.cardMain}>
-              <Text style={styles.cardTitle}>{item.title ?? "Workout"}</Text>
-              {/* The day is already the section header above; each row adds
-                  what the header can't — its duration once finished, or its
-                  start time while it's the one still in progress. */}
-              <Text style={styles.cardMeta}>
-                {item.finished_at
-                  ? item.finished_automatically === false
-                    ? formatCardDuration(item.performed_at, item.finished_at)
-                    : item.finished_automatically ? "Auto-closed · duration unknown" : "Duration unavailable"
-                  : formatTimeOfDay(item.performed_at)}
-              </Text>
-            </View>
-            <View style={styles.cardStats}>
-              {/* Working sets, not tonnage: tonnage is dominated by whichever
-                  muscles happen to move the most weight, so a leg day always
-                  dwarfs an arm day regardless of how good either was. */}
-              <Text style={styles.cardSets}>{item.total_sets}</Text>
-              <Text style={styles.cardMeta}>sets</Text>
-            </View>
-          </Pressable>
-        )}
+        renderItem={({ item }) => {
+          const meta = cardMetaFor(item);
+          const title = item.title ?? "Workout";
+          return (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${title}, ${meta.text}, ${item.total_sets} sets`}
+              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+              onPress={() => go(() => router.push(`/workout/${item.id}`))}
+            >
+              <View style={styles.cardMain}>
+                <Text style={[styles.cardTitle, font.title]}>{title}</Text>
+                <View style={styles.cardMetaRow}>
+                  <Ionicons name={meta.icon} size={15} color={roman.gold} />
+                  <Text style={[styles.cardMetaText, font.regular]}>{meta.text}</Text>
+                </View>
+              </View>
+              <View style={styles.cardStats}>
+                {/* Sets as the API counts them, not tonnage: tonnage is
+                    dominated by whichever muscles happen to move the most
+                    weight, so a leg day always dwarfs an arm day regardless
+                    of how good either was. */}
+                <Text style={[styles.cardSets, font.semibold]}>{item.total_sets}</Text>
+                <Text style={[styles.cardMeta, font.regular]}>sets</Text>
+              </View>
+            </Pressable>
+          );
+        }}
       />
 
       <Modal
@@ -327,136 +477,258 @@ export default function TrainingHome() {
           {/* A Pressable with its own onPress, even a no-op, is what keeps a
               tap inside the sheet from also being read as a tap on the
               backdrop behind it. */}
-          <Pressable style={styles.sheet} onPress={() => {}}>
-            <Text style={styles.sheetTitle}>{activeProgram?.name}</Text>
+          <Pressable
+            accessibilityViewIsModal
+            style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}
+            onPress={() => {}}
+          >
+            <Text style={[styles.sheetTitle, font.semibold]}>{activeProgram?.name}</Text>
             {activeProgram?.templates.map((template) => (
               <Pressable
                 key={template.id}
-                style={styles.sheetRow}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.sheetRow, pressed && styles.sheetRowPressed]}
                 onPress={() => {
                   setSheetVisible(false);
                   void handleStart(template.id);
                 }}
               >
-                <Text style={styles.sheetRowText}>{template.name}</Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                <Text style={[styles.sheetRowText, font.semibold]}>{template.name}</Text>
+                <Ionicons name="chevron-forward" size={18} color={roman.textMuted} />
               </Pressable>
             ))}
             {activeProgram?.templates.length === 0 ? (
-              <Text style={styles.sheetEmpty}>No templates in this program yet.</Text>
+              <Text style={[styles.sheetEmpty, font.regular]}>No templates in this program yet.</Text>
             ) : null}
           </Pressable>
         </Pressable>
       </Modal>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  historyFooter: { alignItems: "center", paddingVertical: spacing.lg, gap: spacing.sm },
-  historyError: { color: colors.danger, textAlign: "center" },
-  historyRetry: { padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surface },
-  historyRetryText: { color: colors.accent, fontWeight: "600" },
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: spacing.xl },
-  centered: {
-    flex: 1,
+  screen: { flex: 1, backgroundColor: roman.background },
+  list: { flex: 1 },
+  content: { paddingHorizontal: 16, paddingBottom: 32 },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+
+  topBar: { backgroundColor: roman.background, paddingHorizontal: 16 },
+  topBarRow: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  topBarTitle: {
+    flexShrink: 1,
+    color: roman.gold,
+    fontSize: 22,
+    fontWeight: "600",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
+  profileButton: {
+    width: MIN_TOUCH,
+    height: MIN_TOUCH,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
   },
-  start: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    padding: spacing.md,
+  profileDot: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: roman.gold,
     alignItems: "center",
+    justifyContent: "center",
   },
-  startText: { color: colors.accentText, fontSize: 17, fontWeight: "700" },
+
+  // Full-bleed behind the header: the list pads its content by 16 each side.
+  hero: { position: "absolute", top: 0, left: -16, right: -16 },
+  heroImage: { opacity: 0.5 },
+
+  primary: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: roman.gold,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  primaryPressed: { backgroundColor: roman.goldPressed },
+  primaryBusy: { opacity: 0.6 },
+  primaryText: {
+    flexShrink: 1,
+    color: roman.background,
+    fontSize: 14,
+    fontWeight: "600",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  progressRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
+  progressDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: roman.gold },
+  progressLabel: {
+    flexShrink: 1,
+    color: roman.goldLight,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+
   programChip: {
+    minHeight: MIN_TOUCH,
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    maxWidth: "100%",
+    gap: 8,
+    marginTop: 10,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
     borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  programChipText: { color: colors.text, fontSize: 14, fontWeight: "600" },
+  programChipText: { flexShrink: 1, color: roman.text, fontSize: 14, fontWeight: "500" },
+
+  researchCard: {
+    minHeight: 64,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    marginTop: 20,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+  },
+  researchIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: roman.background,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  researchText: { flex: 1 },
+  researchTitle: { color: roman.text, fontSize: 16, fontWeight: "600", letterSpacing: 1 },
+  cardPressed: { backgroundColor: "#1F1F22" },
+
+  sectionTitle: {
+    color: roman.text,
+    fontSize: 20,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    marginTop: 28,
+    marginBottom: 4,
+  },
+  dayHeader: {
+    color: roman.textMuted,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  card: {
+    minHeight: 68,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
+    borderWidth: 1,
+    // Gold edge marks each session as a record.
+    borderLeftColor: roman.gold,
+    borderLeftWidth: 3,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+  },
+  cardMain: { flex: 1 },
+  cardTitle: { color: roman.text, fontSize: 17, fontWeight: "600", letterSpacing: 0.5 },
+  cardMetaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
+  cardMetaText: { flexShrink: 1, color: roman.textMuted, fontSize: 13 },
+  cardMeta: { color: roman.textMuted, fontSize: 13 },
+  cardStats: { alignItems: "flex-end", marginLeft: 12 },
+  cardSets: { color: roman.goldLight, fontSize: 22, fontWeight: "600" },
+
+  emptyCard: {
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 24,
+  },
+  emptyTitle: { color: roman.text, fontSize: 18, fontWeight: "600" },
+  emptyText: { color: roman.textMuted, fontSize: 14, textAlign: "center" },
+
+  errorBanner: {
+    alignItems: "flex-start",
+    gap: 8,
+    marginTop: 8,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+  },
+  errorText: { color: roman.danger, fontSize: 14, textAlign: "center" },
+  historyFooter: { alignItems: "center", paddingVertical: 24, gap: 8 },
+  retry: {
+    minHeight: MIN_TOUCH,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
+    borderWidth: 1,
+  },
+  retryText: { color: roman.goldLight, fontSize: 14, fontWeight: "600" },
+
   sheetBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
   },
   sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.md,
-    borderTopRightRadius: radius.md,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
+    backgroundColor: roman.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderTopColor: roman.gold,
+    borderTopWidth: 1,
+    paddingHorizontal: 24,
+    paddingTop: 24,
   },
   sheetTitle: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: spacing.md,
-  },
-  sheetRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: spacing.md,
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  sheetRowText: { color: colors.text, fontSize: 16, fontWeight: "600" },
-  sheetEmpty: { color: colors.textMuted, paddingVertical: spacing.md },
-  resume: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  resumeText: { flex: 1 },
-  resumeTitle: { color: colors.accentText, fontSize: 17, fontWeight: "700" },
-  resumeSubtitle: { color: colors.accentText, opacity: 0.75, fontSize: 13 },
-  sectionTitle: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  empty: { color: colors.textMuted, textAlign: "center", marginTop: spacing.lg },
-  dayHeader: {
-    color: colors.textMuted,
+    color: roman.textMuted,
     fontSize: 12,
     fontWeight: "600",
-    marginTop: spacing.sm,
-    marginBottom: spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    marginBottom: 8,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+  sheetRow: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomColor: roman.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  cardMain: { flex: 1 },
-  cardTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
-  cardMeta: { color: colors.textMuted, fontSize: 13 },
-  cardStats: { alignItems: "flex-end" },
-  cardSets: { color: colors.accent, fontSize: 20, fontWeight: "700" },
+  sheetRowPressed: { opacity: 0.6 },
+  sheetRowText: { flex: 1, color: roman.text, fontSize: 16, fontWeight: "600" },
+  sheetEmpty: { color: roman.textMuted, paddingVertical: 16 },
 });

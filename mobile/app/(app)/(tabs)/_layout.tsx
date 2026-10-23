@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
+import { roman } from "../../../src/romanTheme";
 import { colors } from "../../../src/theme";
 
 export default function TabsLayout() {
@@ -11,18 +12,22 @@ export default function TabsLayout() {
         headerTintColor: colors.text,
         headerShadowVisible: false,
         sceneStyle: { backgroundColor: colors.background },
+        // Shared by all four tabs.
         tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
+          backgroundColor: roman.background,
+          borderTopColor: roman.border,
         },
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textMuted,
+        tabBarActiveTintColor: roman.gold,
+        tabBarInactiveTintColor: roman.textMuted,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: "Training",
+          // The screen draws its own title bar; a native header as well would
+          // show "Training" twice.
+          headerShown: false,
           tabBarIcon: ({ color, size }) => <Ionicons name="barbell" size={size} color={color} />,
         }}
       />
