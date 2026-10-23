@@ -24,6 +24,9 @@ export default function AppLayout() {
         headerStyle: { backgroundColor: colors.background },
         headerTintColor: colors.text,
         headerShadowVisible: false,
+        // Arrow only: without this iOS shows the previous screen's title, which for
+        // screens pushed from the tabs is the raw route name "(tabs)".
+        headerBackButtonDisplayMode: "minimal",
         contentStyle: { backgroundColor: colors.background },
       }}
     >
