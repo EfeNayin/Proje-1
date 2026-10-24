@@ -24,6 +24,14 @@ export const unstable_settings = {
   anchor: "(tabs)",
 };
 
+// Screens that draw their content in the Roman theme keep the native header
+// (title + back arrow) but match its colours and font to the page.
+const romanHeader = {
+  headerStyle: { backgroundColor: roman.background },
+  headerTitleStyle: { color: roman.gold, fontFamily: romanFont.title, fontSize: 18 },
+  contentStyle: { backgroundColor: roman.background },
+};
+
 export default function AppLayout() {
   const { status } = useAuth();
   // Registers the bundled fonts for the native header below; a deep link to
@@ -50,13 +58,10 @@ export default function AppLayout() {
       <Stack.Screen name="diagnosis" options={{ title: "Diagnosis" }} />
       <Stack.Screen
         name="research"
-        options={{
-          title: "Research",
-          headerStyle: { backgroundColor: roman.background },
-          headerTitleStyle: { color: roman.gold, fontFamily: romanFont.title, fontSize: 18 },
-          contentStyle: { backgroundColor: roman.background },
-        }}
+        options={{ title: "Research", ...romanHeader }}
       />
+      <Stack.Screen name="coaching/athletes" options={{ title: "My Athletes", ...romanHeader }} />
+      <Stack.Screen name="coaching/coaches" options={{ title: "My Coaches", ...romanHeader }} />
       <Stack.Screen name="workout/[id]" options={{ title: "Workout" }} />
       <Stack.Screen
         name="workout/exercise-picker"

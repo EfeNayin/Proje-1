@@ -34,6 +34,8 @@ export type UserProfile = {
   goal_weight_kg: string | null;
   activity_level: ActivityLevel | null;
   nutrition_goal: NutritionGoalKind | null;
+  /** Coach tools switched on. Adds capabilities; grants no access to anyone's data. */
+  coach_enabled: boolean;
   created_at: string;
 };
 

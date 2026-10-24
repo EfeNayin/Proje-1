@@ -322,6 +322,31 @@ export default function ProfileScreen() {
           />
         </View>
 
+        <Text accessibilityRole="header" style={[styles.sectionLabel, styles.sectionSpaced, font.semibold]}>
+          Coaching
+        </Text>
+        <View style={styles.card}>
+          <MenuRow
+            icon="people-outline"
+            label="My Coaches"
+            hint="Connect with a coach using an invite code"
+            onPress={() => router.push("/coaching/coaches")}
+            font={font}
+          />
+          <MenuRow
+            icon="clipboard-outline"
+            label={user.coach_enabled ? "My Athletes" : "Coach Tools"}
+            hint={
+              user.coach_enabled
+                ? "Invite athletes and see who is connected"
+                : "Turn on to invite athletes"
+            }
+            onPress={() => router.push("/coaching/athletes")}
+            last
+            font={font}
+          />
+        </View>
+
         {signOutError ? (
           <Text
             accessibilityRole="alert"
