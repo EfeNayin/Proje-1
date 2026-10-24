@@ -129,6 +129,7 @@ class UserProfile(BaseModel):
     goal_weight_kg: Decimal | None
     activity_level: ActivityLevel | None
     nutrition_goal: NutritionGoalKind | None
+    coach_enabled: bool
     created_at: datetime
 
 

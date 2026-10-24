@@ -52,3 +52,15 @@ class ValidationAppError(AppError):
 
     status_code = 422
     default_detail = "Geçersiz veri"
+
+
+class GoneError(AppError):
+    """The resource existed but is no longer usable (e.g. an expired invite)."""
+
+    status_code = 410
+    default_detail = "Kaynak artık geçerli değil"
+
+
+class RateLimitedError(AppError):
+    status_code = 429
+    default_detail = "Too many attempts. Try again later."

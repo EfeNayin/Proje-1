@@ -113,6 +113,14 @@ class User(Base):
     carb_goal_g: Mapped[int | None] = mapped_column(SmallInteger)
     fat_goal_g: Mapped[int | None] = mapped_column(SmallInteger)
 
+    # Opt-in switch for the coach tools. It adds capabilities to the account
+    # (invite athletes, see who is connected) and takes none away, so a coach
+    # keeps every personal-training feature. It grants no access to anyone
+    # else's data by itself: that needs an accepted coach_athlete_links row.
+    coach_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
     created_at: Mapped[created_at]
     updated_at: Mapped[updated_at]
 
