@@ -6,19 +6,22 @@ The caller is always the signed-in account; no endpoint accepts a user id.
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.domains.auth.dependencies import CurrentUser
-from app.domains.coaching import service
+from app.domains.coaching import service, workout_access
 from app.domains.coaching.schemas import (
+    AthleteWorkoutDetail,
+    AthleteWorkoutList,
     Connection,
     ConnectionList,
     InviteCodeRequest,
     InviteCreated,
     InvitePreview,
     PersonSummary,
+    WorkoutSharingRequest,
 )
 from app.domains.users.schemas import UserProfile
 from app.models import CoachAthleteLink, User
@@ -71,22 +74,20 @@ async def accept_invite(
 ) -> Connection:
     link, coach, created = await service.accept_invite(db, current_user, payload.code)
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    return _connection(link, coach)
+
+
+def _connection(link: CoachAthleteLink, person: User) -> Connection:
     return Connection(
-        id=link.id, person=PersonSummary.model_validate(coach), connected_at=link.created_at
+        id=link.id,
+        person=PersonSummary.model_validate(person),
+        connected_at=link.created_at,
+        shares_workouts=link.shares_workouts,
     )
 
 
 def _connections(rows: list[tuple[CoachAthleteLink, User]]) -> ConnectionList:
-    return ConnectionList(
-        items=[
-            Connection(
-                id=link.id,
-                person=PersonSummary.model_validate(person),
-                connected_at=link.created_at,
-            )
-            for link, person in rows
-        ]
-    )
+    return ConnectionList(items=[_connection(link, person) for link, person in rows])
 
 
 @router.get("/athletes", response_model=ConnectionList, summary="Your connected athletes")
@@ -107,3 +108,41 @@ async def list_coaches(current_user: CurrentUser, db: DbSession) -> ConnectionLi
 async def end_link(link_id: UUID, current_user: CurrentUser, db: DbSession) -> Response:
     await service.end_link(db, current_user, link_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put(
+    "/links/{link_id}/workout-sharing",
+    response_model=Connection,
+    summary="Athlete: let a coach read (or stop reading) your completed workouts",
+)
+async def set_workout_sharing(
+    link_id: UUID, payload: WorkoutSharingRequest, current_user: CurrentUser, db: DbSession
+) -> Connection:
+    link, coach = await service.set_workout_sharing(db, current_user, link_id, payload.enabled)
+    return _connection(link, coach)
+
+
+@router.get(
+    "/athletes/{link_id}/workouts",
+    response_model=AthleteWorkoutList,
+    summary="Coach: a sharing athlete's completed workouts, newest first",
+)
+async def list_athlete_workouts(
+    link_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> AthleteWorkoutList:
+    return await workout_access.list_workouts(db, current_user, link_id, limit, offset)
+
+
+@router.get(
+    "/athletes/{link_id}/workouts/{workout_id}",
+    response_model=AthleteWorkoutDetail,
+    summary="Coach: one completed workout of a sharing athlete, read-only",
+)
+async def get_athlete_workout(
+    link_id: UUID, workout_id: UUID, current_user: CurrentUser, db: DbSession
+) -> AthleteWorkoutDetail:
+    return await workout_access.get_workout(db, current_user, link_id, workout_id)

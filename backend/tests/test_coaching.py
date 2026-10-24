@@ -225,7 +225,7 @@ class TestPreviewAndAccept:
 
         assert [item["id"] for item in mine] == [link_id]
         assert mine[0]["person"] == {"username": "intruder", "first_name": None, "last_name": None}
-        assert set(mine[0]) == {"id", "person", "connected_at"}
+        assert set(mine[0]) == {"id", "person", "connected_at", "shares_workouts"}
         assert [item["id"] for item in theirs] == [link_id]
         assert theirs[0]["person"]["username"] == "efe"
         assert "email" not in str(mine) + str(theirs)

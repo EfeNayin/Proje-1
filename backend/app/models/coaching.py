@@ -8,7 +8,7 @@ Nothing in this phase exposes training, weight or nutrition data through it.
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Text, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -74,6 +74,12 @@ class CoachAthleteLink(Base):
         PgUUID(as_uuid=True), ForeignKey("coach_invites.id"), nullable=False, unique=True
     )
     created_at: Mapped[created_at]
+    # The athlete's per-link consent to let this coach read their completed
+    # workout history. Off for every new link and for links that predate the
+    # flag; only the athlete can change it, and it ends with the link.
+    shares_workouts: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_by_id: Mapped[UUID | None] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")

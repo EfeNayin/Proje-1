@@ -253,3 +253,35 @@ async def end_link(db: AsyncSession, user: User, link_id: UUID) -> None:
         link.ended_at = datetime.now(UTC)
         link.ended_by_id = user.id
         await db.commit()
+
+
+async def set_workout_sharing(
+    db: AsyncSession, athlete: User, link_id: UUID, enabled: bool
+) -> tuple[CoachAthleteLink, User]:
+    """The athlete's switch for letting this coach read their completed workouts.
+
+    Idempotent. Only the athlete of an active link may flip it: the coach gets
+    a 403 (they are a party and know the link exists), anyone else a 404.
+    """
+    link = await db.scalar(
+        select(CoachAthleteLink).where(CoachAthleteLink.id == link_id).with_for_update()
+    )
+    if (
+        link is None
+        or link.ended_at is not None
+        or athlete.id
+        not in (
+            link.coach_id,
+            link.athlete_id,
+        )
+    ):
+        raise NotFoundError("Connection not found.")
+    if link.athlete_id != athlete.id:
+        raise ForbiddenError("Only the athlete can change what is shared.")
+    if link.shares_workouts != enabled:
+        link.shares_workouts = enabled
+        await db.commit()
+        await db.refresh(link)
+    coach = await db.get(User, link.coach_id)
+    assert coach is not None
+    return link, coach
