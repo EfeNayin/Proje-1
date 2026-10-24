@@ -24,6 +24,7 @@ export type CoachingApi = {
   listAthletes: () => Promise<Connection[]>;
   listCoaches: () => Promise<Connection[]>;
   endConnection: (linkId: string) => Promise<void>;
+  setWorkoutSharing: (linkId: string, enabled: boolean) => Promise<Connection>;
 };
 
 export type ListState = {
@@ -45,6 +46,8 @@ export type CoachingState = {
   accepting: boolean;
   /** Connections with an end request running. */
   ending: string[];
+  /** Connections whose workout-sharing switch is being changed. */
+  sharing: string[];
 };
 
 export type Role = "coach" | "athlete";
@@ -78,6 +81,7 @@ export function initialCoachingState(userId: string | null = null): CoachingStat
     enabling: false,
     accepting: false,
     ending: [],
+    sharing: [],
   };
 }
 
@@ -109,6 +113,7 @@ export function createCoachingStore(api: CoachingApi) {
   let accepting = false;
   let previewing = false;
   const endingNow = new Set<string>();
+  const sharingNow = new Set<string>();
 
   const publish = (changes: Partial<CoachingState>) => {
     state = { ...state, ...changes };
@@ -126,6 +131,7 @@ export function createCoachingStore(api: CoachingApi) {
     loads.coach = loads.athlete = null;
     creating = enabling = accepting = previewing = false;
     endingNow.clear();
+    sharingNow.clear();
     state = initialCoachingState(userId);
     listeners.forEach((listener) => listener());
   }
@@ -323,6 +329,62 @@ export function createCoachingStore(api: CoachingApi) {
     }
   }
 
+  /**
+   * The athlete switches sharing of their completed workouts with one coach.
+   * The request is idempotent, so a lost response is settled by re-reading the
+   * athlete's coach list and comparing the switch with what was asked for.
+   */
+  async function setWorkoutSharing(linkId: string, enabled: boolean): Promise<ActionOutcome> {
+    if (sharingNow.has(linkId)) return { kind: "ignored" };
+    const request = generation;
+    sharingNow.add(linkId);
+    publish({ sharing: [...sharingNow] });
+
+    const replace = (connection: Connection) =>
+      patchList("athlete", {
+        items: state.coaches.items.map((item) => (item.id === connection.id ? connection : item)),
+      });
+    const dropLink = () =>
+      patchList("athlete", { items: state.coaches.items.filter((item) => item.id !== linkId) });
+    const ended = "This connection has ended.";
+
+    try {
+      const updated = await api.setWorkoutSharing(linkId, enabled);
+      if (request !== generation) return { kind: "stale" };
+      replace(updated);
+      return { kind: "done" };
+    } catch (error) {
+      if (request !== generation) return { kind: "stale" };
+      if (statusOf(error) === 404) {
+        dropLink();
+        return { kind: "failed", message: ended, ambiguous: false };
+      }
+      const message = messageOf(error, "Could not change sharing");
+      if (isDefinitive(error)) return { kind: "failed", message, ambiguous: false };
+
+      try {
+        const items = await api.listCoaches();
+        if (request !== generation) return { kind: "stale" };
+        patchList("athlete", { items, loaded: true, error: null });
+        const found = items.find((item) => item.id === linkId);
+        if (!found) return { kind: "failed", message: ended, ambiguous: false };
+        if (found.shares_workouts === enabled) return { kind: "done" };
+        return { kind: "failed", message, ambiguous: false };
+      } catch {
+        if (request !== generation) return { kind: "stale" };
+        return {
+          kind: "unknown",
+          message: "We could not confirm whether sharing changed. Pull to refresh and check.",
+        };
+      }
+    } finally {
+      if (request === generation) {
+        sharingNow.delete(linkId);
+        publish({ sharing: [...sharingNow] });
+      }
+    }
+  }
+
   return {
     getSnapshot: () => state,
     subscribe: (listener: () => void) => {
@@ -340,6 +402,7 @@ export function createCoachingStore(api: CoachingApi) {
     previewCode,
     acceptCode,
     endConnection,
+    setWorkoutSharing,
     /** Hide a shown invite code (the coach is done with it). */
     clearInvite: () => publish({ invite: { creating: false, created: null, error: null } }),
   };

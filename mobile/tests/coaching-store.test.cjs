@@ -30,6 +30,7 @@ const apiError = (status, message) => Object.assign(new Error(message), { status
 const networkError = () => apiError(0, 'Cannot connect right now. Check your connection and try again.');
 const connection = (id, username) => ({
   id, person: { username, first_name: null, last_name: null }, connected_at: '2026-10-24T10:00:00Z',
+  shares_workouts: false,
 });
 
 function fakeApi(overrides = {}) {
@@ -43,6 +44,7 @@ function fakeApi(overrides = {}) {
     listAthletes: record('listAthletes', async () => []),
     listCoaches: record('listCoaches', async () => []),
     endConnection: record('endConnection', async () => undefined),
+    setWorkoutSharing: record('setWorkoutSharing', async (id, enabled) => ({ ...connection(id, 'efe'), shares_workouts: enabled })),
   };
   for (const [name, impl] of Object.entries(overrides)) api[name] = record(name, impl);
   return { api, calls, count: name => calls.filter(call => call[0] === name).length };
@@ -364,4 +366,119 @@ test('previewing a code: a refusal carries the server message; a late answer aft
   store.reset();
   gate.resolve({ coach: { username: 'efe' }, expires_at: 'x' });
   assert.equal((await pending).kind, 'stale');
+});
+
+const withCoaches = (...items) => ({ listCoaches: async () => items });
+
+test('sharing: the switch is applied from the server answer and a double tap sends one request', async () => {
+  const gate = deferred();
+  const { api, count } = fakeApi({
+    ...withCoaches(connection('l1', 'efe')),
+    setWorkoutSharing: (id, enabled) => gate.promise.then(() => ({ ...connection(id, 'efe'), shares_workouts: enabled })),
+  });
+  const store = createCoachingStore(api);
+  store.bind('u1');
+  await store.load('athlete');
+
+  const first = store.setWorkoutSharing('l1', true);
+  assert.equal((await store.setWorkoutSharing('l1', true)).kind, 'ignored');
+  same(store.getSnapshot().sharing, ['l1']);
+  gate.resolve();
+  assert.equal((await first).kind, 'done');
+
+  assert.equal(count('setWorkoutSharing'), 1);
+  assert.equal(store.getSnapshot().coaches.items[0].shares_workouts, true);
+  same(store.getSnapshot().sharing, []);
+});
+
+test('sharing: nothing changes on screen until the server has said yes', async () => {
+  const gate = deferred();
+  const { api } = fakeApi({
+    ...withCoaches(connection('l1', 'efe')),
+    setWorkoutSharing: () => gate.promise,
+  });
+  const store = createCoachingStore(api);
+  store.bind('u1');
+  await store.load('athlete');
+
+  const pending = store.setWorkoutSharing('l1', true);
+
+  assert.equal(store.getSnapshot().coaches.items[0].shares_workouts, false);
+  gate.reject(apiError(403, 'Only the athlete can change what is shared.'));
+  const outcome = await pending;
+  assert.equal(outcome.kind, 'failed');
+  assert.equal(outcome.ambiguous, false);
+  assert.equal(store.getSnapshot().coaches.items[0].shares_workouts, false);
+});
+
+test('sharing: a 404 means the connection ended, so it leaves the list', async () => {
+  const { api } = fakeApi({
+    ...withCoaches(connection('l1', 'efe')),
+    setWorkoutSharing: async () => { throw apiError(404, 'Connection not found.'); },
+  });
+  const store = createCoachingStore(api);
+  store.bind('u1');
+  await store.load('athlete');
+
+  const outcome = await store.setWorkoutSharing('l1', true);
+
+  assert.equal(outcome.kind, 'failed');
+  assert.equal(outcome.message, 'This connection has ended.');
+  same(store.getSnapshot().coaches.items, []);
+});
+
+test('sharing: a lost response is settled by re-reading the coach list', async () => {
+  let serverValue = false;
+  const { api } = fakeApi({
+    listCoaches: async () => [{ ...connection('l1', 'efe'), shares_workouts: serverValue }],
+    setWorkoutSharing: async (_id, enabled) => { serverValue = enabled; throw networkError(); },
+  });
+  const store = createCoachingStore(api);
+  store.bind('u1');
+  await store.load('athlete');
+
+  assert.equal((await store.setWorkoutSharing('l1', true)).kind, 'done'); // it did go through
+  assert.equal(store.getSnapshot().coaches.items[0].shares_workouts, true);
+
+  serverValue = true;
+  const lostBeforeServer = fakeApi({
+    listCoaches: async () => [{ ...connection('l1', 'efe'), shares_workouts: true }],
+    setWorkoutSharing: async () => { throw networkError(); }, // never reached the server
+  });
+  const second = createCoachingStore(lostBeforeServer.api);
+  second.bind('u1');
+  await second.load('athlete');
+  const outcome = await second.setWorkoutSharing('l1', false);
+  assert.equal(outcome.kind, 'failed'); // still on, and we say so rather than claiming it is off
+  assert.equal(second.getSnapshot().coaches.items[0].shares_workouts, true);
+});
+
+test('sharing: when the re-read also fails the result is unknown, not guessed', async () => {
+  const { api } = fakeApi({
+    listCoaches: async () => { throw networkError(); },
+    setWorkoutSharing: async () => { throw networkError(); },
+  });
+  const store = createCoachingStore(api);
+  store.bind('u1');
+
+  assert.equal((await store.setWorkoutSharing('l1', true)).kind, 'unknown');
+  same(store.getSnapshot().sharing, []);
+});
+
+test('sharing: an answer that arrives after sign-out changes nothing', async () => {
+  const gate = deferred();
+  const { api } = fakeApi({
+    ...withCoaches(connection('l1', 'efe')),
+    setWorkoutSharing: () => gate.promise,
+  });
+  const store = createCoachingStore(api);
+  store.bind('u1');
+  await store.load('athlete');
+
+  const pending = store.setWorkoutSharing('l1', true);
+  store.reset();
+  gate.resolve({ ...connection('l1', 'efe'), shares_workouts: true });
+
+  assert.equal((await pending).kind, 'stale');
+  same(store.getSnapshot().coaches.items, []);
 });

@@ -3,12 +3,13 @@
  * has accepted.
  *
  * Turning coach tools on only adds this screen's abilities. It gives no access
- * to anyone's training, weight or nutrition, and this version shares none of
- * it either. The backend enforces who may do what; hiding things here is only
- * a convenience.
+ * to anyone's data. A coach can read an athlete's completed workouts only after
+ * that athlete switches sharing on for this connection; weight and nutrition
+ * are never shared. The backend enforces who may do what; hiding things here
+ * is only a convenience.
  */
 
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,6 +34,7 @@ const MIN_TOUCH = 44;
 
 export default function MyAthletesScreen() {
   const { user, refreshProfile } = useAuth();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   useRomanFonts();
   const userId = user?.id ?? null;
@@ -172,7 +174,8 @@ export default function MyAthletesScreen() {
         ) : (
           <Text style={styles.body}>
             Create a code, then give it to your athlete. They see who it comes from and choose
-            whether to connect.
+            whether to connect. Their workouts stay private unless they choose to share them
+            with you.
           </Text>
         )}
         {inviteError ? (
@@ -237,6 +240,8 @@ export default function MyAthletesScreen() {
           connection={item}
           ending={state.ending.includes(item.id)}
           onEnd={() => confirmEnd(item.id, personName(item.person))}
+          onOpen={() => router.push(`/coaching/athlete/${item.id}`)}
+          status={item.shares_workouts ? "Workouts shared" : "Workouts not shared"}
         />
       )}
       ListHeaderComponent={header}

@@ -13,6 +13,7 @@ import * as authApi from "../api/auth";
 import type { RegisterInput, UserProfile } from "../api/auth";
 import { setOnSessionExpired } from "../api/client";
 import { clearTokens, saveTokens } from "../api/tokens";
+import { athleteWorkoutsStore } from "../coaching/athleteWorkoutsSession";
 import { coachingStore } from "../coaching/coachingSession";
 import { clearActiveWorkout } from "../workout/activeWorkout";
 import { restoreSession } from "./restoreSession";
@@ -41,10 +42,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    // First, before any await: coaching lists, a shown invite code and pending
-    // results belong to this account only, and answers still in flight must
-    // not land on whoever signs in next.
+    // First, before any await: coaching lists, a shown invite code, a connected
+    // athlete's workouts and pending results belong to this account only, and
+    // answers still in flight must not land on whoever signs in next.
     coachingStore.reset();
+    athleteWorkoutsStore.reset();
     await clearTokens();
     // The active-workout pointer is a device key (see src/workout/activeWorkout.ts),
     // not scoped to an account. Left in place, it would resume — or, worse,
@@ -70,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // sign-out itself must not wait on it.
       void clearActiveWorkout();
       coachingStore.reset();
+      athleteWorkoutsStore.reset();
       setUser(null);
       setStatus("signedOut");
     });

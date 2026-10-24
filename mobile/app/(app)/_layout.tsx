@@ -62,6 +62,14 @@ export default function AppLayout() {
       />
       <Stack.Screen name="coaching/athletes" options={{ title: "My Athletes", ...romanHeader }} />
       <Stack.Screen name="coaching/coaches" options={{ title: "My Coaches", ...romanHeader }} />
+      <Stack.Screen
+        name="coaching/athlete/[linkId]/index"
+        options={{ title: "Athlete", ...romanHeader }}
+      />
+      <Stack.Screen
+        name="coaching/athlete/[linkId]/workout/[workoutId]"
+        options={{ title: "Workout", ...romanHeader }}
+      />
       <Stack.Screen name="workout/[id]" options={{ title: "Workout" }} />
       <Stack.Screen
         name="workout/exercise-picker"

@@ -3,8 +3,9 @@
  * only after explicitly accepting. Connected coaches are listed here and can
  * be disconnected at any time.
  *
- * In this version a connection shares nothing: no training, weight or
- * nutrition data is visible to the coach through it.
+ * A new connection shares nothing. Each connection has its own switch for
+ * letting that coach read the athlete's completed workout history; weight and
+ * nutrition are never shared. Turning it on needs an explicit confirmation.
  */
 
 import { useFocusEffect } from "expo-router";
@@ -18,6 +19,7 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -112,6 +114,30 @@ function MyCoaches({ userId }: { userId: string | null }) {
     if (outcome.kind === "done") setNotice(`Connection with ${name} ended.`);
   };
 
+  const applySharing = async (linkId: string, enabled: boolean) => {
+    setError(null);
+    setNotice(null);
+    const outcome = await coachingStore.setWorkoutSharing(linkId, enabled);
+    if (outcome.kind === "failed" || outcome.kind === "unknown") setError(outcome.message);
+  };
+
+  // Turning sharing on is the consequential direction, so it is spelled out and
+  // confirmed. Turning it off only reduces what is shared and happens at once.
+  const toggleSharing = (linkId: string, name: string, enabled: boolean) => {
+    if (!enabled) {
+      void applySharing(linkId, false);
+      return;
+    }
+    Alert.alert(
+      `Share your workouts with ${name}?`,
+      `${name} will be able to read your whole completed workout history, including past sessions: titles, dates, exercises, sets, weights, reps and RIR. They cannot change anything. Your body weight, nutrition and profile stay private. You can turn this off at any time, and ending the connection also stops it.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Share workouts", onPress: () => void applySharing(linkId, true) },
+      ],
+    );
+  };
+
   const confirmEnd = (linkId: string, name: string) =>
     Alert.alert(
       `End connection with ${name}?`,
@@ -164,8 +190,9 @@ function MyCoaches({ userId }: { userId: string | null }) {
             ) : null}
             <Text style={styles.meta}>Valid until {formatExpiry(previewed.preview.expires_at)}</Text>
             <Text style={styles.body}>
-              Connecting adds this person to your coaches. In this version they cannot see your
-              training, weight or nutrition. You can end the connection at any time.
+              Connecting adds this person to your coaches and shares nothing by itself. Afterwards
+              you can choose to let them read your completed workout history; your body weight
+              and nutrition are never shared. You can end the connection at any time.
             </Text>
             <Pressable
               accessibilityRole="button"
@@ -258,7 +285,14 @@ function MyCoaches({ userId }: { userId: string | null }) {
             connection={item}
             ending={state.ending.includes(item.id)}
             onEnd={() => confirmEnd(item.id, personName(item.person))}
-          />
+          >
+            <SharingSwitch
+              name={personName(item.person)}
+              value={item.shares_workouts}
+              busy={state.sharing.includes(item.id)}
+              onChange={(enabled) => toggleSharing(item.id, personName(item.person), enabled)}
+            />
+          </ConnectionRow>
         )}
         ListHeaderComponent={header}
         ListEmptyComponent={
@@ -279,6 +313,44 @@ function MyCoaches({ userId }: { userId: string | null }) {
         }
       />
     </KeyboardAvoidingView>
+  );
+}
+
+/** The athlete's per-coach switch for sharing completed workouts. */
+function SharingSwitch({
+  name,
+  value,
+  busy,
+  onChange,
+}: {
+  name: string;
+  value: boolean;
+  busy: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <View style={styles.sharing}>
+      <View style={styles.sharingText}>
+        <Text style={styles.sharingTitle}>Share my workout history</Text>
+        <Text style={styles.meta}>
+          {value
+            ? `${name} can read your completed workouts. Weight and nutrition are not shared.`
+            : `${name} cannot see any of your workouts.`}
+        </Text>
+      </View>
+      {busy ? (
+        <ActivityIndicator color={roman.gold} accessibilityLabel="Updating sharing" />
+      ) : (
+        <Switch
+          accessibilityLabel={`Share my workout history with ${name}`}
+          value={value}
+          onValueChange={onChange}
+          trackColor={{ false: roman.border, true: roman.gold }}
+          thumbColor={roman.text}
+          ios_backgroundColor={roman.border}
+        />
+      )}
+    </View>
   );
 }
 
@@ -379,4 +451,15 @@ const styles = StyleSheet.create({
   secondaryText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
   pressed: { backgroundColor: roman.surfaceRaised },
   busy: { opacity: 0.6 },
+  sharing: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minHeight: MIN_TOUCH,
+    borderTopColor: roman.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 12,
+  },
+  sharingText: { flex: 1, gap: 2 },
+  sharingTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 14 },
 });
