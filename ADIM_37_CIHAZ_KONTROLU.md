@@ -2,6 +2,8 @@
 
 Durum: **Yeni görünüm için telefon kontrolü bekliyor.** Adım 34'ün kullanıcı kabulü bu listeyi doğrulamaz.
 
+Not (Adım 38): Geçmiş artık kart içinde değil, ayrı bir modal panelde açılıyor; "Hide exercise history" / "Retry history" gibi adlar panelin kapatma ve yeniden dene düğmelerine denk geliyor. Panele özgü kontroller proje günlüğündeki Adım 47 listesinde; bu liste hâlâ elle yapılmadı.
+
 Backend ve Expo uygulamasını son kaynakla çalıştır. Var olan antrenmanları silmeden, aynı egzersizin geçmiş çalışma setleri bulunan bir antrenmanı aç.
 
 - [ ] `Previous session` açılınca mevcut önceki seans ve ağırlık karşılaştırması çalışıyor. `All earlier sessions` ile geçmiş açılıyor; `Hide exercise history` ile kapanıyor.

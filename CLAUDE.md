@@ -94,16 +94,20 @@ sayısı yazmıyoruz çünkü hızla eskiyor ve yanlış güven verir.
 Backend (backend/app/, ruff+mypy strict temiz olmalı — bkz. `app/domains/`
 ve `app/models/` gerçek listesi için):
 - core/: config, database (async), security (JWT+bcrypt, jti claim'li), exceptions
-- models/: 13 tablo — users, refresh_tokens, muscle_groups, exercises,
-  exercise_muscle_groups, workouts, sets, programs, workout_templates,
-  template_exercises, template_save_requests, readiness_logs,
-  body_measurements
-- domains/ (9 domain): auth (register/login/refresh), users (GET/PATCH /me),
+- models/: 18 uygulama tablosu — users, refresh_tokens, muscle_groups,
+  exercises, exercise_muscle_groups, workouts, sets, set_save_requests,
+  programs, workout_templates, template_exercises, template_save_requests,
+  readiness_logs, body_measurements, coach_athlete_links, coach_invites,
+  program_offers, workout_feedback
+- domains/ (11 domain): auth (register/login/refresh), users (GET/PATCH /me),
   exercises (katalog arama+filtre), workouts (workout+set CRUD, başlangıç
   plan anlık görüntüsü), programs (program/şablon CRUD, idempotent şablon
   kaydetme), readiness (günlük toparlanma kaydı), body (kilo ölçümü),
   nutrition (beslenme hedefi hesaplama), analytics (haftalık hacim +
-  dönemsel değerlendirme/"teşhis")
+  dönemsel değerlendirme/"teşhis"), research (PubMed yayın kayıtları),
+  coaching (antrenör modu, davet, bağlantı ve antrenman paylaşım rızası,
+  sporcu etkinlik özeti, bitmiş antrenman + egzersiz geçmişini salt okunur
+  görme, program önizleme/gönderme/kabul, antrenman geri bildirimi)
 
 Mobil (mobile/, Expo SDK 57, TypeScript strict sıfır hata):
 - src/api/: client (single-flight refresh), tokens (SecureStore), auth,
@@ -119,6 +123,10 @@ Mobil (mobile/, Expo SDK 57, TypeScript strict sıfır hata):
 - app/(app)/diagnosis: dönemsel değerlendirme ("Neden gelişemiyorum?")
 - app/(app)/profile/*: kişisel bilgiler, tercihler, kilo geçmişi, beslenme
   hedefleri
+- app/(app)/coaching/ + src/coaching/: antrenör–sporcu ekranları ve store'ları
+  (My Athletes/My Coaches, salt okunur antrenman, egzersiz geçmişi paneli,
+  program teklifleri, geri bildirim). Ekran etkileşimiyle DOĞRULANMADI: yalnızca
+  sahte API'li store testleri ve canlı API kontrolleri var (bkz. log Adım 45-47)
 
 Çalışan akış: kayıt → canlı antrenman loglama (set set, dinlenme sayacı,
 başlık düzenleme, set düzeltme/silme, şablondan başlatma) → program/şablon
