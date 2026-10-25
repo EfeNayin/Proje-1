@@ -64,3 +64,10 @@ class GoneError(AppError):
 class RateLimitedError(AppError):
     status_code = 429
     default_detail = "Too many attempts. Try again later."
+
+
+class PreconditionFailedError(AppError):
+    """The caller acted on a version of the resource that has since changed."""
+
+    status_code = 412
+    default_detail = "The resource changed since you last looked at it."

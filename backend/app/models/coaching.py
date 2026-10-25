@@ -6,9 +6,20 @@ Nothing in this phase exposes training, weight or nutrition data through it.
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -96,4 +107,74 @@ class CoachAthleteLink(Base):
             postgresql_where=text("ended_at IS NULL"),
         ),
         Index("idx_coach_athlete_links_athlete_id", "athlete_id"),
+    )
+
+
+class ProgramOffer(Base):
+    """A coach's program, frozen at the moment it was sent, waiting for the athlete.
+
+    The offer belongs to ONE connection (link_id). Ending that connection makes
+    it unavailable for good, and a later reconnection is a new link, so old
+    offers are never revived. `snapshot` is a deep copy of the program as the
+    coach had it; editing or deleting the source afterwards changes nothing the
+    athlete sees. Accepting copies the snapshot into programs the athlete owns
+    (accepted_program_id points at that copy); the offer never grants the coach
+    access to it.
+
+    (coach_id, request_id) is the send receipt: repeating the same send returns
+    this row instead of creating a second one.
+    """
+
+    __tablename__ = "program_offers"
+
+    id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    link_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("coach_athlete_links.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    coach_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    request_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    request_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # Informational only; the coach deleting the source must not touch the offer.
+    source_program_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("programs.id", ondelete="SET NULL")
+    )
+    program_name: Mapped[str] = mapped_column(Text, nullable=False)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'pending'"))
+    # Set when accepted; goes NULL (offer stays "accepted") if the athlete later
+    # deletes their copy, so a retry can never create a second one.
+    accepted_program_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("programs.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[created_at]
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'declined')", name="program_offers_status_check"
+        ),
+        CheckConstraint(
+            "accepted_program_id IS NULL OR status = 'accepted'",
+            name="program_offers_accepted_program_check",
+        ),
+        UniqueConstraint("coach_id", "request_id", name="program_offers_send_receipt"),
+        # One waiting offer per program per connection: a second device or a
+        # double tap with a fresh request id cannot queue a duplicate.
+        Index(
+            "idx_program_offers_one_pending",
+            "link_id",
+            "source_program_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+        Index("idx_program_offers_link", "link_id", text("created_at DESC")),
     )

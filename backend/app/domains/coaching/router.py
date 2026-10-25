@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.domains.auth.dependencies import CurrentUser
-from app.domains.coaching import service, workout_access
+from app.domains.coaching import offers, service, workout_access
 from app.domains.coaching.schemas import (
     AthleteWorkoutDetail,
     AthleteWorkoutList,
@@ -21,6 +21,12 @@ from app.domains.coaching.schemas import (
     InviteCreated,
     InvitePreview,
     PersonSummary,
+    ProgramOfferRequest,
+    ProgramPreview,
+    ReceivedOfferDetail,
+    ReceivedOfferList,
+    SentOfferDetail,
+    SentOfferList,
     WorkoutSharingRequest,
 )
 from app.domains.users.schemas import UserProfile
@@ -146,3 +152,97 @@ async def get_athlete_workout(
     link_id: UUID, workout_id: UUID, current_user: CurrentUser, db: DbSession
 ) -> AthleteWorkoutDetail:
     return await workout_access.get_workout(db, current_user, link_id, workout_id)
+
+
+@router.get(
+    "/athletes/{link_id}/program-preview/{program_id}",
+    response_model=ProgramPreview,
+    summary="Coach: exactly what sending this program to this athlete would offer",
+)
+async def preview_program_offer(
+    link_id: UUID, program_id: UUID, current_user: CurrentUser, db: DbSession
+) -> ProgramPreview:
+    return await offers.preview_program(db, current_user, link_id, program_id)
+
+
+@router.put(
+    "/athletes/{link_id}/program-offers/{request_id}",
+    response_model=SentOfferDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Coach: send one of your programs to a connected athlete (safe to repeat)",
+)
+async def send_program_offer(
+    link_id: UUID,
+    request_id: UUID,
+    payload: ProgramOfferRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+    response: Response,
+) -> SentOfferDetail:
+    offer, created = await offers.send_offer(
+        db, current_user, link_id, request_id, payload.program_id, payload.fingerprint
+    )
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    return offer
+
+
+@router.get(
+    "/athletes/{link_id}/program-offers",
+    response_model=SentOfferList,
+    summary="Coach: programs sent to this athlete and what they answered",
+)
+async def list_sent_offers(
+    link_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> SentOfferList:
+    return await offers.list_sent(db, current_user, link_id, limit, offset)
+
+
+@router.get(
+    "/program-offers",
+    response_model=ReceivedOfferList,
+    summary="Athlete: programs your coaches have sent you",
+)
+async def list_received_offers(
+    current_user: CurrentUser,
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ReceivedOfferList:
+    return await offers.list_received(db, current_user, limit, offset)
+
+
+@router.get(
+    "/program-offers/{offer_id}",
+    response_model=ReceivedOfferDetail,
+    summary="Athlete: one received program with its days and prescriptions",
+)
+async def get_received_offer(
+    offer_id: UUID, current_user: CurrentUser, db: DbSession
+) -> ReceivedOfferDetail:
+    return await offers.get_received(db, current_user, offer_id)
+
+
+@router.post(
+    "/program-offers/{offer_id}/accept",
+    response_model=ReceivedOfferDetail,
+    summary="Athlete: add an independent, inactive copy to your programs (safe to repeat)",
+)
+async def accept_program_offer(
+    offer_id: UUID, current_user: CurrentUser, db: DbSession
+) -> ReceivedOfferDetail:
+    return await offers.accept_offer(db, current_user, offer_id)
+
+
+@router.post(
+    "/program-offers/{offer_id}/decline",
+    response_model=ReceivedOfferDetail,
+    summary="Athlete: decline a received program",
+)
+async def decline_program_offer(
+    offer_id: UUID, current_user: CurrentUser, db: DbSession
+) -> ReceivedOfferDetail:
+    return await offers.decline_offer(db, current_user, offer_id)
