@@ -10,7 +10,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import type { AthleteExerciseSession, AthleteSet } from "../api/coaching";
-import { roman, romanFont } from "../romanTheme";
+import { light } from "../lightTheme";
 import type { WeightUnit } from "../units/weight";
 import type { AthleteExerciseHistoryState } from "./athleteExerciseHistory";
 import { athleteExerciseHistoryStore } from "./athleteExerciseHistorySession";
@@ -90,7 +90,7 @@ export function AthleteExerciseHistoryPanel({
               ListFooterComponent={
                 <View style={styles.footer}>
                   {state.loading ? (
-                    <ActivityIndicator color={roman.gold} accessibilityLabel="Loading earlier sessions" />
+                    <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading earlier sessions" />
                   ) : null}
                   {state.unavailable ? (
                     <Text accessibilityRole="alert" style={styles.note}>
@@ -175,61 +175,59 @@ function SetLine({ set, unit }: { set: AthleteSet; unit: WeightUnit }) {
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  overlay: { flex: 1, backgroundColor: light.scrim, justifyContent: "flex-end" },
   panel: {
     height: "85%",
-    backgroundColor: roman.surface,
+    backgroundColor: light.surface,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    borderTopColor: roman.gold,
-    borderTopWidth: 1,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: roman.border,
+    borderBottomColor: light.separator,
   },
   headerText: { flex: 1, marginRight: 8 },
-  headerTitle: { color: roman.text, fontFamily: romanFont.title, fontSize: 18, letterSpacing: 0.5 },
-  headerSubtitle: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19, marginTop: 2 },
+  headerTitle: { color: light.text, fontSize: 20, fontWeight: "700", lineHeight: 26 },
+  headerSubtitle: { color: light.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 2 },
   closeButton: { minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, alignItems: "center", justifyContent: "center" },
-  closeIcon: { color: roman.text, fontSize: 18 },
+  closeIcon: { color: light.text, fontSize: 18 },
   list: { flex: 1 },
   listContent: { paddingHorizontal: 16, paddingBottom: 16 },
   footer: { paddingVertical: 8, gap: 8 },
-  note: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19, paddingVertical: 8 },
-  error: { color: roman.danger, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
+  note: { color: light.textSecondary, fontSize: 13, lineHeight: 19, paddingVertical: 8 },
+  error: { color: light.danger, fontSize: 14, fontWeight: "500", lineHeight: 20 },
   button: { minHeight: MIN_TOUCH, justifyContent: "center", alignSelf: "flex-start", paddingHorizontal: 4, borderRadius: 8 },
-  pressed: { backgroundColor: roman.surfaceRaised },
-  link: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
+  pressed: { backgroundColor: light.pressed },
+  link: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
   session: {
     gap: 6,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: roman.border,
+    borderBottomColor: light.separator,
   },
-  title: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 15, lineHeight: 21 },
-  meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
-  setRow: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 36 },
+  title: { color: light.text, fontSize: 16, fontWeight: "600", lineHeight: 21 },
+  meta: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
+  // Same fixed columns as the workout screen, so sets line up in both places.
+  setRow: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 40 },
   badge: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.background,
     alignItems: "center",
     justifyContent: "center",
   },
-  warmupBadge: { borderColor: roman.goldLight },
-  badgeText: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 12 },
-  warmupText: { color: roman.goldLight },
-  setWeight: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 15, minWidth: 84 },
-  setReps: { color: roman.text, fontFamily: romanFont.regular, fontSize: 15 },
-  setRir: { flex: 1, color: roman.goldLight, fontFamily: romanFont.regular, fontSize: 13, textAlign: "right" },
-  rirUnknown: { color: roman.textMuted },
+  warmupBadge: { backgroundColor: light.surface, borderColor: light.textSecondary, borderWidth: 1.5 },
+  badgeText: { color: light.text, fontSize: 12, fontWeight: "600" },
+  warmupText: { color: light.textSecondary },
+  setWeight: { color: light.text, fontSize: 16, fontWeight: "600", minWidth: 84, fontVariant: ["tabular-nums"] },
+  setReps: { color: light.text, fontSize: 16, minWidth: 44, fontVariant: ["tabular-nums"] },
+  setRir: { flex: 1, color: light.text, fontSize: 14, textAlign: "right" },
+  rirUnknown: { color: light.textSecondary },
 });

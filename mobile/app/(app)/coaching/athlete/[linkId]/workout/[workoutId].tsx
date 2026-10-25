@@ -8,6 +8,7 @@
  * switch on every load.
  */
 
+import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback } from "react";
 import {
@@ -40,7 +41,8 @@ import { useCoaching } from "../../../../../../src/coaching/useCoaching";
 import { useWorkoutFeedback } from "../../../../../../src/coaching/useWorkoutFeedback";
 import { workoutFeedbackStore } from "../../../../../../src/coaching/workoutFeedbackSession";
 import { useAuth } from "../../../../../../src/auth/AuthContext";
-import { roman, romanFont, useRomanFonts } from "../../../../../../src/romanTheme";
+import { FocusedDarkStatusBar } from "../../../../../../src/FocusedDarkStatusBar";
+import { light } from "../../../../../../src/lightTheme";
 import type { WeightUnit } from "../../../../../../src/units/weight";
 
 const MIN_TOUCH = 44;
@@ -71,7 +73,6 @@ function AthleteWorkout({
   unit: WeightUnit;
 }) {
   const insets = useSafeAreaInsets();
-  useRomanFonts();
   const view = useAthleteWorkouts(userId, linkId);
   const history = useAthleteExerciseHistory(userId, linkId, workoutId);
   const feedback = useWorkoutFeedback(userId, linkId, workoutId);
@@ -101,6 +102,7 @@ function AthleteWorkout({
   if (denied) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
+        <FocusedDarkStatusBar />
         <Text accessibilityRole="alert" style={styles.empty}>
           {denied === "ended"
             ? "This connection has ended, so this workout is no longer available."
@@ -112,6 +114,7 @@ function AthleteWorkout({
   if (shown?.missing) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
+        <FocusedDarkStatusBar />
         <Text accessibilityRole="alert" style={styles.empty}>
           This workout is no longer available.
         </Text>
@@ -121,6 +124,7 @@ function AthleteWorkout({
   if (!data) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
+        <FocusedDarkStatusBar />
         {shown?.error ? (
           <View style={styles.banner}>
             <Text accessibilityRole="alert" style={styles.error}>
@@ -135,7 +139,7 @@ function AthleteWorkout({
             </Pressable>
           </View>
         ) : (
-          <ActivityIndicator color={roman.gold} accessibilityLabel="Loading workout" />
+          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading workout" />
         )}
       </View>
     );
@@ -149,6 +153,7 @@ function AthleteWorkout({
       keyboardDismissMode="interactive"
       automaticallyAdjustKeyboardInsets
     >
+      <FocusedDarkStatusBar />
       <View style={styles.card}>
         <Text accessibilityRole="header" style={styles.title}>
           {data.title ?? "Workout"}
@@ -156,7 +161,10 @@ function AthleteWorkout({
         <Text style={styles.meta}>{formatSessionDate(data.performed_at)}</Text>
         <Text style={styles.meta}>{durationText(data)}</Text>
         <Text style={styles.meta}>{setCountText(data.total_sets)}</Text>
-        <Text style={styles.readOnly}>Read-only. Weights shown in {unit}.</Text>
+        <View style={styles.readOnlyRow}>
+          <Ionicons name="lock-closed-outline" size={14} color={light.textSecondary} />
+          <Text style={styles.readOnly}>Read-only. Weights shown in {unit}.</Text>
+        </View>
       </View>
       {shown?.error ? (
         <View style={styles.banner}>
@@ -214,7 +222,7 @@ function ExerciseBlock({
 }) {
   return (
     <View style={styles.card}>
-      <Text accessibilityRole="header" style={styles.exerciseName}>
+      <Text accessibilityRole="header" numberOfLines={3} style={styles.exerciseName}>
         {exercise.name}
       </Text>
       {exercise.sets.map((set, index) => (
@@ -255,56 +263,53 @@ function SetRow({ set, unit }: { set: AthleteSet; unit: WeightUnit }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: roman.background },
+  screen: { flex: 1, backgroundColor: light.background },
   content: { paddingHorizontal: 16, paddingTop: 8 },
   card: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     gap: 6,
   },
-  title: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 20, lineHeight: 26 },
-  exerciseName: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 16, lineHeight: 22 },
-  meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
-  readOnly: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 12, marginTop: 4 },
-  error: { color: roman.danger, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
+  title: { color: light.text, fontSize: 22, fontWeight: "700", lineHeight: 28 },
+  exerciseName: { color: light.text, fontSize: 17, fontWeight: "600", lineHeight: 22 },
+  meta: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
+  readOnlyRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
+  readOnly: { flex: 1, color: light.textSecondary, fontSize: 13, fontWeight: "500", lineHeight: 18 },
+  error: { color: light.danger, fontSize: 14, lineHeight: 20 },
   banner: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     gap: 8,
   },
   empty: {
-    color: roman.textMuted,
-    fontFamily: romanFont.regular,
+    color: light.textSecondary,
     fontSize: 14,
     lineHeight: 21,
     textAlign: "center",
     paddingVertical: 16,
   },
-  setRow: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 36 },
+  // Fixed columns so weight, reps and RIR line up from set to set.
+  setRow: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 40 },
   badge: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.background,
     alignItems: "center",
     justifyContent: "center",
   },
-  warmupBadge: { borderColor: roman.goldLight },
-  badgeText: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 12 },
-  warmupText: { color: roman.goldLight },
-  setWeight: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 15, minWidth: 84 },
-  setReps: { color: roman.text, fontFamily: romanFont.regular, fontSize: 15 },
-  setRir: { flex: 1, color: roman.goldLight, fontFamily: romanFont.regular, fontSize: 13, textAlign: "right" },
-  rirUnknown: { color: roman.textMuted },
+  // A warm-up is marked by its "W" and a ring, so it is not told apart by colour alone.
+  warmupBadge: { backgroundColor: light.surface, borderColor: light.textSecondary, borderWidth: 1.5 },
+  badgeText: { color: light.text, fontSize: 12, fontWeight: "600" },
+  warmupText: { color: light.textSecondary },
+  setWeight: { color: light.text, fontSize: 16, fontWeight: "600", minWidth: 84, fontVariant: ["tabular-nums"] },
+  setReps: { color: light.text, fontSize: 16, minWidth: 44, fontVariant: ["tabular-nums"] },
+  setRir: { flex: 1, color: light.text, fontSize: 14, textAlign: "right" },
+  rirUnknown: { color: light.textSecondary },
   secondary: {
     minHeight: MIN_TOUCH,
     alignSelf: "flex-start",
@@ -312,6 +317,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 8,
   },
-  secondaryText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
-  pressed: { backgroundColor: roman.surfaceRaised },
+  secondaryText: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
+  pressed: { backgroundColor: light.pressed },
 });

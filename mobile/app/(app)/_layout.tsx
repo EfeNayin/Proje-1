@@ -9,6 +9,8 @@
 import { Redirect, Stack } from "expo-router";
 
 import { useAuth } from "../../src/auth/AuthContext";
+import { lightHeaderOptions } from "../../src/lightHeaderOptions";
+import { light } from "../../src/lightTheme";
 import { roman, romanFont, useRomanFonts } from "../../src/romanTheme";
 import { colors } from "../../src/theme";
 
@@ -30,6 +32,14 @@ const romanHeader = {
   headerStyle: { backgroundColor: roman.background },
   headerTitleStyle: { color: roman.gold, fontFamily: romanFont.title, fontSize: 18 },
   contentStyle: { backgroundColor: roman.background },
+};
+
+// The light counterpart for the coach connection and workout-review screens:
+// set here rather than inside each screen so the header is already light while
+// the screen is pushed, and the page behind it does not flash dark.
+const lightHeader = {
+  ...lightHeaderOptions,
+  contentStyle: { backgroundColor: light.background },
 };
 
 export default function AppLayout() {
@@ -60,15 +70,15 @@ export default function AppLayout() {
         name="research"
         options={{ title: "Research", ...romanHeader }}
       />
-      <Stack.Screen name="coaching/athletes" options={{ title: "My Athletes", ...romanHeader }} />
-      <Stack.Screen name="coaching/coaches" options={{ title: "My Coaches", ...romanHeader }} />
+      <Stack.Screen name="coaching/athletes" options={{ title: "My Athletes", ...lightHeader }} />
+      <Stack.Screen name="coaching/coaches" options={{ title: "My Coaches", ...lightHeader }} />
       <Stack.Screen
         name="coaching/athlete/[linkId]/index"
-        options={{ title: "Athlete", ...romanHeader }}
+        options={{ title: "Athlete", ...lightHeader }}
       />
       <Stack.Screen
         name="coaching/athlete/[linkId]/workout/[workoutId]"
-        options={{ title: "Workout", ...romanHeader }}
+        options={{ title: "Workout", ...lightHeader }}
       />
       <Stack.Screen
         name="coaching/athlete/[linkId]/send-program"

@@ -755,10 +755,9 @@ const rn = {
   Alert: { alert: (...args) => { alerts.push(args); } },
   StyleSheet: { create: (v) => v, hairlineWidth: 1 },
 };
-const theme = { roman: {}, romanFont: {} };
 const coachModule = load('src/coaching/CoachFeedbackSection.tsx', {
   'react-native': rn,
-  '../romanTheme': theme,
+  '../lightTheme': { light: {} },
   './feedbackDisplay': display,
   './workoutFeedback': feedback,
   './workoutFeedbackSession': { workoutFeedbackStore: fakeStore },
@@ -854,6 +853,10 @@ test('coach section: a conflict shows the latest copy and offers keep/use, but k
   const tree = drawCoach(open({ editing: true, draft: 'Mine', conflict: { action: 'save', latest, loaded: true } }));
   assert.match(allText(tree), /changed since you opened it/);
   assert.match(allText(tree), /Latest text/);
+  // The latest saved text and the unsaved draft are shown apart and labelled, so neither is mistaken for the other.
+  assert.match(allText(tree), /Latest saved version/);
+  assert.match(allText(tree), /Your unsaved text\nMine/);
+  assert.ok(allText(tree).indexOf('Latest text') < allText(tree).indexOf('Mine'));
   assert.equal(expand(tree).find((n) => n.type === 'TextInput'), undefined, 'review first, no typing meanwhile');
   button(tree, /Keep my text/).props.onPress();
   button(tree, /^Use the latest$/).props.onPress();
@@ -862,6 +865,7 @@ test('coach section: a conflict shows the latest copy and offers keep/use, but k
   const del = drawCoach(open({ saved: entry('x'), conflict: { action: 'delete', latest, loaded: true } }));
   assert.equal(button(del, /Keep my text/), undefined);
   assert.ok(button(del, /^Use the latest$/));
+  assert.doesNotMatch(allText(del), /Your unsaved text/, 'a delete conflict has no draft to show');
 
   const gone = drawCoach(open({ conflict: { action: 'save', latest: null, loaded: true } }));
   assert.match(allText(gone), /was deleted/);

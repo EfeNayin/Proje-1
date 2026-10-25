@@ -9,6 +9,7 @@
  * when the answer is already known to be no.
  */
 
+import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback } from "react";
 import {
@@ -35,7 +36,8 @@ import { personHandle, personName } from "../../../../../src/coaching/presentati
 import { useAthleteWorkouts } from "../../../../../src/coaching/useAthleteWorkouts";
 import { useCoaching } from "../../../../../src/coaching/useCoaching";
 import { useAuth } from "../../../../../src/auth/AuthContext";
-import { roman, romanFont, useRomanFonts } from "../../../../../src/romanTheme";
+import { FocusedDarkStatusBar } from "../../../../../src/FocusedDarkStatusBar";
+import { light } from "../../../../../src/lightTheme";
 
 const MIN_TOUCH = 44;
 
@@ -55,7 +57,6 @@ export default function AthleteWorkoutsScreen() {
 function AthleteWorkouts({ userId, linkId }: { userId: string | null; linkId: string }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  useRomanFonts();
   const coaching = useCoaching(userId);
   const view = useAthleteWorkouts(userId, linkId);
   const link = coaching.athletes.items.find((item) => item.id === linkId);
@@ -83,10 +84,14 @@ function AthleteWorkouts({ userId, linkId }: { userId: string | null; linkId: st
   const header = (
     <View>
       <View style={styles.card}>
-        <Text accessibilityRole="header" style={styles.cardTitle}>
+        <Text accessibilityRole="header" numberOfLines={2} style={styles.cardTitle}>
           {name}
         </Text>
-        {handle ? <Text style={styles.meta}>{handle}</Text> : null}
+        {handle ? (
+          <Text numberOfLines={1} style={styles.meta}>
+            {handle}
+          </Text>
+        ) : null}
         <Text style={styles.status}>
           {ended
             ? "Connection ended"
@@ -96,19 +101,20 @@ function AthleteWorkouts({ userId, linkId }: { userId: string | null; linkId: st
                 ? "Workouts shared"
                 : " "}
         </Text>
-        {/* Programs are a separate permission from workout sharing: always offered while connected. */}
-        {!ended ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Send a program to ${name}`}
-            accessibilityHint="Choose one of your programs and review it before sending"
-            style={({ pressed }) => [styles.sendButton, pressed && styles.pressed]}
-            onPress={() => router.push(`/coaching/athlete/${linkId}/send-program`)}
-          >
-            <Text style={styles.sendButtonText}>Send a program</Text>
-          </Pressable>
-        ) : null}
       </View>
+      {/* Programs are a separate permission from workout sharing: always offered while connected. */}
+      {!ended ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Send a program to ${name}`}
+          accessibilityHint="Choose one of your programs and review it before sending"
+          style={({ pressed }) => [styles.sendRow, pressed && styles.pressed]}
+          onPress={() => router.push(`/coaching/athlete/${linkId}/send-program`)}
+        >
+          <Text style={styles.sendButtonText}>Send a program</Text>
+          <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
+        </Pressable>
+      ) : null}
       {list.error ? (
         <View style={styles.banner}>
           <Text accessibilityRole="alert" style={styles.error}>
@@ -135,6 +141,7 @@ function AthleteWorkouts({ userId, linkId }: { userId: string | null; linkId: st
   if (message) {
     return (
       <View style={[styles.screen, styles.content, { paddingBottom: insets.bottom + 24 }]}>
+        <FocusedDarkStatusBar />
         {header}
         <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.empty}>
           {message}
@@ -144,56 +151,59 @@ function AthleteWorkouts({ userId, linkId }: { userId: string | null; linkId: st
   }
 
   return (
-    <FlatList
-      style={styles.screen}
-      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
-      data={list.items}
-      keyExtractor={(item) => item.id}
-      ListHeaderComponent={header}
-      renderItem={({ item }) => (
-        <SessionRow
-          session={item}
-          onOpen={() => router.push(`/coaching/athlete/${linkId}/workout/${item.id}`)}
-        />
-      )}
-      onEndReachedThreshold={0.4}
-      onEndReached={() => void athleteWorkoutsStore.loadMore()}
-      ListEmptyComponent={
-        firstLoad ? (
-          <ActivityIndicator color={roman.gold} accessibilityLabel="Loading workouts" />
-        ) : list.error && !list.loaded ? null : (
-          <Text style={styles.empty}>
-            No completed workouts recorded yet. They appear here once {name} finishes one in the
-            app.
-          </Text>
-        )
-      }
-      ListFooterComponent={
-        list.loadingMore ? (
-          <ActivityIndicator color={roman.gold} accessibilityLabel="Loading more workouts" />
-        ) : list.moreError ? (
-          <View style={styles.banner}>
-            <Text accessibilityRole="alert" style={styles.error}>
-              {list.moreError}
+    <>
+      <FocusedDarkStatusBar />
+      <FlatList
+        style={styles.screen}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
+        data={list.items}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={header}
+        renderItem={({ item }) => (
+          <SessionRow
+            session={item}
+            onOpen={() => router.push(`/coaching/athlete/${linkId}/workout/${item.id}`)}
+          />
+        )}
+        onEndReachedThreshold={0.4}
+        onEndReached={() => void athleteWorkoutsStore.loadMore()}
+        ListEmptyComponent={
+          firstLoad ? (
+            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading workouts" />
+          ) : list.error && !list.loaded ? null : (
+            <Text style={styles.empty}>
+              No completed workouts recorded yet. They appear here once {name} finishes one in the
+              app.
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-              onPress={() => void athleteWorkoutsStore.loadMore()}
-            >
-              <Text style={styles.secondaryText}>Try again</Text>
-            </Pressable>
-          </View>
-        ) : null
-      }
-      refreshControl={
-        <RefreshControl
-          refreshing={list.loading && list.loaded}
-          onRefresh={() => void refresh()}
-          tintColor={roman.gold}
-        />
-      }
-    />
+          )
+        }
+        ListFooterComponent={
+          list.loadingMore ? (
+            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading more workouts" />
+          ) : list.moreError ? (
+            <View style={styles.banner}>
+              <Text accessibilityRole="alert" style={styles.error}>
+                {list.moreError}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+                onPress={() => void athleteWorkoutsStore.loadMore()}
+              >
+                <Text style={styles.secondaryText}>Try again</Text>
+              </Pressable>
+            </View>
+          ) : null
+        }
+        refreshControl={
+          <RefreshControl
+            refreshing={list.loading && list.loaded}
+            onRefresh={() => void refresh()}
+            tintColor={light.textSecondary}
+          />
+        }
+      />
+    </>
   );
 }
 
@@ -215,43 +225,41 @@ function SessionRow({
       onPress={onOpen}
     >
       <View style={styles.rowText}>
-        <Text style={styles.rowTitle}>{title}</Text>
+        <Text numberOfLines={2} style={styles.rowTitle}>
+          {title}
+        </Text>
         <Text style={styles.meta}>{date}</Text>
         <Text style={styles.meta}>{duration}</Text>
       </View>
       <Text style={styles.rowSets}>{setCountText(session.total_sets)}</Text>
+      <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: roman.background },
+  screen: { flex: 1, backgroundColor: light.background },
   content: { paddingHorizontal: 16, paddingTop: 8 },
   card: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 8,
     gap: 4,
   },
-  cardTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 18, lineHeight: 24 },
-  meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
-  status: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 13, lineHeight: 19 },
-  error: { color: roman.danger, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
+  cardTitle: { color: light.text, fontSize: 22, fontWeight: "700", lineHeight: 28 },
+  meta: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
+  status: { color: light.text, fontSize: 14, fontWeight: "600", lineHeight: 20, marginTop: 2 },
+  error: { color: light.danger, fontSize: 14, lineHeight: 20 },
   banner: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 8,
     gap: 8,
   },
   empty: {
-    color: roman.textMuted,
-    fontFamily: romanFont.regular,
+    color: light.textSecondary,
     fontSize: 14,
     lineHeight: 21,
     textAlign: "center",
@@ -260,20 +268,17 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    minHeight: MIN_TOUCH,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderLeftColor: roman.gold,
-    borderLeftWidth: 3,
+    gap: 8,
+    minHeight: 60,
+    backgroundColor: light.surface,
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 8,
   },
   rowText: { flex: 1 },
-  rowTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 16, lineHeight: 22 },
-  rowSets: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
+  rowTitle: { color: light.text, fontSize: 16, fontWeight: "600", lineHeight: 22 },
+  rowSets: { color: light.textSecondary, fontSize: 14 },
   secondary: {
     minHeight: MIN_TOUCH,
     alignSelf: "flex-start",
@@ -281,14 +286,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 8,
   },
-  secondaryText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
-  pressed: { backgroundColor: roman.surfaceRaised },
-  sendButton: {
-    minHeight: MIN_TOUCH,
-    alignSelf: "flex-start",
-    justifyContent: "center",
-    paddingHorizontal: 4,
-    borderRadius: 8,
+  secondaryText: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
+  pressed: { backgroundColor: light.pressed },
+  sendRow: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
-  sendButtonText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
+  sendButtonText: { color: light.text, fontSize: 16, fontWeight: "600" },
 });

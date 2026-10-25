@@ -1,6 +1,6 @@
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { roman, romanFont } from "../romanTheme";
+import { light } from "../lightTheme";
 import { feedbackTimeLines } from "./feedbackDisplay";
 import { FEEDBACK_MAX_LENGTH } from "./workoutFeedback";
 import type { WorkoutFeedbackState } from "./workoutFeedback";
@@ -96,7 +96,7 @@ function Body({
         <Action label="Try again" onPress={() => void store.retryLoad()} />
       </View>
     ) : (
-      <ActivityIndicator color={roman.gold} accessibilityLabel="Loading your feedback" />
+      <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading your feedback" />
     );
   }
 
@@ -114,21 +114,34 @@ function Body({
           </>
         ) : (
           <>
-            <Text style={styles.label}>Latest version</Text>
-            {conflict.latest ? (
-              <>
-                <Text style={styles.body}>{conflict.latest.body}</Text>
-                {feedbackTimeLines(conflict.latest.created_at, conflict.latest.updated_at).map(
-                  (line) => (
-                    <Text key={line} style={styles.meta}>
-                      {line}
-                    </Text>
-                  ),
-                )}
-              </>
-            ) : (
-              <Text style={styles.note}>This feedback was deleted.</Text>
-            )}
+            <View style={styles.version}>
+              <Text style={styles.label}>Latest saved version</Text>
+              {conflict.latest ? (
+                <>
+                  <Text selectable style={styles.body}>
+                    {conflict.latest.body}
+                  </Text>
+                  {feedbackTimeLines(conflict.latest.created_at, conflict.latest.updated_at).map(
+                    (line) => (
+                      <Text key={line} style={styles.meta}>
+                        {line}
+                      </Text>
+                    ),
+                  )}
+                </>
+              ) : (
+                <Text style={styles.note}>This feedback was deleted.</Text>
+              )}
+            </View>
+            {/* Your text is still held on this device and has not been saved: shown apart, and labelled so. */}
+            {conflict.action === "save" && state.draft.length > 0 ? (
+              <View style={styles.version}>
+                <Text style={styles.label}>Your unsaved text</Text>
+                <Text selectable style={styles.body}>
+                  {state.draft}
+                </Text>
+              </View>
+            ) : null}
             {conflict.action === "save" ? (
               <Action
                 label="Keep my text and review"
@@ -155,7 +168,7 @@ function Body({
           editable={!busy}
           maxLength={FEEDBACK_MAX_LENGTH}
           placeholder="What went well, what to change next time"
-          placeholderTextColor={roman.placeholder}
+          placeholderTextColor={light.textSecondary}
           textAlignVertical="top"
           scrollEnabled={false}
           style={styles.input}
@@ -186,7 +199,7 @@ function Body({
             onPress={onSave}
           >
             {state.saving ? (
-              <ActivityIndicator color={roman.background} />
+              <ActivityIndicator color={light.onPrimary} />
             ) : (
               <Text style={styles.primaryText}>Save</Text>
             )}
@@ -263,31 +276,28 @@ function Action({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: roman.surface,
-    borderColor: roman.goldLight,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     gap: 8,
   },
-  heading: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 16, lineHeight: 22 },
+  heading: { color: light.text, fontSize: 17, fontWeight: "600", lineHeight: 22 },
   block: { gap: 8 },
-  note: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
-  label: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 12 },
-  body: { color: roman.text, fontFamily: romanFont.regular, fontSize: 15, lineHeight: 22 },
-  meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 12, lineHeight: 18 },
-  warn: { color: roman.goldLight },
-  error: { color: roman.danger, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
+  note: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
+  label: { color: light.textSecondary, fontSize: 13, fontWeight: "600" },
+  // The latest saved text and the unsaved draft are two separate boxes.
+  version: { backgroundColor: light.background, borderRadius: 10, padding: 12, gap: 4 },
+  body: { color: light.text, fontSize: 15, lineHeight: 22 },
+  meta: { color: light.textSecondary, fontSize: 12, lineHeight: 18 },
+  warn: { color: light.danger, fontWeight: "600" },
+  error: { color: light.danger, fontSize: 14, fontWeight: "500", lineHeight: 20 },
   input: {
     minHeight: 120,
-    color: roman.text,
-    fontFamily: romanFont.regular,
+    color: light.text,
     fontSize: 15,
     lineHeight: 22,
-    backgroundColor: roman.background,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.background,
     borderRadius: 10,
     padding: 12,
   },
@@ -296,28 +306,23 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH,
     justifyContent: "center",
     alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: light.background,
   },
-  actionText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
-  dangerText: { color: roman.danger },
-  pressed: { backgroundColor: roman.surfaceRaised },
+  actionText: { color: light.text, fontSize: 15, fontWeight: "600" },
+  dangerText: { color: light.danger },
+  pressed: { backgroundColor: light.pressed },
   disabled: { opacity: 0.5 },
   primary: {
     minHeight: MIN_TOUCH,
     minWidth: 96,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: roman.gold,
+    backgroundColor: light.primary,
     borderRadius: 10,
     paddingHorizontal: 20,
   },
-  primaryPressed: { backgroundColor: roman.goldPressed },
-  primaryText: {
-    color: roman.background,
-    fontFamily: romanFont.semibold,
-    fontSize: 14,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  primaryPressed: { backgroundColor: light.primaryPressed },
+  primaryText: { color: light.onPrimary, fontSize: 15, fontWeight: "600" },
 });

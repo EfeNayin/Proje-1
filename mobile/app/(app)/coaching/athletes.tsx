@@ -25,6 +25,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { AthleteOverviewItem } from "../../../src/api/coaching";
 import { useAuth } from "../../../src/auth/AuthContext";
+import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
+import { light } from "../../../src/lightTheme";
 import { activityLabel, describeActivity } from "../../../src/coaching/activityDisplay";
 import { athleteOverviewStore } from "../../../src/coaching/athleteOverviewSession";
 import { coachingStore } from "../../../src/coaching/coachingSession";
@@ -32,7 +34,6 @@ import { ConnectionRow } from "../../../src/coaching/ConnectionRow";
 import { formatExpiry, personName } from "../../../src/coaching/presentation";
 import { useAthleteOverview } from "../../../src/coaching/useAthleteOverview";
 import { useCoaching } from "../../../src/coaching/useCoaching";
-import { roman, romanFont, useRomanFonts } from "../../../src/romanTheme";
 
 const MIN_TOUCH = 44;
 
@@ -40,7 +41,6 @@ export default function MyAthletesScreen() {
   const { user, refreshProfile } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  useRomanFonts();
   const userId = user?.id ?? null;
   const coachEnabled = user?.coach_enabled ?? false;
   const state = useCoaching(userId);
@@ -117,6 +117,7 @@ export default function MyAthletesScreen() {
   if (!coachEnabled) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
+        <FocusedDarkStatusBar />
         <View style={styles.card}>
           <Text accessibilityRole="header" style={styles.cardTitle}>
             Coach tools
@@ -144,7 +145,7 @@ export default function MyAthletesScreen() {
             onPress={confirmEnable}
           >
             {state.enabling ? (
-              <ActivityIndicator color={roman.background} />
+              <ActivityIndicator color={light.onPrimary} />
             ) : (
               <Text style={styles.primaryText}>Turn on coach tools</Text>
             )}
@@ -209,7 +210,7 @@ export default function MyAthletesScreen() {
           onPress={() => void createInvite()}
         >
           {creating ? (
-            <ActivityIndicator color={roman.background} />
+            <ActivityIndicator color={light.onPrimary} />
           ) : (
             <Text style={styles.primaryText}>{created ? "Create another code" : "Create invite code"}</Text>
           )}
@@ -219,6 +220,7 @@ export default function MyAthletesScreen() {
       <Text accessibilityRole="header" style={styles.sectionLabel}>
         Connected athletes
       </Text>
+      <Text style={styles.sectionCaption}>People who accepted your invite and whom you coach.</Text>
       {notice ? (
         <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.notice}>
           {notice}
@@ -250,59 +252,62 @@ export default function MyAthletesScreen() {
   );
 
   return (
-    <FlatList
-      style={styles.screen}
-      contentContainerStyle={[styles.content, padding]}
-      data={list.items}
-      keyExtractor={(item) => item.id}
-      keyboardShouldPersistTaps="handled"
-      renderItem={({ item }) => (
-        <AthleteCard
-          item={item}
-          days={days}
-          ending={state.ending.includes(item.id)}
-          onEnd={() => confirmEnd(item.id, personName(item.person))}
-          onOpen={() => router.push(`/coaching/athlete/${item.id}`)}
-        />
-      )}
-      ListHeaderComponent={header}
-      ListEmptyComponent={
-        firstLoad ? (
-          <ActivityIndicator color={roman.gold} accessibilityLabel="Loading athletes" />
-        ) : (list.error && !list.loaded) || list.denied ? null : (
-          <Text style={styles.empty}>
-            No athletes connected yet. Create an invite code to get started.
-          </Text>
-        )
-      }
-      ListFooterComponent={
-        list.loadingMore ? (
-          <ActivityIndicator color={roman.gold} accessibilityLabel="Loading more athletes" />
-        ) : list.moreError ? (
-          <View style={styles.banner}>
-            <Text accessibilityRole="alert" style={styles.error}>
-              {list.moreError}
+    <>
+      <FocusedDarkStatusBar />
+      <FlatList
+        style={styles.screen}
+        contentContainerStyle={[styles.content, padding]}
+        data={list.items}
+        keyExtractor={(item) => item.id}
+        keyboardShouldPersistTaps="handled"
+        renderItem={({ item }) => (
+          <AthleteCard
+            item={item}
+            days={days}
+            ending={state.ending.includes(item.id)}
+            onEnd={() => confirmEnd(item.id, personName(item.person))}
+            onOpen={() => router.push(`/coaching/athlete/${item.id}`)}
+          />
+        )}
+        ListHeaderComponent={header}
+        ListEmptyComponent={
+          firstLoad ? (
+            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading athletes" />
+          ) : (list.error && !list.loaded) || list.denied ? null : (
+            <Text style={styles.empty}>
+              No athletes connected yet. Create an invite code to get started.
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-              onPress={() => void athleteOverviewStore.loadMore()}
-            >
-              <Text style={styles.secondaryText}>Try again</Text>
-            </Pressable>
-          </View>
-        ) : null
-      }
-      onEndReachedThreshold={0.4}
-      onEndReached={() => void athleteOverviewStore.loadMore()}
-      refreshControl={
-        <RefreshControl
-          refreshing={list.loading && list.loaded}
-          onRefresh={() => void athleteOverviewStore.refresh()}
-          tintColor={roman.gold}
-        />
-      }
-    />
+          )
+        }
+        ListFooterComponent={
+          list.loadingMore ? (
+            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading more athletes" />
+          ) : list.moreError ? (
+            <View style={styles.banner}>
+              <Text accessibilityRole="alert" style={styles.error}>
+                {list.moreError}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+                onPress={() => void athleteOverviewStore.loadMore()}
+              >
+                <Text style={styles.secondaryText}>Try again</Text>
+              </Pressable>
+            </View>
+          ) : null
+        }
+        onEndReachedThreshold={0.4}
+        onEndReached={() => void athleteOverviewStore.loadMore()}
+        refreshControl={
+          <RefreshControl
+            refreshing={list.loading && list.loaded}
+            onRefresh={() => void athleteOverviewStore.refresh()}
+            tintColor={light.textSecondary}
+          />
+        }
+      />
+    </>
   );
 }
 
@@ -347,60 +352,57 @@ function AthleteCard({
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: roman.background },
+  screen: { flex: 1, backgroundColor: light.background },
   content: { paddingHorizontal: 16, paddingTop: 8 },
   card: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 20,
+    marginBottom: 24,
     gap: 12,
   },
-  cardTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 17 },
+  cardTitle: { color: light.text, fontSize: 17, fontWeight: "600", lineHeight: 22 },
   activity: { marginTop: 8, gap: 2 },
-  period: {
-    color: roman.textMuted,
-    fontFamily: romanFont.semibold,
-    fontSize: 11,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    marginTop: 4,
-  },
-  counts: { color: roman.text, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
-  body: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 14, lineHeight: 21 },
-  meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
+  period: { color: light.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 4 },
+  counts: { color: light.text, fontSize: 15, fontWeight: "500", lineHeight: 20 },
+  body: { color: light.textSecondary, fontSize: 14, lineHeight: 21 },
+  meta: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
+  // The code is the one thing on this screen that is read aloud or copied by eye:
+  // large, tabular, and selectable.
   code: {
-    color: roman.goldLight,
-    fontFamily: romanFont.semibold,
-    fontSize: 26,
-    lineHeight: 34,
+    color: light.text,
+    fontSize: 28,
+    fontWeight: "600",
+    lineHeight: 36,
     letterSpacing: 2,
+    fontVariant: ["tabular-nums"],
     marginVertical: 8,
   },
   sectionLabel: {
-    color: roman.textMuted,
-    fontFamily: romanFont.semibold,
-    fontSize: 12,
-    letterSpacing: 1,
-    textTransform: "uppercase",
+    color: light.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  sectionCaption: {
+    color: light.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginLeft: 4,
+    marginTop: 2,
     marginBottom: 10,
   },
-  notice: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20, marginBottom: 10 },
-  error: { color: roman.danger, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
+  notice: { color: light.text, fontSize: 14, fontWeight: "500", lineHeight: 20, marginBottom: 10 },
+  error: { color: light.danger, fontSize: 14, lineHeight: 20 },
   banner: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 8,
     gap: 8,
   },
   empty: {
-    color: roman.textMuted,
-    fontFamily: romanFont.regular,
+    color: light.textSecondary,
     fontSize: 14,
     lineHeight: 21,
     textAlign: "center",
@@ -410,18 +412,12 @@ const styles = StyleSheet.create({
     minHeight: 52,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: roman.gold,
-    borderRadius: 12,
+    backgroundColor: light.primary,
+    borderRadius: 14,
     paddingHorizontal: 16,
   },
-  primaryPressed: { backgroundColor: roman.goldPressed },
-  primaryText: {
-    color: roman.background,
-    fontFamily: romanFont.semibold,
-    fontSize: 14,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  primaryPressed: { backgroundColor: light.primaryPressed },
+  primaryText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
   secondary: {
     minHeight: MIN_TOUCH,
     alignSelf: "flex-start",
@@ -429,7 +425,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 8,
   },
-  secondaryText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
-  pressed: { backgroundColor: roman.surfaceRaised },
+  secondaryText: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
+  pressed: { backgroundColor: light.pressed },
   busy: { opacity: 0.6 },
 });

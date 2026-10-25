@@ -12,6 +12,7 @@
  * program when they accept.
  */
 
+import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -32,13 +33,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { InvitePreview } from "../../../src/api/coaching";
 import { useAuth } from "../../../src/auth/AuthContext";
+import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
+import { light } from "../../../src/lightTheme";
 import { coachingStore } from "../../../src/coaching/coachingSession";
 import { ConnectionRow } from "../../../src/coaching/ConnectionRow";
 import { formatExpiry, personHandle, personName } from "../../../src/coaching/presentation";
 import { programOffersStore } from "../../../src/coaching/programOffersSession";
 import { useCoaching } from "../../../src/coaching/useCoaching";
 import { useProgramOffers } from "../../../src/coaching/useProgramOffers";
-import { roman, romanFont, useRomanFonts } from "../../../src/romanTheme";
 
 const MIN_TOUCH = 44;
 
@@ -53,7 +55,6 @@ export default function MyCoachesScreen() {
 
 function MyCoaches({ userId }: { userId: string | null }) {
   const insets = useSafeAreaInsets();
-  useRomanFonts();
   const router = useRouter();
   const state = useCoaching(userId);
   const offers = useProgramOffers(userId);
@@ -175,7 +176,7 @@ function MyCoaches({ userId }: { userId: string | null }) {
             style={styles.input}
             accessibilityLabel="Invite code"
             placeholder="XXXX-XXXX-XXXX"
-            placeholderTextColor={roman.placeholder}
+            placeholderTextColor={light.textSecondary}
             value={code}
             onChangeText={onChangeCode}
             autoCapitalize="characters"
@@ -183,7 +184,7 @@ function MyCoaches({ userId }: { userId: string | null }) {
             autoComplete="off"
             returnKeyType="go"
             onSubmitEditing={() => canLookUp && void lookUp()}
-            selectionColor={roman.gold}
+            selectionColor={light.text}
           />
         </View>
         {error ? (
@@ -218,7 +219,7 @@ function MyCoaches({ userId }: { userId: string | null }) {
               onPress={() => void accept()}
             >
               {state.accepting ? (
-                <ActivityIndicator color={roman.background} />
+                <ActivityIndicator color={light.onPrimary} />
               ) : (
                 <Text style={styles.primaryText}>Connect</Text>
               )}
@@ -246,7 +247,7 @@ function MyCoaches({ userId }: { userId: string | null }) {
             onPress={() => void lookUp()}
           >
             {previewing ? (
-              <ActivityIndicator color={roman.background} />
+              <ActivityIndicator color={light.onPrimary} />
             ) : (
               <Text style={styles.primaryText}>Look up code</Text>
             )}
@@ -273,12 +274,13 @@ function MyCoaches({ userId }: { userId: string | null }) {
               : "Programs your coaches send you appear here. Nothing is added until you accept."}
           </Text>
         </View>
-        <Text style={styles.chevron}>›</Text>
+        <Ionicons name="chevron-forward" size={18} color={light.textSecondary} style={styles.chevron} />
       </Pressable>
 
       <Text accessibilityRole="header" style={styles.sectionLabel}>
         Your coaches
       </Text>
+      <Text style={styles.sectionCaption}>People who coach you. You decide what each one can see.</Text>
       {notice ? (
         <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.notice}>
           {notice}
@@ -303,6 +305,7 @@ function MyCoaches({ userId }: { userId: string | null }) {
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <FocusedDarkStatusBar />
       <FlatList
         style={styles.screen}
         contentContainerStyle={[
@@ -330,7 +333,7 @@ function MyCoaches({ userId }: { userId: string | null }) {
         ListHeaderComponent={header}
         ListEmptyComponent={
           firstLoad ? (
-            <ActivityIndicator color={roman.gold} accessibilityLabel="Loading coaches" />
+            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading coaches" />
           ) : list.error && !list.loaded ? null : (
             <Text style={styles.empty}>
               You are not connected to a coach. Ask yours for an invite code.
@@ -341,7 +344,7 @@ function MyCoaches({ userId }: { userId: string | null }) {
           <RefreshControl
             refreshing={list.loading && list.loaded}
             onRefresh={() => void coachingStore.load("athlete")}
-            tintColor={roman.gold}
+            tintColor={light.textSecondary}
           />
         }
       />
@@ -365,22 +368,24 @@ function SharingSwitch({
     <View style={styles.sharing}>
       <View style={styles.sharingText}>
         <Text style={styles.sharingTitle}>Share my workout history</Text>
+        {/* The state is written out, so it never depends on the switch colour. */}
+        <Text style={styles.sharingStatus}>{value ? "Sharing is on" : "Sharing is off"}</Text>
         <Text style={styles.meta}>
           {value
             ? `${name} can read your completed workouts. Weight and nutrition are not shared.`
             : `${name} cannot see any of your workouts.`}
         </Text>
+        <Text style={styles.meta}>Programs from {name} do not depend on this setting.</Text>
       </View>
       {busy ? (
-        <ActivityIndicator color={roman.gold} accessibilityLabel="Updating sharing" />
+        <ActivityIndicator color={light.textSecondary} accessibilityLabel="Updating sharing" />
       ) : (
         <Switch
           accessibilityLabel={`Share my workout history with ${name}`}
           value={value}
           onValueChange={onChange}
-          trackColor={{ false: roman.border, true: roman.gold }}
-          thumbColor={roman.text}
-          ios_backgroundColor={roman.border}
+          trackColor={{ false: light.separator, true: light.primary }}
+          ios_backgroundColor={light.separator}
         />
       )}
     </View>
@@ -388,87 +393,76 @@ function SharingSwitch({
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: roman.background },
-  screen: { flex: 1, backgroundColor: roman.background },
+  flex: { flex: 1, backgroundColor: light.background },
+  screen: { flex: 1, backgroundColor: light.background },
   content: { paddingHorizontal: 16, paddingTop: 8 },
   card: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 20,
+    marginBottom: 16,
     gap: 12,
   },
-  cardTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 17 },
+  cardTitle: { color: light.text, fontSize: 17, fontWeight: "600", lineHeight: 22 },
   entry: {
     minHeight: 64,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     paddingVertical: 12,
     paddingLeft: 16,
     paddingRight: 8,
-    marginBottom: 20,
+    marginBottom: 24,
     gap: 8,
   },
   entryText: { flex: 1, gap: 4 },
-  chevron: { color: roman.textMuted, fontSize: 28, width: MIN_TOUCH, textAlign: "center" },
-  label: {
-    color: roman.textMuted,
-    fontFamily: romanFont.medium,
-    fontSize: 12,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    marginBottom: 6,
-  },
+  chevron: { width: MIN_TOUCH, textAlign: "center" },
+  label: { color: light.textSecondary, fontSize: 13, fontWeight: "600", marginBottom: 6 },
   input: {
     minHeight: 52,
-    backgroundColor: roman.background,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    color: roman.text,
-    fontFamily: romanFont.regular,
-    fontSize: 16,
+    backgroundColor: light.background,
+    borderRadius: 10,
+    color: light.text,
+    fontSize: 17,
     letterSpacing: 1.5,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   preview: {
     gap: 8,
-    borderTopColor: roman.border,
+    borderTopColor: light.separator,
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 12,
   },
-  previewTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 16, lineHeight: 22 },
-  body: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 14, lineHeight: 21 },
-  meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
+  previewTitle: { color: light.text, fontSize: 17, fontWeight: "600", lineHeight: 22 },
+  body: { color: light.textSecondary, fontSize: 14, lineHeight: 21 },
+  meta: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
   sectionLabel: {
-    color: roman.textMuted,
-    fontFamily: romanFont.semibold,
-    fontSize: 12,
-    letterSpacing: 1,
-    textTransform: "uppercase",
+    color: light.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  sectionCaption: {
+    color: light.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginLeft: 4,
+    marginTop: 2,
     marginBottom: 10,
   },
-  notice: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20, marginBottom: 10 },
-  error: { color: roman.danger, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
+  notice: { color: light.text, fontSize: 14, fontWeight: "500", lineHeight: 20, marginBottom: 10 },
+  error: { color: light.danger, fontSize: 14, lineHeight: 20 },
   banner: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 8,
     gap: 8,
   },
   empty: {
-    color: roman.textMuted,
-    fontFamily: romanFont.regular,
+    color: light.textSecondary,
     fontSize: 14,
     lineHeight: 21,
     textAlign: "center",
@@ -478,18 +472,12 @@ const styles = StyleSheet.create({
     minHeight: 52,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: roman.gold,
-    borderRadius: 12,
+    backgroundColor: light.primary,
+    borderRadius: 14,
     paddingHorizontal: 16,
   },
-  primaryPressed: { backgroundColor: roman.goldPressed },
-  primaryText: {
-    color: roman.background,
-    fontFamily: romanFont.semibold,
-    fontSize: 14,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  primaryPressed: { backgroundColor: light.primaryPressed },
+  primaryText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
   secondary: {
     minHeight: MIN_TOUCH,
     alignSelf: "flex-start",
@@ -497,18 +485,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 8,
   },
-  secondaryText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
-  pressed: { backgroundColor: roman.surfaceRaised },
+  secondaryText: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
+  pressed: { backgroundColor: light.pressed },
   busy: { opacity: 0.6 },
   sharing: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     minHeight: MIN_TOUCH,
-    borderTopColor: roman.border,
+    borderTopColor: light.separator,
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 12,
   },
   sharingText: { flex: 1, gap: 2 },
-  sharingTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 14 },
+  sharingTitle: { color: light.text, fontSize: 15, fontWeight: "600" },
+  sharingStatus: { color: light.text, fontSize: 13, fontWeight: "600", lineHeight: 19 },
 });

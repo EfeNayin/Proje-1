@@ -539,7 +539,7 @@ const panelModule = load('src/coaching/AthleteExerciseHistoryPanel.tsx', {
     StyleSheet: { create: (v) => v, hairlineWidth: 1, absoluteFill: { position: 'absolute' } },
   },
   'react-native-safe-area-context': { SafeAreaProvider: 'SafeAreaProvider', SafeAreaView: 'SafeAreaView' },
-  '../romanTheme': { roman: {}, romanFont: {} },
+  '../lightTheme': { light: {} },
   '../units/weight': units,
   './athleteExerciseHistorySession': {
     athleteExerciseHistoryStore: {

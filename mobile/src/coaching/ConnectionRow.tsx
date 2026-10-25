@@ -1,8 +1,9 @@
+import { Ionicons } from "@expo/vector-icons";
 import type { ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { Connection } from "../api/coaching";
-import { roman, romanFont } from "../romanTheme";
+import { light } from "../lightTheme";
 import { formatConnectedDate, personHandle, personName } from "./presentation";
 
 const MIN_TOUCH = 44;
@@ -12,6 +13,9 @@ const MIN_TOUCH = 44;
  * name block into a button; `status` is an extra line under it; `detail` sits
  * under the status inside that button and `detailLabel` is its spoken form;
  * `children` sit in a footer under the row (the athlete's sharing switch).
+ *
+ * Used by My Athletes (the coach's roster) and My Coaches (the athlete's own
+ * connections). The status is always words, never colour alone.
  */
 export function ConnectionRow({
   connection,
@@ -38,8 +42,14 @@ export function ConnectionRow({
 
   const details = (
     <>
-      <Text style={styles.name}>{name}</Text>
-      {handle ? <Text style={styles.meta}>{handle}</Text> : null}
+      <Text numberOfLines={2} style={styles.name}>
+        {name}
+      </Text>
+      {handle ? (
+        <Text numberOfLines={1} style={styles.meta}>
+          {handle}
+        </Text>
+      ) : null}
       {since ? <Text style={styles.meta}>Connected {since}</Text> : null}
       {status ? <Text style={styles.status}>{status}</Text> : null}
       {detail}
@@ -63,6 +73,9 @@ export function ConnectionRow({
         ) : (
           <View style={styles.text}>{details}</View>
         )}
+        {onOpen ? (
+          <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`End connection with ${name}`}
@@ -72,7 +85,7 @@ export function ConnectionRow({
           onPress={onEnd}
         >
           {ending ? (
-            <ActivityIndicator color={roman.danger} size="small" />
+            <ActivityIndicator color={light.danger} size="small" />
           ) : (
             <Text style={styles.endText}>End</Text>
           )}
@@ -86,31 +99,26 @@ export function ConnectionRow({
 const styles = StyleSheet.create({
   card: {
     gap: 12,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderLeftColor: roman.gold,
-    borderLeftWidth: 3,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  top: { flexDirection: "row", alignItems: "center", gap: 12 },
-  text: { flex: 1, minHeight: MIN_TOUCH, justifyContent: "center" },
-  status: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 13, lineHeight: 19, marginTop: 2 },
-  name: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 16, lineHeight: 22 },
-  meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
+  top: { flexDirection: "row", alignItems: "center", gap: 8 },
+  text: { flex: 1, minHeight: MIN_TOUCH, justifyContent: "center", borderRadius: 8 },
+  status: { color: light.text, fontSize: 13, fontWeight: "600", lineHeight: 19, marginTop: 2 },
+  name: { color: light.text, fontSize: 17, fontWeight: "600", lineHeight: 22 },
+  meta: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
   end: {
     minWidth: MIN_TOUCH,
     minHeight: MIN_TOUCH,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     borderRadius: 10,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.background,
   },
-  endText: { color: roman.danger, fontFamily: romanFont.semibold, fontSize: 14 },
-  pressed: { backgroundColor: roman.surfaceRaised },
+  endText: { color: light.danger, fontSize: 14, fontWeight: "600" },
+  pressed: { backgroundColor: light.pressed },
   busy: { opacity: 0.6 },
 });
