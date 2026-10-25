@@ -27,22 +27,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as programsApi from "../../../src/api/programs";
 import type { ProgramDetail } from "../../../src/api/programs";
+import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
+import { light } from "../../../src/lightTheme";
 import { createProgramMutations } from "../../../src/programs/programActions";
-import { roman, useRomanFonts } from "../../../src/romanTheme";
 
 const MIN_TOUCH = 44;
-
-type Fonts = ReturnType<typeof useRomanFonts>;
 
 /** The program's name, edited in place. Saved on blur or "done", matching the workout title field. */
 function NameField({
   value,
   onSave,
-  font,
 }: {
   value: string;
   onSave: (name: string) => void;
-  font: Fonts;
 }) {
   const [draft, setDraft] = useState(value);
 
@@ -61,7 +58,7 @@ function NameField({
   return (
     <View style={styles.nameRow}>
       <TextInput
-        style={[styles.nameInput, font.title]}
+        style={styles.nameInput}
         accessibilityLabel="Program name"
         value={draft}
         onChangeText={setDraft}
@@ -73,9 +70,9 @@ function NameField({
         multiline
         submitBehavior="blurAndSubmit"
         maxLength={200}
-        selectionColor={roman.gold}
+        selectionColor={light.text}
       />
-      <Ionicons name="pencil" size={16} color={roman.textMuted} style={styles.nameIcon} />
+      <Ionicons name="pencil" size={16} color={light.textSecondary} style={styles.nameIcon} />
     </View>
   );
 }
@@ -100,7 +97,7 @@ function TopBar({
           style={styles.iconButton}
           onPress={() => router.back()}
         >
-          <Ionicons name="chevron-back" size={26} color={roman.text} />
+          <Ionicons name="chevron-back" size={26} color={light.text} />
         </Pressable>
         {onDelete ? (
           <Pressable
@@ -113,9 +110,9 @@ function TopBar({
             onPress={onDelete}
           >
             {deleting ? (
-              <ActivityIndicator size="small" color={roman.danger} />
+              <ActivityIndicator size="small" color={light.danger} />
             ) : (
-              <Ionicons name="trash-outline" size={22} color={roman.danger} />
+              <Ionicons name="trash-outline" size={22} color={light.danger} />
             )}
           </Pressable>
         ) : null}
@@ -127,7 +124,6 @@ function TopBar({
 export default function ProgramScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const font = useRomanFonts();
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [loaded, setProgram] = useState<ProgramDetail | null>(null);
@@ -241,6 +237,7 @@ export default function ProgramScreen() {
   if (!program) {
     return (
       <View style={styles.screen}>
+        <FocusedDarkStatusBar />
         <TopBar topInset={insets.top} />
         <View style={styles.centered}>
           {loadError ? (
@@ -248,7 +245,7 @@ export default function ProgramScreen() {
               <Text
                 accessibilityRole="alert"
                 accessibilityLiveRegion="polite"
-                style={[styles.errorText, font.medium]}
+                style={styles.errorText}
               >
                 {loadError}
               </Text>
@@ -260,14 +257,14 @@ export default function ProgramScreen() {
                 onPress={() => void retry()}
               >
                 {refreshing ? (
-                  <ActivityIndicator color={roman.goldLight} size="small" />
+                  <ActivityIndicator color={light.text} size="small" />
                 ) : (
-                  <Text style={[styles.retryText, font.semibold]}>Try again</Text>
+                  <Text style={styles.retryText}>Try again</Text>
                 )}
               </Pressable>
             </View>
           ) : (
-            <ActivityIndicator color={roman.gold} />
+            <ActivityIndicator color={light.textSecondary} />
           )}
         </View>
       </View>
@@ -278,6 +275,7 @@ export default function ProgramScreen() {
 
   return (
     <View style={styles.screen}>
+      <FocusedDarkStatusBar />
       <TopBar topInset={insets.top} onDelete={handleDelete} deleting={deleting} />
 
       <ScrollView
@@ -291,9 +289,9 @@ export default function ProgramScreen() {
         automaticallyAdjustKeyboardInsets
       >
         {program.is_active ? (
-          <View style={styles.activePill}>
+          <View style={styles.activeRow}>
             <View style={styles.activeDot} />
-            <Text style={[styles.activePillText, font.semibold]}>Active program</Text>
+            <Text style={styles.activeText}>Active program</Text>
           </View>
         ) : null}
 
@@ -301,7 +299,6 @@ export default function ProgramScreen() {
           key={program.name}
           value={program.name}
           onSave={(name) => void handleSaveName(name)}
-          font={font}
         />
 
         {!program.is_active ? (
@@ -318,11 +315,11 @@ export default function ProgramScreen() {
             onPress={() => void handleActivate()}
           >
             {activating ? (
-              <ActivityIndicator color={roman.gold} size="small" />
+              <ActivityIndicator color={light.onPrimary} size="small" />
             ) : (
               <>
-                <Ionicons name="checkmark-circle-outline" size={18} color={roman.gold} />
-                <Text style={[styles.activateButtonText, font.semibold]}>
+                <Ionicons name="checkmark-circle-outline" size={18} color={light.onPrimary} />
+                <Text style={styles.activateButtonText}>
                   Make this the active program
                 </Text>
               </>
@@ -335,7 +332,7 @@ export default function ProgramScreen() {
             <Text
               accessibilityRole="alert"
               accessibilityLiveRegion="polite"
-              style={[styles.errorText, font.medium]}
+              style={styles.errorText}
             >
               {`Could not refresh: ${loadError}`}
             </Text>
@@ -347,9 +344,9 @@ export default function ProgramScreen() {
               onPress={() => void retry()}
             >
               {refreshing ? (
-                <ActivityIndicator color={roman.goldLight} size="small" />
+                <ActivityIndicator color={light.text} size="small" />
               ) : (
-                <Text style={[styles.retryText, font.semibold]}>Try again</Text>
+                <Text style={styles.retryText}>Try again</Text>
               )}
             </Pressable>
           </View>
@@ -359,17 +356,17 @@ export default function ProgramScreen() {
           <Text
             accessibilityRole="alert"
             accessibilityLiveRegion="polite"
-            style={[styles.errorText, styles.actionError, font.medium]}
+            style={[styles.errorText, styles.actionError]}
           >
             {error}
           </Text>
         ) : null}
 
         <View style={styles.sectionRow}>
-          <Text accessibilityRole="header" style={[styles.sectionTitle, font.semibold]}>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>
             Templates
           </Text>
-          <Text style={[styles.sectionCount, font.regular]}>
+          <Text style={styles.sectionCount}>
             {count} template{count === 1 ? "" : "s"}
           </Text>
         </View>
@@ -383,40 +380,41 @@ export default function ProgramScreen() {
               accessibilityRole="button"
               accessibilityLabel={`${template.name}, ${meta}`}
               accessibilityHint="Opens the template"
-              style={({ pressed }) => [styles.templateCard, pressed && styles.templateCardPressed]}
+              style={({ pressed }) => [
+                styles.templateRow,
+                index === 0 && styles.templateFirst,
+                index === count - 1 && styles.templateLast,
+                index < count - 1 && styles.templateDivider,
+                pressed && styles.templateRowPressed,
+              ]}
               onPress={() => router.push(`/program/template/${template.id}`)}
             >
               <View style={styles.orderBadge}>
-                <Text style={[styles.orderText, font.title]}>{index + 1}</Text>
+                <Text style={styles.orderText}>{index + 1}</Text>
               </View>
               <View style={styles.templateMain}>
-                <Text style={[styles.templateName, font.semibold]}>{template.name}</Text>
-                <Text style={[styles.templateMeta, font.regular]}>{meta}</Text>
+                <Text numberOfLines={2} style={styles.templateName}>{template.name}</Text>
+                <Text style={styles.templateMeta}>{meta}</Text>
               </View>
-              <View style={styles.chevron}>
-                <Ionicons name="chevron-forward" size={20} color={roman.textMuted} />
-              </View>
+              <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
             </Pressable>
           );
         })}
 
         {count === 0 ? (
-          <Text style={[styles.empty, font.regular]}>No templates yet. Add a training day below.</Text>
+          <Text style={styles.empty}>No templates yet. Add a training day below.</Text>
         ) : null}
 
         <View style={styles.formCard}>
-          <View style={styles.formHeading}>
-            <Ionicons name="add-circle-outline" size={18} color={roman.gold} />
-            <Text style={[styles.formLabel, font.semibold]}>New template</Text>
-          </View>
+          <Text style={styles.formLabel}>New template</Text>
           <TextInput
-            style={[styles.input, font.regular]}
+            style={styles.input}
             accessibilityLabel="New template name"
             value={newTemplateName}
             onChangeText={setNewTemplateName}
             placeholder="e.g. Push A"
-            placeholderTextColor={roman.placeholder}
-            selectionColor={roman.gold}
+            placeholderTextColor={light.textSecondary}
+            selectionColor={light.text}
             returnKeyType="done"
             maxLength={200}
             onSubmitEditing={() => void handleAddTemplate()}
@@ -434,11 +432,11 @@ export default function ProgramScreen() {
             onPress={() => void handleAddTemplate()}
           >
             {addingTemplate ? (
-              <ActivityIndicator color={roman.background} size="small" />
+              <ActivityIndicator color={light.onPrimary} size="small" />
             ) : (
               <>
-                <Ionicons name="add" size={18} color={roman.background} />
-                <Text style={[styles.addButtonText, font.semibold]}>Add template</Text>
+                <Ionicons name="add" size={18} color={light.onPrimary} />
+                <Text style={styles.addButtonText}>Add template</Text>
               </>
             )}
           </Pressable>
@@ -449,14 +447,14 @@ export default function ProgramScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: roman.background },
+  screen: { flex: 1, backgroundColor: light.background },
   flex: { flex: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   content: { paddingHorizontal: 16 },
   stateBlock: { alignItems: "center", rowGap: 8 },
   busy: { opacity: 0.6 },
 
-  topBar: { backgroundColor: roman.background, paddingHorizontal: 8 },
+  topBar: { backgroundColor: light.background, paddingHorizontal: 8 },
   topBarRow: {
     minHeight: 56,
     flexDirection: "row",
@@ -470,71 +468,51 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  activePill: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 6,
-    backgroundColor: roman.goldTint,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginTop: 8,
-  },
-  activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: roman.gold },
-  activePillText: {
-    color: roman.gold,
-    fontSize: 11,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  activeRow: { flexDirection: "row", alignItems: "center", columnGap: 6, marginTop: 8 },
+  activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: light.positive },
+  activeText: { color: light.positive, fontSize: 13, fontWeight: "600" },
 
   nameRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     columnGap: 8,
-    marginTop: 8,
+    marginTop: 4,
     marginBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: roman.border,
   },
   nameInput: {
     flex: 1,
     minHeight: MIN_TOUCH,
-    color: roman.text,
-    fontSize: 26,
-    fontWeight: "600",
+    color: light.text,
+    fontSize: 28,
+    fontWeight: "700",
     paddingVertical: 8,
     paddingHorizontal: 0,
   },
   nameIcon: { marginTop: 18 },
 
   activateButton: {
-    minHeight: 48,
+    minHeight: 52,
     flexDirection: "row",
     columnGap: 8,
     alignItems: "center",
     justifyContent: "center",
-    borderColor: roman.gold,
-    borderWidth: 1,
-    borderRadius: 12,
+    backgroundColor: light.primary,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginBottom: 16,
   },
-  activateButtonPressed: { backgroundColor: roman.goldTint },
-  activateButtonText: { color: roman.gold, fontSize: 14, flexShrink: 1, textAlign: "center" },
+  activateButtonPressed: { backgroundColor: light.primaryPressed },
+  activateButtonText: { color: light.onPrimary, fontSize: 16, fontWeight: "600", flexShrink: 1, textAlign: "center" },
 
   banner: {
-    backgroundColor: roman.surface,
-    borderColor: roman.danger,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,
     rowGap: 4,
   },
-  errorText: { color: roman.danger, fontSize: 14, lineHeight: 20 },
+  errorText: { color: light.danger, fontSize: 14, fontWeight: "500", lineHeight: 20 },
   actionError: { marginBottom: 16 },
   retryButton: {
     minHeight: MIN_TOUCH,
@@ -542,7 +520,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingRight: 12,
   },
-  retryText: { color: roman.goldLight, fontSize: 14 },
+  retryText: { color: light.text, fontSize: 15, fontWeight: "600" },
 
   sectionRow: {
     flexDirection: "row",
@@ -550,97 +528,69 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
     justifyContent: "space-between",
     columnGap: 12,
-    marginBottom: 12,
+    marginBottom: 8,
+    marginHorizontal: 4,
   },
-  sectionTitle: {
-    color: roman.textMuted,
-    fontSize: 12,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
-  sectionCount: { color: roman.textMuted, fontSize: 13 },
+  sectionTitle: { color: light.textSecondary, fontSize: 13, fontWeight: "600" },
+  sectionCount: { color: light.textSecondary, fontSize: 13 },
 
-  templateCard: {
-    minHeight: 64,
+  // Templates form one grouped surface: the first row rounds the top, the last the bottom.
+  templateRow: {
+    minHeight: 60,
     flexDirection: "row",
     alignItems: "center",
     columnGap: 12,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
+    backgroundColor: light.surface,
+    paddingVertical: 10,
     paddingLeft: 12,
-    paddingRight: 4,
-    marginBottom: 12,
+    paddingRight: 14,
   },
-  templateCardPressed: { backgroundColor: roman.surfaceRaised },
+  templateFirst: { borderTopLeftRadius: 12, borderTopRightRadius: 12 },
+  templateLast: { borderBottomLeftRadius: 12, borderBottomRightRadius: 12 },
+  templateDivider: { borderBottomColor: light.separator, borderBottomWidth: StyleSheet.hairlineWidth },
+  templateRowPressed: { backgroundColor: light.pressed },
   orderBadge: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
     borderRadius: 8,
-    backgroundColor: roman.background,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.background,
     alignItems: "center",
     justifyContent: "center",
   },
-  orderText: { color: roman.gold, fontSize: 16, fontWeight: "600" },
-  templateMain: { flex: 1, rowGap: 2 },
-  templateName: { color: roman.text, fontSize: 16, lineHeight: 22 },
-  templateMeta: { color: roman.textMuted, fontSize: 13 },
-  chevron: {
-    width: MIN_TOUCH,
-    height: MIN_TOUCH,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  empty: { color: roman.textMuted, fontSize: 14, lineHeight: 20, marginBottom: 12 },
+  orderText: { color: light.textSecondary, fontSize: 15, fontWeight: "600", fontVariant: ["tabular-nums"] },
+  templateMain: { flex: 1, minWidth: 0, rowGap: 2 },
+  templateName: { color: light.text, fontSize: 17, fontWeight: "600" },
+  templateMeta: { color: light.textSecondary, fontSize: 13 },
+  empty: { color: light.textSecondary, fontSize: 14, lineHeight: 20, marginBottom: 12, marginHorizontal: 4 },
 
   formCard: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
-    marginTop: 12,
+    marginTop: 16,
   },
-  formHeading: { flexDirection: "row", alignItems: "center", columnGap: 8, marginBottom: 12 },
-  formLabel: {
-    flexShrink: 1,
-    color: roman.textMuted,
-    fontSize: 12,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
+  formLabel: { color: light.text, fontSize: 17, fontWeight: "600", marginBottom: 12 },
   input: {
-    minHeight: 52,
-    backgroundColor: roman.background,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    color: roman.text,
+    minHeight: 48,
+    backgroundColor: light.background,
+    borderRadius: 10,
+    color: light.text,
     fontSize: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   addButton: {
     minHeight: 52,
     flexDirection: "row",
     columnGap: 8,
     marginTop: 12,
-    backgroundColor: roman.gold,
-    borderRadius: 12,
+    backgroundColor: light.primary,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  addButtonPressed: { backgroundColor: roman.goldPressed },
-  addButtonText: {
-    color: roman.background,
-    fontSize: 14,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  addButtonPressed: { backgroundColor: light.primaryPressed },
+  addButtonText: { color: light.onPrimary, fontSize: 17, fontWeight: "600" },
 });

@@ -10,8 +10,8 @@
  * usePickedExercise for why that distinction matters.
  */
 
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { Stack, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -25,8 +25,9 @@ import {
 
 import * as exercisesApi from "../../../src/api/exercises";
 import type { Category, ExerciseSummary } from "../../../src/api/exercises";
+import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
 import { light } from "../../../src/lightTheme";
-import { colors, radius, spacing } from "../../../src/theme";
+import { radius, spacing } from "../../../src/theme";
 import { depositPickedExercise } from "../../../src/workout/usePickedExercise";
 
 // Adım 26: the catalogue is ~96 exercises deep and everything used to land
@@ -46,10 +47,6 @@ const CATEGORIES: { code: Category; label: string }[] = [
 
 export default function ExercisePicker() {
   const router = useRouter();
-  const { appearance } = useLocalSearchParams<{ appearance?: string }>();
-  const isLight = appearance === "light";
-  const palette = isLight ? lightPalette : defaultPalette;
-  const styles = useMemo(() => createStyles(palette), [palette]);
 
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<Category | null>(null);
@@ -96,24 +93,22 @@ export default function ExercisePicker() {
 
   return (
     <View style={styles.screen}>
-      {isLight ? (
-        // Opted in by the athlete workout screen only. The modal header comes
-        // from the app Stack; this restyles just this instance of it.
-        <Stack.Screen
-          options={{
-            headerStyle: { backgroundColor: light.surface },
-            headerTintColor: light.text,
-            headerTitleStyle: { color: light.text },
-            headerShadowVisible: false,
-          }}
-        />
-      ) : null}
+      <FocusedDarkStatusBar />
+      {/* The modal header comes from the app Stack; this makes it light too. */}
+      <Stack.Screen
+        options={{
+          headerStyle: { backgroundColor: light.surface },
+          headerTintColor: light.text,
+          headerTitleStyle: { color: light.text },
+          headerShadowVisible: false,
+        }}
+      />
       <TextInput
         style={styles.search}
         value={query}
         onChangeText={setQuery}
         placeholder="Search exercises"
-        placeholderTextColor={palette.textMuted}
+        placeholderTextColor={light.textSecondary}
         autoCapitalize="none"
         autoCorrect={false}
         autoFocus
@@ -143,7 +138,7 @@ export default function ExercisePicker() {
       </ScrollView>
 
       {loading ? (
-        <ActivityIndicator color={palette.accent} style={styles.loading} />
+        <ActivityIndicator color={light.textSecondary} style={styles.loading} />
       ) : (
         <FlatList
           data={results}
@@ -169,53 +164,14 @@ export default function ExercisePicker() {
   );
 }
 
-// The picker is shared with the program template editor, which keeps its
-// current look. Only a caller that passes appearance=light (the athlete
-// workout screen, via usePickedExercise) gets the light palette.
-type Palette = {
-  background: string;
-  surface: string;
-  border: string;
-  text: string;
-  textMuted: string;
-  accent: string;
-  accentText: string;
-  inputRadius: number;
-  inputBorder: number;
-};
-
-const defaultPalette: Palette = {
-  background: colors.background,
-  surface: colors.surface,
-  border: colors.border,
-  text: colors.text,
-  textMuted: colors.textMuted,
-  accent: colors.accent,
-  accentText: colors.accentText,
-  inputRadius: radius.sm,
-  inputBorder: 1,
-};
-
-const lightPalette: Palette = {
-  background: light.background,
-  surface: light.surface,
-  border: light.separator,
-  text: light.text,
-  textMuted: light.textSecondary,
-  accent: light.primary,
-  accentText: light.onPrimary,
-  inputRadius: 10,
-  inputBorder: 0,
-};
-
-const createStyles = (p: Palette) => StyleSheet.create({
-  screen: { flex: 1, backgroundColor: p.background, padding: spacing.md },
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: light.background, padding: spacing.md },
   search: {
-    backgroundColor: p.surface,
-    borderColor: p.border,
-    borderWidth: p.inputBorder,
-    borderRadius: p.inputRadius,
-    color: p.text,
+    backgroundColor: light.surface,
+    borderColor: light.separator,
+    borderWidth: 0,
+    borderRadius: 10,
+    color: light.text,
     fontSize: 16,
     padding: spacing.md,
     marginBottom: spacing.md,
@@ -232,23 +188,23 @@ const createStyles = (p: Palette) => StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.md,
-    borderColor: p.border,
+    borderColor: light.separator,
     borderWidth: 1,
-    backgroundColor: p.surface,
+    backgroundColor: light.surface,
     alignSelf: "center",
   },
-  chipActive: { backgroundColor: p.accent, borderColor: p.accent },
-  chipText: { color: p.textMuted, fontSize: 14, fontWeight: "600" },
-  chipTextActive: { color: p.accentText },
+  chipActive: { backgroundColor: light.primary, borderColor: light.primary },
+  chipText: { color: light.textSecondary, fontSize: 14, fontWeight: "600" },
+  chipTextActive: { color: light.onPrimary },
   loading: { marginTop: spacing.lg },
   list: { paddingBottom: spacing.xl },
-  empty: { color: p.textMuted, textAlign: "center", marginTop: spacing.lg },
+  empty: { color: light.textSecondary, textAlign: "center", marginTop: spacing.lg },
   row: {
     paddingVertical: spacing.md,
-    borderBottomColor: p.border,
+    borderBottomColor: light.separator,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   rowMain: { flex: 1 },
-  rowTitle: { color: p.text, fontSize: 16 },
-  rowMeta: { color: p.textMuted, fontSize: 13, marginTop: 2 },
+  rowTitle: { color: light.text, fontSize: 16 },
+  rowMeta: { color: light.textSecondary, fontSize: 13, marginTop: 2 },
 });

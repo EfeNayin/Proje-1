@@ -960,14 +960,11 @@ export default function ActiveWorkoutScreen() {
     void setRestSeconds(value);
   }, []);
 
-  const { openPicker } = usePickedExercise(
-    (exercise) => {
-      setPending((current) =>
-        current.some((item) => item.id === exercise.id) ? current : [...current, exercise],
-      );
-    },
-    { appearance: "light" },
-  );
+  const { openPicker } = usePickedExercise((exercise) => {
+    setPending((current) =>
+      current.some((item) => item.id === exercise.id) ? current : [...current, exercise],
+    );
+  });
 
   useEffect(() => {
     let cancelled = false;

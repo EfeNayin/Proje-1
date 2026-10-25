@@ -29,15 +29,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as programsApi from "../../../src/api/programs";
 import type { ProgramSummary } from "../../../src/api/programs";
+import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
+import { light } from "../../../src/lightTheme";
 import { createProgramCreator } from "../../../src/programs/programActions";
-import { roman, useRomanFonts } from "../../../src/romanTheme";
 
 const MIN_TOUCH = 44;
 
 export default function ProgramsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const font = useRomanFonts();
 
   // null until the first load settles, so "not loaded yet" and "no programs"
   // are never confused.
@@ -111,9 +111,10 @@ export default function ProgramsScreen() {
       // iOS pushes content up; Android already resizes the window.
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
+      <FocusedDarkStatusBar />
       <View style={[styles.topBar, { paddingTop: insets.top }]}>
         <View style={styles.topBarRow}>
-          <Text accessibilityRole="header" style={[styles.topBarTitle, font.title]}>
+          <Text accessibilityRole="header" style={styles.topBarTitle}>
             Programs
           </Text>
         </View>
@@ -121,7 +122,7 @@ export default function ProgramsScreen() {
 
       {initialLoading ? (
         <View style={styles.centered}>
-          <ActivityIndicator color={roman.gold} />
+          <ActivityIndicator color={light.textSecondary} />
         </View>
       ) : (
         <FlatList
@@ -135,26 +136,23 @@ export default function ProgramsScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => void refresh()}
-              tintColor={roman.gold}
-              colors={[roman.gold]}
-              progressBackgroundColor={roman.surface}
+              tintColor={light.textSecondary}
+              colors={[light.textSecondary]}
+              progressBackgroundColor={light.surface}
             />
           }
           ListHeaderComponent={
             <View>
               <View style={styles.createCard}>
-                <View style={styles.createHeading}>
-                  <Ionicons name="add-circle-outline" size={18} color={roman.gold} />
-                  <Text style={[styles.createLabel, font.semibold]}>New program</Text>
-                </View>
+                <Text style={styles.createLabel}>New program</Text>
                 <TextInput
-                  style={[styles.input, font.regular]}
+                  style={styles.input}
                   accessibilityLabel="New program name"
                   value={newName}
                   onChangeText={setNewName}
                   placeholder="Program name (e.g. Push Pull Legs)"
-                  placeholderTextColor={roman.placeholder}
-                  selectionColor={roman.gold}
+                  placeholderTextColor={light.textSecondary}
+                  selectionColor={light.text}
                   returnKeyType="done"
                   maxLength={200}
                   onSubmitEditing={() => void handleCreate()}
@@ -163,7 +161,7 @@ export default function ProgramsScreen() {
                   <Text
                     accessibilityRole="alert"
                     accessibilityLiveRegion="polite"
-                    style={[styles.error, font.medium]}
+                    style={styles.error}
                   >
                     {createError}
                   </Text>
@@ -181,11 +179,11 @@ export default function ProgramsScreen() {
                   onPress={() => void handleCreate()}
                 >
                   {creating ? (
-                    <ActivityIndicator color={roman.background} size="small" />
+                    <ActivityIndicator color={light.onPrimary} size="small" />
                   ) : (
                     <>
-                      <Ionicons name="add" size={18} color={roman.background} />
-                      <Text style={[styles.createButtonText, font.semibold]}>Create</Text>
+                      <Ionicons name="add" size={18} color={light.onPrimary} />
+                      <Text style={styles.createButtonText}>Create</Text>
                     </>
                   )}
                 </Pressable>
@@ -196,7 +194,7 @@ export default function ProgramsScreen() {
                   <Text
                     accessibilityRole="alert"
                     accessibilityLiveRegion="polite"
-                    style={[styles.loadErrorText, font.medium]}
+                    style={styles.loadErrorText}
                   >
                     {programs === null ? loadError : `Could not refresh: ${loadError}`}
                   </Text>
@@ -208,16 +206,16 @@ export default function ProgramsScreen() {
                     onPress={() => void refresh()}
                   >
                     {refreshing ? (
-                      <ActivityIndicator color={roman.goldLight} size="small" />
+                      <ActivityIndicator color={light.text} size="small" />
                     ) : (
-                      <Text style={[styles.retryText, font.semibold]}>Try again</Text>
+                      <Text style={styles.retryText}>Try again</Text>
                     )}
                   </Pressable>
                 </View>
               ) : null}
 
               {programs !== null && programs.length > 0 ? (
-                <Text accessibilityRole="header" style={[styles.sectionLabel, font.semibold]}>
+                <Text accessibilityRole="header" style={styles.sectionLabel}>
                   Your programs
                 </Text>
               ) : null}
@@ -225,16 +223,17 @@ export default function ProgramsScreen() {
           }
           ListEmptyComponent={
             programs !== null ? (
-              <Text style={[styles.empty, font.regular]}>
+              <Text style={styles.empty}>
                 No programs yet. Create one to plan your training days.
               </Text>
             ) : null
           }
-          renderItem={({ item }) => (
-            <ProgramCard
+          renderItem={({ item, index }) => (
+            <ProgramRow
               program={item}
+              first={index === 0}
+              last={index === (programs?.length ?? 0) - 1}
               onOpen={() => router.push(`/program/${item.id}`)}
-              font={font}
             />
           )}
         />
@@ -243,14 +242,17 @@ export default function ProgramsScreen() {
   );
 }
 
-function ProgramCard({
+/** One program in a single grouped list: the first row rounds the top, the last the bottom. */
+function ProgramRow({
   program,
+  first,
+  last,
   onOpen,
-  font,
 }: {
   program: ProgramSummary;
+  first: boolean;
+  last: boolean;
   onOpen: () => void;
-  font: ReturnType<typeof useRomanFonts>;
 }) {
   const active = program.is_active;
   return (
@@ -259,169 +261,111 @@ function ProgramCard({
       accessibilityLabel={active ? `${program.name}, active program` : program.name}
       accessibilityHint="Opens the program"
       style={({ pressed }) => [
-        styles.card,
-        active ? styles.cardActive : styles.cardIdle,
-        pressed && styles.cardPressed,
+        styles.row,
+        first && styles.rowFirst,
+        last && styles.rowLast,
+        !last && styles.rowDivider,
+        pressed && styles.rowPressed,
       ]}
       onPress={onOpen}
     >
-      <View style={styles.cardMain}>
-        {/* The label, not the colour alone, says which program is active. */}
+      <View style={styles.rowMain}>
+        {/* The word, not the dot alone, says which program is active. */}
         {active ? (
-          <View style={styles.activePill}>
+          <View style={styles.activeRow}>
             <View style={styles.activeDot} />
-            <Text style={[styles.activePillText, font.semibold]}>Active program</Text>
+            <Text style={styles.activeText}>Active program</Text>
           </View>
         ) : null}
-        <Text style={[active ? styles.cardTitleActive : styles.cardTitle, font.semibold]}>
+        <Text numberOfLines={2} style={styles.rowTitle}>
           {program.name}
         </Text>
       </View>
-      <View style={styles.chevron}>
-        <Ionicons
-          name="chevron-forward"
-          size={20}
-          color={active ? roman.gold : roman.textMuted}
-        />
-      </View>
+      <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: roman.background },
+  screen: { flex: 1, backgroundColor: light.background },
   list: { flex: 1 },
   content: { paddingHorizontal: 16, paddingBottom: 32 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  topBar: { backgroundColor: roman.background, paddingHorizontal: 16 },
+  topBar: { backgroundColor: light.background, paddingHorizontal: 16 },
   topBarRow: { minHeight: 56, flexDirection: "row", alignItems: "center" },
-  topBarTitle: {
-    flexShrink: 1,
-    color: roman.gold,
-    fontSize: 22,
-    fontWeight: "600",
-    letterSpacing: 2,
-    textTransform: "uppercase",
-  },
+  topBarTitle: { flexShrink: 1, color: light.text, fontSize: 28, fontWeight: "700" },
 
   createCard: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
     marginTop: 8,
     marginBottom: 24,
   },
-  createHeading: { flexDirection: "row", alignItems: "center", columnGap: 8, marginBottom: 12 },
-  createLabel: {
-    flexShrink: 1,
-    color: roman.textMuted,
-    fontSize: 12,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
+  createLabel: { color: light.text, fontSize: 17, fontWeight: "600", marginBottom: 12 },
   input: {
-    minHeight: 52,
-    backgroundColor: roman.background,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    color: roman.text,
+    minHeight: 48,
+    backgroundColor: light.background,
+    borderRadius: 10,
+    color: light.text,
     fontSize: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  error: { color: roman.danger, fontSize: 14, marginTop: 10 },
+  error: { color: light.danger, fontSize: 14, fontWeight: "500", marginTop: 10 },
   createButton: {
     minHeight: 52,
     flexDirection: "row",
     columnGap: 8,
     marginTop: 12,
-    backgroundColor: roman.gold,
-    borderRadius: 12,
+    backgroundColor: light.primary,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  createButtonPressed: { backgroundColor: roman.goldPressed },
+  createButtonPressed: { backgroundColor: light.primaryPressed },
   createButtonBusy: { opacity: 0.6 },
-  createButtonText: {
-    color: roman.background,
-    fontSize: 14,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  createButtonText: { color: light.onPrimary, fontSize: 17, fontWeight: "600" },
 
   loadError: {
-    backgroundColor: roman.surface,
-    borderColor: roman.danger,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,
     rowGap: 4,
   },
-  loadErrorText: { color: roman.danger, fontSize: 14 },
+  loadErrorText: { color: light.danger, fontSize: 14, fontWeight: "500", lineHeight: 20 },
   retryButton: {
     minHeight: MIN_TOUCH,
     alignSelf: "flex-start",
     justifyContent: "center",
     paddingRight: 12,
   },
-  retryText: { color: roman.goldLight, fontSize: 14 },
+  retryText: { color: light.text, fontSize: 15, fontWeight: "600" },
 
-  sectionLabel: {
-    color: roman.textMuted,
-    fontSize: 12,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    marginBottom: 12,
-  },
-  empty: { color: roman.textMuted, fontSize: 14, lineHeight: 20, textAlign: "center", marginTop: 8 },
+  sectionLabel: { color: light.textSecondary, fontSize: 13, marginBottom: 8, marginLeft: 4 },
+  empty: { color: light.textSecondary, fontSize: 14, lineHeight: 20, textAlign: "center", marginTop: 8 },
 
-  card: {
-    minHeight: 64,
+  row: {
+    minHeight: 60,
     flexDirection: "row",
     alignItems: "center",
     columnGap: 8,
-    borderWidth: 1,
-    borderLeftWidth: 4,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingLeft: 14,
-    paddingRight: 4,
-    marginBottom: 12,
+    backgroundColor: light.surface,
+    paddingVertical: 12,
+    paddingLeft: 16,
+    paddingRight: 14,
   },
-  cardActive: { backgroundColor: roman.surface, borderColor: roman.gold },
-  // Calmer than the active card: no gold, same shape, so the list stays aligned.
-  cardIdle: { backgroundColor: roman.surface, borderColor: roman.border },
-  cardPressed: { backgroundColor: roman.surfaceRaised },
-  cardMain: { flex: 1, rowGap: 8, alignItems: "flex-start" },
-  cardTitleActive: { color: roman.text, fontSize: 18, lineHeight: 24, flexShrink: 1 },
-  cardTitle: { color: roman.text, fontSize: 16, lineHeight: 22, flexShrink: 1 },
-  activePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 6,
-    backgroundColor: roman.goldTint,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: roman.gold },
-  activePillText: {
-    color: roman.gold,
-    fontSize: 11,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  chevron: {
-    width: MIN_TOUCH,
-    height: MIN_TOUCH,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  rowFirst: { borderTopLeftRadius: 12, borderTopRightRadius: 12 },
+  rowLast: { borderBottomLeftRadius: 12, borderBottomRightRadius: 12 },
+  rowDivider: { borderBottomColor: light.separator, borderBottomWidth: StyleSheet.hairlineWidth },
+  rowPressed: { backgroundColor: light.pressed },
+  rowMain: { flex: 1, minWidth: 0, rowGap: 4 },
+  rowTitle: { color: light.text, fontSize: 17, fontWeight: "600" },
+  activeRow: { flexDirection: "row", alignItems: "center", columnGap: 6 },
+  activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: light.positive },
+  activeText: { color: light.positive, fontSize: 13, fontWeight: "600" },
 });

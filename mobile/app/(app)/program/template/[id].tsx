@@ -23,7 +23,8 @@ import {
 
 import * as programsApi from "../../../../src/api/programs";
 import type { TemplateExerciseInput, WorkoutTemplate } from "../../../../src/api/programs";
-import { colors, radius, spacing } from "../../../../src/theme";
+import { FocusedDarkStatusBar } from "../../../../src/FocusedDarkStatusBar";
+import { light } from "../../../../src/lightTheme";
 import { setActiveWorkout } from "../../../../src/workout/activeWorkout";
 import { usePickedExercise } from "../../../../src/workout/usePickedExercise";
 
@@ -78,52 +79,67 @@ function ExerciseRow({
     <View style={styles.row}>
       <View style={styles.rowHeader}>
         <Text style={styles.rowTitle}>{draft.exerciseName}</Text>
-        <Pressable onPress={onRemove} hitSlop={8}>
-          <Ionicons name="trash-outline" size={18} color={colors.danger} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Remove ${draft.exerciseName}`}
+          onPress={onRemove}
+          hitSlop={4}
+          style={styles.removeButton}
+        >
+          <Ionicons name="trash-outline" size={20} color={light.danger} />
         </Pressable>
       </View>
 
+      {/* Wraps on a narrow screen or with larger text instead of squeezing. */}
       <View style={styles.rowFields}>
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>sets</Text>
+          <Text style={styles.fieldLabel}>Sets</Text>
           <TextInput
+            accessibilityLabel={`Sets for ${draft.exerciseName}`}
             style={styles.fieldInput}
             value={draft.sets}
             onChangeText={(value) => onChange({ ...draft, sets: value })}
             keyboardType="number-pad"
+            selectionColor={light.text}
           />
         </View>
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>reps min</Text>
+          <Text style={styles.fieldLabel}>Reps min</Text>
           <TextInput
+            accessibilityLabel={`Minimum reps for ${draft.exerciseName}`}
             style={styles.fieldInput}
             value={draft.repsMin}
             onChangeText={(value) => onChange({ ...draft, repsMin: value })}
             keyboardType="number-pad"
             placeholder="-"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={light.textSecondary}
+            selectionColor={light.text}
           />
         </View>
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>reps max</Text>
+          <Text style={styles.fieldLabel}>Reps max</Text>
           <TextInput
+            accessibilityLabel={`Maximum reps for ${draft.exerciseName}`}
             style={styles.fieldInput}
             value={draft.repsMax}
             onChangeText={(value) => onChange({ ...draft, repsMax: value })}
             keyboardType="number-pad"
             placeholder="-"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={light.textSecondary}
+            selectionColor={light.text}
           />
         </View>
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>RIR</Text>
           <TextInput
+            accessibilityLabel={`Target RIR for ${draft.exerciseName}`}
             style={styles.fieldInput}
             value={draft.rir}
             onChangeText={(value) => onChange({ ...draft, rir: value })}
             keyboardType="number-pad"
             placeholder="-"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={light.textSecondary}
+            selectionColor={light.text}
           />
         </View>
       </View>
@@ -261,7 +277,8 @@ export default function TemplateEditor() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator color={colors.accent} />
+        <FocusedDarkStatusBar />
+        <ActivityIndicator color={light.textSecondary} />
       </View>
     );
   }
@@ -269,22 +286,42 @@ export default function TemplateEditor() {
   if (!template) {
     return (
       <View style={styles.centered}>
+        <FocusedDarkStatusBar />
         <Text style={styles.error}>{error ?? "Template not found"}</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      // iOS: lifts the content above the keyboard and scrolls the focused field into view.
+      automaticallyAdjustKeyboardInsets
+    >
+      <FocusedDarkStatusBar />
+      {/* The native header stays (title + delete) but is light, like this screen. */}
       <Stack.Screen
         options={{
           title: template.name,
+          headerStyle: { backgroundColor: light.background },
+          headerTintColor: light.text,
+          headerTitleStyle: { color: light.text },
+          headerShadowVisible: false,
           headerRight: () => (
-            <Pressable onPress={handleDeleteTemplate} disabled={deleting} hitSlop={8}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete template"
+              onPress={handleDeleteTemplate}
+              disabled={deleting}
+              hitSlop={8}
+            >
               {deleting ? (
-                <ActivityIndicator size="small" color={colors.danger} />
+                <ActivityIndicator size="small" color={light.danger} />
               ) : (
-                <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                <Ionicons name="trash-outline" size={20} color={light.danger} />
               )}
             </Pressable>
           ),
@@ -292,15 +329,25 @@ export default function TemplateEditor() {
       />
 
       <TextInput
+        accessibilityLabel="Template name"
         style={styles.nameInput}
         value={draftName}
         onChangeText={setDraftName}
         onBlur={() => void handleSaveName()}
         returnKeyType="done"
         maxLength={200}
+        selectionColor={light.text}
       />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
+
+      <Text accessibilityRole="header" style={styles.sectionLabel}>
+        Exercises
+      </Text>
 
       {exercises.map((draft, index) => (
         <ExerciseRow
@@ -317,31 +364,41 @@ export default function TemplateEditor() {
         <Text style={styles.empty}>No exercises yet. Add one below.</Text>
       ) : null}
 
-      <Pressable style={styles.addExercise} onPress={openPicker}>
-        <Ionicons name="add" size={20} color={colors.accent} />
+      <Pressable
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.addExercise, pressed && styles.addExercisePressed]}
+        onPress={openPicker}
+      >
+        <Ionicons name="add" size={20} color={light.text} />
         <Text style={styles.addExerciseText}>Add exercise</Text>
       </Pressable>
 
       <View style={styles.actions}>
         <Pressable
+          accessibilityRole="button"
           style={[styles.save, styles.saveSecondary, (saving || starting) && styles.saveDisabled]}
           onPress={() => void handleSave()}
           disabled={saving || starting}
         >
           {saving ? (
-            <ActivityIndicator color={colors.accent} />
+            <ActivityIndicator color={light.text} />
           ) : (
             <Text style={styles.saveSecondaryText}>Save</Text>
           )}
         </Pressable>
 
         <Pressable
-          style={[styles.save, (saving || starting) && styles.saveDisabled]}
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.save,
+            pressed && styles.savePressed,
+            (saving || starting) && styles.saveDisabled,
+          ]}
           onPress={() => void handleStartWorkout()}
           disabled={saving || starting}
         >
           {starting ? (
-            <ActivityIndicator color={colors.accentText} />
+            <ActivityIndicator color={light.onPrimary} />
           ) : (
             <Text style={styles.saveText}>Start workout</Text>
           )}
@@ -352,82 +409,86 @@ export default function TemplateEditor() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: light.background },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
+    backgroundColor: light.background,
+    padding: 24,
   },
-  content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
+  content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 48 },
   nameInput: {
-    color: colors.text,
-    fontSize: 20,
+    color: light.text,
+    fontSize: 24,
     fontWeight: "700",
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.md,
+    paddingVertical: 8,
+    marginBottom: 12,
   },
-  error: { color: colors.danger, marginBottom: spacing.md },
-  empty: { color: colors.textMuted, marginBottom: spacing.md },
+  error: { color: light.danger, fontSize: 14, fontWeight: "500", lineHeight: 20, marginBottom: 12 },
+  sectionLabel: { color: light.textSecondary, fontSize: 13, fontWeight: "600", marginBottom: 8, marginLeft: 4 },
+  empty: { color: light.textSecondary, fontSize: 14, marginBottom: 12, marginLeft: 4 },
 
   row: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
   },
   rowHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: spacing.sm,
+    marginBottom: 10,
   },
-  rowTitle: { color: colors.text, fontSize: 15, fontWeight: "600", flex: 1, marginRight: spacing.sm },
-  rowFields: { flexDirection: "row", gap: spacing.sm },
-  field: { flex: 1 },
-  fieldLabel: { color: colors.textMuted, fontSize: 11, marginBottom: 2 },
+  rowTitle: { color: light.text, fontSize: 17, fontWeight: "600", flex: 1, marginRight: 8 },
+  removeButton: { width: 44, height: 44, marginRight: -8, alignItems: "center", justifyContent: "center" },
+  rowFields: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  field: { flexGrow: 1, flexBasis: 64, minWidth: 64 },
+  fieldLabel: { color: light.textSecondary, fontSize: 12, marginBottom: 4 },
   fieldInput: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
-    fontSize: 15,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    minHeight: 44,
+    backgroundColor: light.background,
+    borderRadius: 10,
+    color: light.text,
+    fontSize: 17,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+    paddingHorizontal: 8,
+    paddingVertical: 8,
     textAlign: "center",
   },
 
   addExercise: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    marginBottom: spacing.lg,
+    gap: 6,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: light.surface,
+    marginTop: 4,
+    marginBottom: 24,
   },
-  addExerciseText: { color: colors.accent, fontSize: 16, fontWeight: "600" },
+  addExercisePressed: { backgroundColor: light.pressed },
+  addExerciseText: { color: light.text, fontSize: 16, fontWeight: "600" },
 
-  actions: { flexDirection: "row", gap: spacing.sm },
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   save: {
-    flex: 1,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    flexGrow: 1,
+    flexBasis: 120,
+    minHeight: 52,
+    backgroundColor: light.primary,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     alignItems: "center",
+    justifyContent: "center",
   },
-  saveSecondary: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-  },
-  saveDisabled: { opacity: 0.7 },
-  saveText: { color: colors.accentText, fontSize: 17, fontWeight: "700" },
-  saveSecondaryText: { color: colors.accent, fontSize: 17, fontWeight: "700" },
+  savePressed: { backgroundColor: light.primaryPressed },
+  saveSecondary: { backgroundColor: light.surface },
+  saveDisabled: { opacity: 0.6 },
+  saveText: { color: light.onPrimary, fontSize: 17, fontWeight: "600" },
+  saveSecondaryText: { color: light.text, fontSize: 17, fontWeight: "600" },
 });
