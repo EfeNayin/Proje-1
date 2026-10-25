@@ -1,0 +1,60 @@
+# Isolated stack for the native UI smoke test (see mobile/README.md, "Native UI smoke test").
+#
+# Its own project name, database, Redis and backend: it never reads
+# backend/.env or the development compose project, and nothing here publishes a
+# database port. Secrets come from the run's compose.env, generated per run by
+# e2e/scripts/up.sh and kept outside the repository.
+name: bodytrack-e2e
+
+services:
+  db:
+    image: postgres:16
+    labels:
+      com.bodytrack.e2e.run: ${E2E_RUN_ID:?run id missing}
+    environment:
+      POSTGRES_USER: e2e
+      POSTGRES_PASSWORD: ${E2E_DB_PASSWORD:?}
+      POSTGRES_DB: bodytrack_e2e
+      # Same collation as the development database (see the root docker-compose.yml).
+      POSTGRES_INITDB_ARGS: "--locale=C.UTF-8"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U e2e -d bodytrack_e2e"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    labels:
+      com.bodytrack.e2e.run: ${E2E_RUN_ID:?}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ../../backend
+      target: base
+    labels:
+      com.bodytrack.e2e.run: ${E2E_RUN_ID:?}
+    # Every setting is given explicitly so nothing can fall back to a .env file
+    # that may have been copied into the image with the source.
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+asyncpg://e2e:${E2E_DB_PASSWORD}@db:5432/bodytrack_e2e
+      POSTGRES_USER: e2e
+      POSTGRES_PASSWORD: ${E2E_DB_PASSWORD}
+      POSTGRES_DB: bodytrack_e2e
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${E2E_JWT_SECRET:?}
+      NCBI_API_KEY: ""
+      NCBI_EMAIL: ""
+    ports:
+      - "127.0.0.1:${E2E_API_PORT:-8100}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

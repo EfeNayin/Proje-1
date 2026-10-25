@@ -1,0 +1,151 @@
+appId: host.exp.Exponent
+---
+- launchApp
+- openLink: ${METRO_URL}
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- extendedWaitUntil:
+    visible: "Find your strength."
+    timeout: 180000
+- takeScreenshot: 01-sign-in
+
+# Expo Go shows its developer-menu introduction once per install, on top of the app.
+- extendedWaitUntil:
+    visible: "Continue"
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      # The introduction opens the developer menu; close it to reach the app.
+      - extendedWaitUntil:
+          visible: "Reload"
+          timeout: 10000
+      - tapOn: "Close"
+      # The tools button Expo Go floats over the app sits on top of the header actions
+      # (it would take the tap meant for "Finish workout"). The introduction's copy of
+      # the menu closes on any tap, so reopen the menu and switch the button off there.
+      - tapOn: "Gear Shape, Filled"
+      - extendedWaitUntil:
+          visible: "Reload"
+          timeout: 10000
+      # The menu opens as a half-height sheet; the row has to be scrolled into view,
+      # otherwise the tap lands outside the sheet and dismisses it.
+      - scrollUntilVisible:
+          element: "Tools button"
+          timeout: 15000
+      # Index 1 is the switch itself; index 0 is the wider row element around it.
+      - tapOn:
+          text: "1"
+          rightOf: "Tools button"
+          index: 1
+      - tapOn: "Close"
+- takeScreenshot: 01a-after-intro
+
+# ── sign in ──
+- tapOn:
+    id: "login-email"
+- inputText: ${E2E_EMAIL}
+- tapOn:
+    id: "login-password"
+- inputText: ${E2E_PASSWORD}
+- takeScreenshot: 02-credentials-entered
+- tapOn: "Sign in"
+
+- extendedWaitUntil:
+    visible: "Start workout"
+    timeout: 30000
+- takeScreenshot: 03-training
+
+# ── start a workout ──
+- tapOn: "Start workout"
+- extendedWaitUntil:
+    visible: "How are you feeling today?"
+    timeout: 15000
+- takeScreenshot: 04-check-in
+- tapOn: "Skip"
+- extendedWaitUntil:
+    visible: "Add exercise"
+    timeout: 15000
+- takeScreenshot: 05-workout-empty
+
+# ── record a set ──
+- tapOn: "Add exercise"
+- extendedWaitUntil:
+    visible: "Search exercises"
+    timeout: 15000
+- takeScreenshot: 06-picker
+# The search field is focused automatically when the picker opens.
+- inputText: "Barbell Bench"
+- extendedWaitUntil:
+    visible: "Barbell Bench Press.*"
+    timeout: 15000
+# The row's accessible name also carries its "barbell · compound" subtitle.
+- tapOn: "Barbell Bench Press.*"
+- extendedWaitUntil:
+    visible: "Log set"
+    timeout: 15000
+- tapOn:
+    id: "set-weight-input"
+- inputText: "80"
+- tapOn:
+    id: "set-reps-input"
+- inputText: "8"
+# RIR is left blank on purpose.
+- takeScreenshot: 07-set-entered
+# The set is saved by whichever control the keyboard setup leaves reachable:
+# - software keyboard (simulator default without a hardware keyboard): the number pad
+#   covers "Log set", and its own "Done" key submits the Reps field, which logs the set;
+# - hardware keyboard: nothing covers "Log set", so tap it.
+# Exactly one set must result either way (checked below), so a double save would fail.
+- runFlow:
+    when:
+      visible: "Dictate"
+    commands:
+      - tapOn: "Done"
+      - extendedWaitUntil:
+          visible: "Set 1, 80.* for 8 reps.*"
+          timeout: 15000
+- runFlow:
+    when:
+      visible: "Log set"
+      notVisible: "Set 1, 80.* for 8 reps.*"
+    commands:
+      - tapOn: "Log set"
+- extendedWaitUntil:
+    visible: "Set 1, 80.* for 8 reps.*"
+    timeout: 15000
+- assertVisible: "1 working sets"
+- takeScreenshot: 08-set-recorded
+
+# ── finish through the confirmation ──
+- tapOn: "Finish workout"
+# The alert title ends in a question mark; the header button's name does not.
+- extendedWaitUntil:
+    visible: "Finish workout\\?"
+    timeout: 10000
+- takeScreenshot: 09-finish-confirmation
+- tapOn: "Finish"
+
+# ── reopen the completed workout from history ──
+- extendedWaitUntil:
+    visible: "Recent workouts"
+    timeout: 20000
+- extendedWaitUntil:
+    visible: ".*, 1 sets"
+    timeout: 20000
+- takeScreenshot: 10-history
+- tapOn: ".*, 1 sets"
+# The finished workout is read-only: the set is shown as table cells, not as an editable row.
+- extendedWaitUntil:
+    visible: "Edit workout"
+    timeout: 20000
+- assertVisible: "Barbell Bench Press"
+- assertVisible: "80 kg"
+- assertVisible: "× 8"
+- takeScreenshot: 11-completed-workout
