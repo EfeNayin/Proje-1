@@ -25,7 +25,7 @@ import type { MuscleGroupSummary } from "../../../src/api/exercises";
 import * as programsApi from "../../../src/api/programs";
 import * as readinessApi from "../../../src/api/readiness";
 import * as workoutsApi from "../../../src/api/workouts";
-import { colors, radius, spacing } from "../../../src/theme";
+import { light } from "../../../src/lightTheme";
 import { setActiveWorkout } from "../../../src/workout/activeWorkout";
 
 function RatingRow({
@@ -44,11 +44,13 @@ function RatingRow({
         {[1, 2, 3, 4, 5].map((n) => (
           <Pressable
             key={n}
+            accessibilityRole="button"
+            accessibilityLabel={`${label}, ${n} of 5`}
+            accessibilityState={{ selected: value === n }}
             style={[styles.ratingDot, value === n && styles.ratingDotActive]}
             // Tapping the already-selected value clears it: every field here
             // is optional, so there must be a way back to "unanswered".
             onPress={() => onChange(value === n ? null : n)}
-            hitSlop={4}
           >
             <Text style={[styles.ratingDotText, value === n && styles.ratingDotTextActive]}>
               {n}
@@ -74,14 +76,19 @@ function SorenessSection({
 
   return (
     <View style={styles.section}>
-      <Pressable style={styles.sectionHeader} onPress={() => setExpanded((value) => !value)}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        style={styles.sectionHeader}
+        onPress={() => setExpanded((value) => !value)}
+      >
         <Text style={styles.sectionTitle}>
           Soreness{answeredCount > 0 ? ` (${answeredCount})` : ""}
         </Text>
         <Ionicons
           name={expanded ? "chevron-up" : "chevron-down"}
           size={18}
-          color={colors.textMuted}
+          color={light.textSecondary}
         />
       </Pressable>
 
@@ -185,21 +192,31 @@ export default function ReadinessCheckin() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>How are you feeling today?</Text>
-        <Pressable onPress={() => void handleSkip()} disabled={submitting} hitSlop={8}>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.skipButton}
+          onPress={() => void handleSkip()}
+          disabled={submitting}
+        >
           <Text style={styles.skip}>Skip</Text>
         </Pressable>
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Sleep (hours)</Text>
         <TextInput
           style={styles.sleepInput}
+          accessibilityLabel="Sleep in hours"
           value={sleepHours}
           onChangeText={setSleepHours}
           placeholder="7.5"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={light.textSecondary}
           keyboardType="decimal-pad"
           returnKeyType="done"
         />
@@ -216,12 +233,18 @@ export default function ReadinessCheckin() {
       ) : null}
 
       <Pressable
-        style={[styles.submit, submitting && styles.submitDisabled]}
+        accessibilityRole="button"
+        accessibilityState={{ busy: submitting, disabled: submitting }}
+        style={({ pressed }) => [
+          styles.submit,
+          pressed && styles.submitPressed,
+          submitting && styles.submitDisabled,
+        ]}
         onPress={() => void handleSubmit()}
         disabled={submitting}
       >
         {submitting ? (
-          <ActivityIndicator color={colors.accentText} />
+          <ActivityIndicator color={light.onPrimary} />
         ) : (
           <Text style={styles.submitText}>Continue to workout</Text>
         )}
@@ -231,73 +254,75 @@ export default function ReadinessCheckin() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: spacing.xl },
+  screen: { flex: 1, backgroundColor: light.background },
+  content: { padding: 16, paddingBottom: 32 },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: spacing.lg,
+    marginBottom: 24,
   },
-  title: { color: colors.text, fontSize: 20, fontWeight: "700", flex: 1, marginRight: spacing.md },
-  skip: { color: colors.textMuted, fontSize: 16, fontWeight: "600" },
-  error: { color: colors.danger, marginBottom: spacing.md },
+  title: { color: light.text, fontSize: 22, fontWeight: "700", lineHeight: 28, flex: 1, marginRight: 16 },
+  skipButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 8 },
+  skip: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
+  error: { color: light.danger, fontSize: 14, lineHeight: 20, marginBottom: 16 },
 
-  field: { marginBottom: spacing.lg },
-  fieldLabel: { color: colors.textMuted, fontSize: 13, marginBottom: spacing.xs },
+  field: { marginBottom: 24 },
+  fieldLabel: { color: light.textSecondary, fontSize: 13, fontWeight: "600", marginBottom: 6 },
   sleepInput: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    minHeight: 52,
+    backgroundColor: light.surface,
+    borderColor: light.separator,
     borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
-    fontSize: 18,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    borderRadius: 12,
+    color: light.text,
+    fontSize: 17,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
 
-  ratingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: spacing.lg,
-  },
-  ratingLabel: { color: colors.text, fontSize: 15, flex: 1 },
-  ratingOptions: { flexDirection: "row", gap: spacing.xs },
+  // The label sits above its five choices so long muscle names and larger
+  // text wrap instead of squeezing the buttons.
+  ratingRow: { marginBottom: 20 },
+  ratingLabel: { color: light.text, fontSize: 15, lineHeight: 20, marginBottom: 8 },
+  ratingOptions: { flexDirection: "row", gap: 8 },
   ratingDot: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderColor: colors.border,
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 10,
+    backgroundColor: light.surface,
+    borderColor: light.separator,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  ratingDotActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  ratingDotText: { color: colors.textMuted, fontSize: 14, fontWeight: "600" },
-  ratingDotTextActive: { color: colors.accentText },
+  ratingDotActive: { backgroundColor: light.primary, borderColor: light.primary },
+  ratingDotText: { color: light.text, fontSize: 15, fontWeight: "600" },
+  ratingDotTextActive: { color: light.onPrimary },
 
   section: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
   },
   sectionHeader: {
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  sectionTitle: { color: colors.text, fontSize: 15, fontWeight: "600" },
+  sectionTitle: { color: light.text, fontSize: 16, fontWeight: "600" },
 
   submit: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    minHeight: 52,
+    backgroundColor: light.primary,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     alignItems: "center",
+    justifyContent: "center",
   },
-  submitDisabled: { opacity: 0.7 },
-  submitText: { color: colors.accentText, fontSize: 17, fontWeight: "700" },
+  submitPressed: { backgroundColor: light.primaryPressed },
+  submitDisabled: { opacity: 0.6 },
+  submitText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
 });

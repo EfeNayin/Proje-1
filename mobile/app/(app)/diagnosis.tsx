@@ -20,7 +20,7 @@ import * as analyticsApi from "../../src/api/analytics";
 import type { Finding } from "../../src/api/analytics";
 import { createDiagnosisLoader, initialDiagnosisState } from "../../src/diagnosis/loader";
 import { describeFinding, describeTrainingCoverage } from "../../src/diagnosis/messages";
-import { colors, findingSeverityColors, radius, spacing } from "../../src/theme";
+import { light, lightStatus } from "../../src/lightTheme";
 
 const PERIODS = [4, 8, 12] as const;
 
@@ -35,16 +35,38 @@ function findingKey(finding: Finding): string {
   return discriminator ? `${finding.code}-${String(discriminator)}` : finding.code;
 }
 
+/**
+ * Severity shown as an icon and a spoken word as well as a colour, so it never
+ * rests on colour alone. The colours are the light-surface status tones the
+ * Volume screen uses (the same "above MRV / below MEV / optimal / no reference").
+ */
+const SEVERITY: Record<
+  Finding["severity"],
+  { color: string; icon: React.ComponentProps<typeof Ionicons>["name"]; label: string }
+> = {
+  critical: { color: lightStatus.above_mrv.text, icon: "alert-circle", label: "Critical" },
+  warning: { color: lightStatus.below_mev.text, icon: "warning-outline", label: "Warning" },
+  good: { color: lightStatus.optimal.text, icon: "checkmark-circle-outline", label: "Good" },
+  info: { color: lightStatus.no_reference.text, icon: "information-circle-outline", label: "Information" },
+};
+
 function FindingCard({ finding }: { finding: Finding }) {
   const copy = describeFinding(finding);
-  const color = findingSeverityColors[finding.severity];
+  const severity = SEVERITY[finding.severity];
 
   return (
-    <View style={[styles.card, { borderLeftColor: color }]}>
-      <Text style={[styles.cardTitle, { color }]}>{copy.title}</Text>
+    <View
+      accessible
+      accessibilityLabel={`${severity.label}. ${copy.title}. ${copy.description} ${copy.action}`}
+      style={styles.card}
+    >
+      <View style={styles.cardHeader}>
+        <Ionicons name={severity.icon} size={20} color={severity.color} />
+        <Text style={[styles.cardTitle, { color: severity.color }]}>{copy.title}</Text>
+      </View>
       <Text style={styles.cardDescription}>{copy.description}</Text>
       <View style={styles.cardAction}>
-        <Ionicons name="bulb-outline" size={14} color={colors.textMuted} />
+        <Ionicons name="bulb-outline" size={16} color={light.textSecondary} />
         <Text style={styles.cardActionText}>{copy.action}</Text>
       </View>
     </View>
@@ -76,13 +98,20 @@ export default function DiagnosisScreen() {
       style={styles.screen}
       contentContainerStyle={styles.content}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={light.textSecondary}
+        />
       }
     >
       <View style={styles.periodRow}>
         {PERIODS.map((period) => (
           <Pressable
             key={period}
+            accessibilityRole="button"
+            accessibilityLabel={`${period} weeks`}
+            accessibilityState={{ selected: weeks === period }}
             style={[styles.chip, weeks === period && styles.chipActive]}
             onPress={() => {
               if (period === weeks) return;
@@ -99,10 +128,10 @@ export default function DiagnosisScreen() {
 
       {!loading && error && (
         <View style={styles.centered}>
-          <Text style={styles.error}>{error}</Text>
+          <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
           {result && <Text style={styles.emptyText}>Showing the previous result for this period.</Text>}
-          <Pressable accessibilityRole="button" onPress={handleRefresh}>
-            <Text style={{ color: colors.accent }}>Try again</Text>
+          <Pressable accessibilityRole="button" style={styles.retry} onPress={handleRefresh}>
+            <Text style={styles.retryText}>Try again</Text>
           </Pressable>
         </View>
       )}
@@ -120,11 +149,11 @@ export default function DiagnosisScreen() {
 
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator color={colors.accent} />
+          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading" />
         </View>
       ) : error && !result ? null : !result?.has_enough_data ? (
         <View style={styles.centered}>
-          <Ionicons name="hourglass-outline" size={28} color={colors.textMuted} />
+          <Ionicons name="hourglass-outline" size={28} color={light.textSecondary} />
           <Text style={styles.emptyTitle}>Not enough training records for this period</Text>
           <Text style={styles.emptyText}>
             {result?.training_coverage
@@ -134,7 +163,7 @@ export default function DiagnosisScreen() {
         </View>
       ) : result.findings.length === 0 ? (
         <View style={styles.centered}>
-          <Ionicons name="checkmark-circle-outline" size={28} color={colors.accent} />
+          <Ionicons name="checkmark-circle-outline" size={28} color={light.positive} />
           <Text style={styles.emptyTitle}>Nothing stands out</Text>
           <Text style={styles.emptyText}>
             No findings were generated from the available records for this period.
@@ -153,46 +182,51 @@ export default function DiagnosisScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: spacing.xl },
-  centered: { alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.sm },
-  error: { color: colors.danger, textAlign: "center", padding: spacing.lg },
+  screen: { flex: 1, backgroundColor: light.background },
+  content: { padding: 16, paddingBottom: 32 },
+  centered: { alignItems: "center", justifyContent: "center", padding: 32, gap: 8 },
+  error: { color: light.danger, fontSize: 15, lineHeight: 21, textAlign: "center", padding: 16 },
+  retry: { minHeight: 44, justifyContent: "center", paddingHorizontal: 16 },
+  retryText: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
 
-  periodRow: { flexDirection: "row", gap: spacing.xs, marginBottom: spacing.lg },
+  // Segmented period choice: the selected one is filled, the others outlined;
+  // the weeks are in the text, so selection never relies on colour alone.
+  periodRow: { flexDirection: "row", gap: 8, marginBottom: 16 },
   chip: {
     flex: 1,
+    minHeight: 44,
     alignItems: "center",
-    borderColor: colors.border,
+    justifyContent: "center",
+    backgroundColor: light.surface,
+    borderColor: light.separator,
     borderWidth: 1,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.sm,
+    borderRadius: 10,
+    paddingHorizontal: 4,
   },
-  chipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipText: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
-  chipTextActive: { color: colors.accentText },
+  chipActive: { backgroundColor: light.primary, borderColor: light.primary },
+  chipText: { color: light.text, fontSize: 14, fontWeight: "600" },
+  chipTextActive: { color: light.onPrimary },
 
-  emptyTitle: { color: colors.text, fontSize: 15, fontWeight: "700", marginTop: spacing.xs },
-  emptyText: { color: colors.textMuted, fontSize: 13, textAlign: "center" },
+  emptyTitle: { color: light.text, fontSize: 17, fontWeight: "600", lineHeight: 22, marginTop: 4, textAlign: "center" },
+  emptyText: { color: light.textSecondary, fontSize: 15, lineHeight: 21, textAlign: "center" },
 
   card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderLeftWidth: 3,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
   },
-  cardTitle: { fontSize: 15, fontWeight: "700" },
-  cardDescription: { color: colors.textMuted, fontSize: 13, marginTop: spacing.xs, lineHeight: 18 },
+  cardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  cardTitle: { flex: 1, fontSize: 16, fontWeight: "600", lineHeight: 22 },
+  cardDescription: { color: light.textSecondary, fontSize: 14, lineHeight: 20, marginTop: 8 },
   cardAction: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopColor: colors.border,
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopColor: light.separator,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  cardActionText: { flex: 1, color: colors.textMuted, fontSize: 12, lineHeight: 16 },
+  cardActionText: { flex: 1, color: light.text, fontSize: 14, lineHeight: 20 },
 });
