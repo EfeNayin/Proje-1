@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
+import { light } from "../../../src/lightTheme";
 import { roman } from "../../../src/romanTheme";
 import { colors } from "../../../src/theme";
 
@@ -28,6 +29,16 @@ export default function TabsLayout() {
           // The screen draws its own title bar; a native header as well would
           // show "Training" twice.
           headerShown: false,
+          // Training is the only light screen so far. The navigator applies the
+          // focused screen's tab bar options, so these affect the bar only while
+          // Training is focused; the other three tabs keep the dark bar above.
+          sceneStyle: { backgroundColor: light.background },
+          tabBarStyle: {
+            backgroundColor: light.surface,
+            borderTopColor: light.separator,
+          },
+          tabBarActiveTintColor: light.text,
+          tabBarInactiveTintColor: light.textSecondary,
           tabBarIcon: ({ color, size }) => <Ionicons name="barbell" size={size} color={color} />,
         }}
       />

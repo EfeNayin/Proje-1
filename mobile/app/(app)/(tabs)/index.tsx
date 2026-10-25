@@ -3,9 +3,8 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
@@ -15,7 +14,6 @@ import {
   SectionList,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,14 +23,11 @@ import type { ProgramDetail } from "../../../src/api/programs";
 import * as readinessApi from "../../../src/api/readiness";
 import * as workoutsApi from "../../../src/api/workouts";
 import type { WorkoutSummary } from "../../../src/api/workouts";
-import { roman, useRomanFonts } from "../../../src/romanTheme";
+import { light } from "../../../src/lightTheme";
 import { clearActiveWorkout, getActiveWorkout, setActiveWorkout } from "../../../src/workout/activeWorkout";
 import { isReadinessCheckinEnabled } from "../../../src/workout/readinessPreference";
 import { resolveActiveWorkoutId } from "../../../src/workout/resolveActiveWorkout";
 import { createWorkoutHistory } from "../../../src/workout/workoutHistory";
-
-// Same bundled photo the sign-in screen uses; shown here darkened and faded.
-const heroImage = require("../../../assets/images/login/hercules-bronze.jpg");
 
 const MIN_TOUCH = 44;
 
@@ -129,8 +124,9 @@ function groupByDay(workouts: WorkoutSummary[]): HistorySection[] {
 export default function TrainingHome() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
-  const font = useRomanFonts();
+  // Only while this tab is focused: the app-wide status bar is light-on-dark, which
+  // would be unreadable here, and the other tabs are still dark.
+  const focused = useIsFocused();
   const [history] = useState(() => createWorkoutHistory(workoutsApi.listWorkouts));
   const { items: workouts, loading, loadingMore, hasMore, error } = useSyncExternalStore(
     history.subscribe, history.getSnapshot,
@@ -239,7 +235,7 @@ export default function TrainingHome() {
   const topBar = (
     <View style={[styles.topBar, { paddingTop: insets.top }]}>
       <View style={styles.topBarRow}>
-        <Text accessibilityRole="header" style={[styles.topBarTitle, font.title]}>
+        <Text accessibilityRole="header" style={styles.topBarTitle}>
           Training
         </Text>
         <Pressable
@@ -247,35 +243,33 @@ export default function TrainingHome() {
           accessibilityLabel="Open profile"
           hitSlop={4}
           onPress={() => go(() => router.navigate("/profile"))}
-          style={styles.profileButton}
+          style={({ pressed }) => [styles.profileButton, pressed && styles.profileButtonPressed]}
         >
-          <View style={styles.profileDot}>
-            <Ionicons name="person" size={18} color={roman.background} />
-          </View>
+          <Ionicons name="person-outline" size={20} color={light.text} />
         </Pressable>
       </View>
     </View>
   );
 
+  const statusBar = focused ? <StatusBar style="dark" /> : null;
+
   if (loading && workouts.length === 0) {
     return (
       <View style={styles.screen}>
+        {statusBar}
         {topBar}
         <View style={styles.centered}>
-          <ActivityIndicator color={roman.gold} />
+          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading workouts" />
         </View>
       </View>
     );
   }
 
   const sections = groupByDay(workouts);
-  // The statue sits behind the first screenful and is gone by the time the
-  // history starts; the start button clears the face on short screens too.
-  const heroHeight = 380;
-  const heroInset = Math.min(150, Math.round(windowHeight * 0.17));
 
   return (
     <View style={styles.screen}>
+      {statusBar}
       {topBar}
       <SectionList
         style={styles.list}
@@ -286,129 +280,111 @@ export default function TrainingHome() {
         onEndReached={() => { void history.loadMore(); }}
         onEndReachedThreshold={0.4}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={handleRefresh} tintColor={roman.gold} />
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={handleRefresh}
+            tintColor={light.textSecondary}
+          />
         }
         ListHeaderComponent={
           <View>
-            {/* Decorative: no touches, hidden from screen readers. */}
-            <View
-              pointerEvents="none"
-              accessible={false}
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-              style={[styles.hero, { height: heroHeight }]}
-            >
-              <Image
-                source={heroImage}
-                style={[StyleSheet.absoluteFill, styles.heroImage]}
-                contentFit="cover"
-                contentPosition="top"
-                accessible={false}
-              />
-              <LinearGradient
-                colors={[roman.backgroundClear, "rgba(9, 9, 11, 0.7)", roman.background]}
-                locations={[0.15, 0.65, 1]}
-                style={StyleSheet.absoluteFill}
-              />
-            </View>
-
-            <View style={{ paddingTop: heroInset }}>
-              {activeId ? (
-                <View>
-                  <View style={styles.progressRow}>
-                    <View style={styles.progressDot} />
-                    <Text style={[styles.progressLabel, font.semibold]}>Workout in progress</Text>
-                  </View>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Resume workout"
-                    style={({ pressed }) => [styles.primary, pressed && styles.primaryPressed]}
-                    onPress={() => go(() => router.push(`/workout/${activeId}`))}
-                  >
-                    <Ionicons name="play" size={18} color={roman.background} />
-                    <Text style={[styles.primaryText, font.semibold]}>Resume workout</Text>
-                  </Pressable>
+            {activeId ? (
+              <View>
+                <View style={styles.progressRow}>
+                  <View style={styles.progressDot} />
+                  <Text style={styles.progressLabel}>Workout in progress</Text>
                 </View>
-              ) : (
-                <>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Resume workout"
+                  style={({ pressed }) => [styles.primary, pressed && styles.primaryPressed]}
+                  onPress={() => go(() => router.push(`/workout/${activeId}`))}
+                >
+                  <Ionicons name="play" size={16} color={light.onPrimary} />
+                  <Text style={styles.primaryText}>Resume workout</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Start workout"
+                  accessibilityState={{ busy: starting, disabled: starting }}
+                  style={({ pressed }) => [
+                    styles.primary,
+                    pressed && styles.primaryPressed,
+                    starting && styles.primaryBusy,
+                  ]}
+                  onPress={() => void handleStart()}
+                  disabled={starting}
+                >
+                  {starting ? (
+                    <ActivityIndicator color={light.onPrimary} />
+                  ) : (
+                    <Text style={styles.primaryText}>Start workout</Text>
+                  )}
+                </Pressable>
+
+                {activeProgram ? (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Start workout"
-                    accessibilityState={{ busy: starting, disabled: starting }}
+                    accessibilityLabel={`Start from a template in ${activeProgram.name}`}
+                    accessibilityHint="Choose a template to start from"
+                    accessibilityState={{ disabled: starting }}
                     style={({ pressed }) => [
-                      styles.primary,
-                      pressed && styles.primaryPressed,
+                      styles.programRow,
+                      pressed && styles.rowPressed,
                       starting && styles.primaryBusy,
                     ]}
-                    onPress={() => void handleStart()}
+                    onPress={() => setSheetVisible(true)}
                     disabled={starting}
                   >
-                    {starting ? (
-                      <ActivityIndicator color={roman.background} />
-                    ) : (
-                      <>
-                        <Ionicons name="add-circle-outline" size={20} color={roman.background} />
-                        <Text style={[styles.primaryText, font.semibold]}>Start workout</Text>
-                      </>
-                    )}
+                    <View style={styles.programText}>
+                      <Text style={styles.caption}>Start from a template</Text>
+                      <Text numberOfLines={2} style={styles.programName}>
+                        {activeProgram.name}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
                   </Pressable>
+                ) : null}
+              </>
+            )}
 
-                  {activeProgram ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityHint="Choose a template to start from"
-                      style={styles.programChip}
-                      onPress={() => setSheetVisible(true)}
-                      disabled={starting}
-                    >
-                      <Ionicons name="clipboard-outline" size={16} color={roman.gold} />
-                      <Text style={[styles.programChipText, font.medium]}>{activeProgram.name}</Text>
-                      <Ionicons name="chevron-down" size={16} color={roman.textMuted} />
-                    </Pressable>
-                  ) : null}
-                </>
-              )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Research, explore training research"
+              style={({ pressed }) => [styles.researchRow, pressed && styles.rowPressed]}
+              onPress={() => go(() => router.push("/research"))}
+            >
+              <View style={styles.researchText}>
+                <Text style={styles.researchTitle}>Research</Text>
+                <Text style={styles.caption}>Explore training research</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
+            </Pressable>
 
-              <Pressable
-                accessibilityRole="button"
-                style={({ pressed }) => [styles.researchCard, pressed && styles.cardPressed]}
-                onPress={() => go(() => router.push("/research"))}
-              >
-                <View style={styles.researchIcon}>
-                  <Ionicons name="book-outline" size={22} color={roman.gold} />
-                </View>
-                <View style={styles.researchText}>
-                  <Text style={[styles.researchTitle, font.title]}>Research</Text>
-                  <Text style={[styles.cardMeta, font.regular]}>Explore training research</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={roman.textMuted} />
-              </Pressable>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>
+              Recent workouts
+            </Text>
 
-              <Text accessibilityRole="header" style={[styles.sectionTitle, font.title]}>
-                Recent workouts
-              </Text>
-
-              {error === "refresh" ? (
-                <View style={styles.errorBanner}>
-                  <Text accessibilityRole="alert" style={[styles.errorText, font.medium]}>
-                    Could not refresh your history.
-                  </Text>
-                  <Pressable accessibilityRole="button" style={styles.retry} onPress={handleRefresh}>
-                    <Text style={[styles.retryText, font.semibold]}>Try again</Text>
-                  </Pressable>
-                </View>
-              ) : null}
-            </View>
+            {error === "refresh" ? (
+              <View style={styles.errorBanner}>
+                <Text accessibilityRole="alert" style={styles.errorText}>
+                  Could not refresh your history.
+                </Text>
+                <Pressable accessibilityRole="button" style={styles.retry} onPress={handleRefresh}>
+                  <Text style={styles.retryText}>Try again</Text>
+                </Pressable>
+              </View>
+            ) : null}
           </View>
         }
         ListEmptyComponent={
           !error ? (
-            <View style={styles.emptyCard}>
-              <Ionicons name="barbell-outline" size={26} color={roman.gold} />
-              <Text style={[styles.emptyTitle, font.title]}>No workouts yet</Text>
-              <Text style={[styles.emptyText, font.regular]}>
-                No workouts yet. Start one and it will show up here.
-              </Text>
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>No workouts yet</Text>
+              <Text style={styles.emptyText}>Start one and it will show up here.</Text>
             </View>
           ) : null
         }
@@ -416,52 +392,62 @@ export default function TrainingHome() {
           <View style={styles.historyFooter}>
             {error === "more" ? (
               <>
-                <Text style={[styles.errorText, font.medium]}>Could not load older workouts.</Text>
+                <Text style={styles.errorText}>Could not load older workouts.</Text>
                 <Pressable accessibilityRole="button" style={styles.retry}
                   onPress={() => { void history.loadMore(true); }}>
-                  <Text style={[styles.retryText, font.semibold]}>Try again</Text>
+                  <Text style={styles.retryText}>Try again</Text>
                 </Pressable>
               </>
             ) : loadingMore ? (
-              <ActivityIndicator color={roman.gold} />
+              <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading older workouts" />
             ) : !error && !loading && hasMore ? (
               <Pressable accessibilityRole="button" style={styles.retry}
                 onPress={() => { void history.loadMore(); }}>
-                <Text style={[styles.retryText, font.semibold]}>Load older workouts</Text>
+                <Text style={styles.retryText}>Load older workouts</Text>
               </Pressable>
             ) : !error && !loading && workouts.length > 0 ? (
-              <Text style={[styles.cardMeta, font.regular]}>All workouts loaded</Text>
+              <Text style={styles.caption}>All workouts loaded</Text>
             ) : null}
           </View>
         }
         renderSectionHeader={({ section }) => (
-          <Text style={[styles.dayHeader, font.semibold]}>{section.title}</Text>
+          <Text style={styles.dayHeader}>{section.title}</Text>
         )}
-        renderItem={({ item }) => {
+        renderItem={({ item, index, section }) => {
           const meta = cardMetaFor(item);
           const title = item.title ?? "Workout";
+          const first = index === 0;
+          const last = index === section.data.length - 1;
           return (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`${title}, ${meta.text}, ${item.total_sets} sets`}
-              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+              style={({ pressed }) => [
+                styles.workoutRow,
+                first && styles.rowFirst,
+                last ? styles.rowLast : styles.rowDivider,
+                pressed && styles.rowPressed,
+              ]}
               onPress={() => go(() => router.push(`/workout/${item.id}`))}
             >
-              <View style={styles.cardMain}>
-                <Text style={[styles.cardTitle, font.title]}>{title}</Text>
-                <View style={styles.cardMetaRow}>
-                  <Ionicons name={meta.icon} size={15} color={roman.gold} />
-                  <Text style={[styles.cardMetaText, font.regular]}>{meta.text}</Text>
+              <View style={styles.workoutMain}>
+                <Text numberOfLines={2} style={styles.workoutTitle}>
+                  {title}
+                </Text>
+                <View style={styles.workoutMetaRow}>
+                  <Ionicons name={meta.icon} size={14} color={light.textSecondary} />
+                  <Text style={styles.workoutMetaText}>{meta.text}</Text>
                 </View>
               </View>
-              <View style={styles.cardStats}>
+              <View style={styles.workoutStats}>
                 {/* Sets as the API counts them, not tonnage: tonnage is
                     dominated by whichever muscles happen to move the most
                     weight, so a leg day always dwarfs an arm day regardless
                     of how good either was. */}
-                <Text style={[styles.cardSets, font.semibold]}>{item.total_sets}</Text>
-                <Text style={[styles.cardMeta, font.regular]}>sets</Text>
+                <Text style={styles.workoutSets}>{item.total_sets}</Text>
+                <Text style={styles.caption}>sets</Text>
               </View>
+              <Ionicons name="chevron-forward" size={16} color={light.textSecondary} />
             </Pressable>
           );
         }}
@@ -482,7 +468,10 @@ export default function TrainingHome() {
             style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}
             onPress={() => {}}
           >
-            <Text style={[styles.sheetTitle, font.semibold]}>{activeProgram?.name}</Text>
+            <Text style={styles.caption}>Start from a template</Text>
+            <Text accessibilityRole="header" style={styles.sheetTitle}>
+              {activeProgram?.name}
+            </Text>
             {activeProgram?.templates.map((template) => (
               <Pressable
                 key={template.id}
@@ -493,12 +482,12 @@ export default function TrainingHome() {
                   void handleStart(template.id);
                 }}
               >
-                <Text style={[styles.sheetRowText, font.semibold]}>{template.name}</Text>
-                <Ionicons name="chevron-forward" size={18} color={roman.textMuted} />
+                <Text style={styles.sheetRowText}>{template.name}</Text>
+                <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
               </Pressable>
             ))}
             {activeProgram?.templates.length === 0 ? (
-              <Text style={[styles.sheetEmpty, font.regular]}>No templates in this program yet.</Text>
+              <Text style={styles.sheetEmpty}>No templates in this program yet.</Text>
             ) : null}
           </Pressable>
         </Pressable>
@@ -508,44 +497,27 @@ export default function TrainingHome() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: roman.background },
+  screen: { flex: 1, backgroundColor: light.background },
   list: { flex: 1 },
   content: { paddingHorizontal: 16, paddingBottom: 32 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  topBar: { backgroundColor: roman.background, paddingHorizontal: 16 },
+  topBar: { backgroundColor: light.background, paddingHorizontal: 16 },
   topBarRow: {
     minHeight: 56,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  topBarTitle: {
-    flexShrink: 1,
-    color: roman.gold,
-    fontSize: 22,
-    fontWeight: "600",
-    letterSpacing: 2,
-    textTransform: "uppercase",
-  },
+  topBarTitle: { flexShrink: 1, color: light.text, fontSize: 28, fontWeight: "700" },
   profileButton: {
     width: MIN_TOUCH,
     height: MIN_TOUCH,
+    borderRadius: MIN_TOUCH / 2,
     alignItems: "center",
     justifyContent: "center",
   },
-  profileDot: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: roman.gold,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  // Full-bleed behind the header: the list pads its content by 16 each side.
-  hero: { position: "absolute", top: 0, left: -16, right: -16 },
-  heroImage: { opacity: 0.5 },
+  profileButtonPressed: { backgroundColor: light.pressed },
 
   primary: {
     minHeight: 52,
@@ -553,171 +525,110 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: roman.gold,
-    borderRadius: 12,
+    backgroundColor: light.primary,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
-  primaryPressed: { backgroundColor: roman.goldPressed },
+  primaryPressed: { backgroundColor: light.primaryPressed },
   primaryBusy: { opacity: 0.6 },
-  primaryText: {
-    flexShrink: 1,
-    color: roman.background,
-    fontSize: 14,
-    fontWeight: "600",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  primaryText: { flexShrink: 1, color: light.onPrimary, fontSize: 17, fontWeight: "600" },
   progressRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
-  progressDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: roman.gold },
-  progressLabel: {
-    flexShrink: 1,
-    color: roman.goldLight,
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  progressDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: light.positive },
+  progressLabel: { flexShrink: 1, color: light.positive, fontSize: 13, fontWeight: "600" },
 
-  programChip: {
-    minHeight: MIN_TOUCH,
+  programRow: {
+    minHeight: 56,
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start",
-    maxWidth: "100%",
-    gap: 8,
+    gap: 12,
     marginTop: 10,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
-  programChipText: { flexShrink: 1, color: roman.text, fontSize: 14, fontWeight: "500" },
+  programText: { flex: 1, gap: 2 },
+  programName: { color: light.text, fontSize: 16, fontWeight: "600" },
+  caption: { color: light.textSecondary, fontSize: 13 },
 
-  researchCard: {
+  researchRow: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 24,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  researchText: { flex: 1, gap: 2 },
+  researchTitle: { color: light.text, fontSize: 16, fontWeight: "500" },
+  rowPressed: { backgroundColor: light.pressed },
+
+  sectionTitle: { color: light.text, fontSize: 20, fontWeight: "700", marginTop: 28, marginBottom: 4 },
+  dayHeader: {
+    color: light.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 18,
+    marginBottom: 6,
+    marginLeft: 4,
+  },
+  // One day's workouts form a single grouped surface: the first row rounds the
+  // top, the last the bottom, and a hairline separates the rows between.
+  workoutRow: {
     minHeight: 64,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
-    marginTop: 20,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
+    gap: 12,
+    backgroundColor: light.surface,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  researchIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: roman.background,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  researchText: { flex: 1 },
-  researchTitle: { color: roman.text, fontSize: 16, fontWeight: "600", letterSpacing: 1 },
-  cardPressed: { backgroundColor: "#1F1F22" },
+  rowFirst: { borderTopLeftRadius: 12, borderTopRightRadius: 12 },
+  rowLast: { borderBottomLeftRadius: 12, borderBottomRightRadius: 12 },
+  rowDivider: { borderBottomColor: light.separator, borderBottomWidth: StyleSheet.hairlineWidth },
+  workoutMain: { flex: 1 },
+  workoutTitle: { color: light.text, fontSize: 16, fontWeight: "600" },
+  workoutMetaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
+  workoutMetaText: { flexShrink: 1, color: light.textSecondary, fontSize: 13 },
+  workoutStats: { alignItems: "flex-end" },
+  workoutSets: { color: light.text, fontSize: 20, fontWeight: "600" },
 
-  sectionTitle: {
-    color: roman.text,
-    fontSize: 20,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    marginTop: 28,
-    marginBottom: 4,
-  },
-  dayHeader: {
-    color: roman.textMuted,
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    marginTop: 14,
-    marginBottom: 8,
-  },
-  card: {
-    minHeight: 68,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
-    // Gold edge marks each session as a record.
-    borderLeftColor: roman.gold,
-    borderLeftWidth: 3,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    marginBottom: 8,
-  },
-  cardMain: { flex: 1 },
-  cardTitle: { color: roman.text, fontSize: 17, fontWeight: "600", letterSpacing: 0.5 },
-  cardMetaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
-  cardMetaText: { flexShrink: 1, color: roman.textMuted, fontSize: 13 },
-  cardMeta: { color: roman.textMuted, fontSize: 13 },
-  cardStats: { alignItems: "flex-end", marginLeft: 12 },
-  cardSets: { color: roman.goldLight, fontSize: 22, fontWeight: "600" },
-
-  emptyCard: {
-    alignItems: "center",
-    gap: 8,
-    marginTop: 8,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 24,
-  },
-  emptyTitle: { color: roman.text, fontSize: 18, fontWeight: "600" },
-  emptyText: { color: roman.textMuted, fontSize: 14, textAlign: "center" },
+  empty: { alignItems: "center", gap: 4, paddingVertical: 32, paddingHorizontal: 16 },
+  emptyTitle: { color: light.text, fontSize: 17, fontWeight: "600" },
+  emptyText: { color: light.textSecondary, fontSize: 14, textAlign: "center" },
 
   errorBanner: {
     alignItems: "flex-start",
-    gap: 8,
+    gap: 4,
     marginTop: 8,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 14,
   },
-  errorText: { color: roman.danger, fontSize: 14, textAlign: "center" },
+  errorText: { color: light.danger, fontSize: 14 },
   historyFooter: { alignItems: "center", paddingVertical: 24, gap: 8 },
   retry: {
     minHeight: MIN_TOUCH,
     justifyContent: "center",
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
   },
-  retryText: { color: roman.goldLight, fontSize: 14, fontWeight: "600" },
+  retryText: { color: light.text, fontSize: 15, fontWeight: "600" },
 
-  sheetBackdrop: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-  },
+  sheetBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: light.scrim },
   sheet: {
-    backgroundColor: roman.surface,
+    backgroundColor: light.surface,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    borderTopColor: roman.gold,
-    borderTopWidth: 1,
     paddingHorizontal: 24,
     paddingTop: 24,
   },
-  sheetTitle: {
-    color: roman.textMuted,
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 1.2,
-    marginBottom: 8,
-  },
+  sheetTitle: { color: light.text, fontSize: 20, fontWeight: "700", marginTop: 2, marginBottom: 8 },
   sheetRow: {
     minHeight: 52,
     flexDirection: "row",
@@ -725,10 +636,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12,
     paddingVertical: 12,
-    borderBottomColor: roman.border,
+    borderBottomColor: light.separator,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   sheetRowPressed: { opacity: 0.6 },
-  sheetRowText: { flex: 1, color: roman.text, fontSize: 16, fontWeight: "600" },
-  sheetEmpty: { color: roman.textMuted, paddingVertical: 16 },
+  sheetRowText: { flex: 1, color: light.text, fontSize: 16, fontWeight: "500" },
+  sheetEmpty: { color: light.textSecondary, paddingVertical: 16 },
 });
