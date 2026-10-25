@@ -597,6 +597,7 @@ function SetForm({
           <Text style={styles.fieldLabel}>Weight ({unit})</Text>
           <TextInput
             accessibilityLabel={`Weight in ${unit}`}
+            testID="set-weight-input"
             style={styles.fieldInput}
             value={weight}
             onChangeText={setWeight}
@@ -613,6 +614,7 @@ function SetForm({
           <Text style={styles.fieldLabel}>Reps</Text>
           <TextInput
             accessibilityLabel="Reps"
+            testID="set-reps-input"
             style={styles.fieldInput}
             value={reps}
             onChangeText={setReps}
@@ -1345,6 +1347,7 @@ export default function ActiveWorkoutScreen() {
           {readOnly ? null : (
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel="Add exercise"
               style={({ pressed }) => [styles.addExercise, pressed && styles.rowPressed]}
               onPress={openPicker}
             >

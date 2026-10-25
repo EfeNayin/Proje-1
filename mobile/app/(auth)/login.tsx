@@ -73,6 +73,7 @@ export default function LoginScreen() {
             <TextInput
               style={styles.input}
               accessibilityLabel="Email"
+              testID="login-email"
               placeholder="name@example.com"
               placeholderTextColor={light.textSecondary}
               value={email}
@@ -95,6 +96,7 @@ export default function LoginScreen() {
                 ref={passwordRef}
                 style={[styles.input, styles.passwordInput]}
                 accessibilityLabel="Password"
+                testID="login-password"
                 placeholderTextColor={light.textSecondary}
                 value={password}
                 onChangeText={setPassword}
