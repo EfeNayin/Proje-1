@@ -23,10 +23,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import type { AthleteOverviewItem } from "../../../src/api/coaching";
 import { useAuth } from "../../../src/auth/AuthContext";
+import { activityLabel, describeActivity } from "../../../src/coaching/activityDisplay";
+import { athleteOverviewStore } from "../../../src/coaching/athleteOverviewSession";
 import { coachingStore } from "../../../src/coaching/coachingSession";
 import { ConnectionRow } from "../../../src/coaching/ConnectionRow";
 import { formatExpiry, personName } from "../../../src/coaching/presentation";
+import { useAthleteOverview } from "../../../src/coaching/useAthleteOverview";
 import { useCoaching } from "../../../src/coaching/useCoaching";
 import { roman, romanFont, useRomanFonts } from "../../../src/romanTheme";
 
@@ -40,12 +44,16 @@ export default function MyAthletesScreen() {
   const userId = user?.id ?? null;
   const coachEnabled = user?.coach_enabled ?? false;
   const state = useCoaching(userId);
+  const overview = useAthleteOverview(userId);
   const [notice, setNotice] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       coachingStore.bind(userId);
-      if (coachEnabled) void coachingStore.load("coach");
+      athleteOverviewStore.bind(userId);
+      // One request per focus: the roster and each sharing athlete's numbers
+      // come together, so no card is fetched on its own.
+      if (coachEnabled) void athleteOverviewStore.refresh();
     }, [userId, coachEnabled]),
   );
 
@@ -87,7 +95,11 @@ export default function MyAthletesScreen() {
     setNotice(null);
     const outcome = await coachingStore.endConnection("coach", linkId);
     if (outcome.kind === "failed" || outcome.kind === "unknown") setNotice(outcome.message);
-    if (outcome.kind === "done") setNotice(`Connection with ${name} ended.`);
+    if (outcome.kind === "done") {
+      // The card, and any numbers on it, go at once.
+      athleteOverviewStore.removeLink(linkId);
+      setNotice(`Connection with ${name} ended.`);
+    }
   };
 
   const confirmEnd = (linkId: string, name: string) =>
@@ -143,8 +155,9 @@ export default function MyAthletesScreen() {
   }
 
   const { created, creating, error: inviteError } = state.invite;
-  const list = state.athletes;
+  const list = overview;
   const firstLoad = !list.loaded && list.loading;
+  const days = overview.window?.days ?? 28;
 
   const header = (
     <View>
@@ -211,15 +224,23 @@ export default function MyAthletesScreen() {
           {notice}
         </Text>
       ) : null}
+      {list.denied ? (
+        <View style={styles.banner}>
+          <Text accessibilityRole="alert" style={styles.error}>
+            Coach tools are not available for this account.
+          </Text>
+        </View>
+      ) : null}
       {list.error ? (
         <View style={styles.banner}>
           <Text accessibilityRole="alert" style={styles.error}>
-            {list.loaded ? "Could not refresh." : "Could not load your athletes."} {list.error}
+            {list.loaded ? "Could not refresh. Showing what was loaded earlier." : "Could not load your athletes."}{" "}
+            {list.error}
           </Text>
           <Pressable
             accessibilityRole="button"
             style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-            onPress={() => void coachingStore.load("coach")}
+            onPress={() => void athleteOverviewStore.refresh()}
           >
             <Text style={styles.secondaryText}>Try again</Text>
           </Pressable>
@@ -236,30 +257,90 @@ export default function MyAthletesScreen() {
       keyExtractor={(item) => item.id}
       keyboardShouldPersistTaps="handled"
       renderItem={({ item }) => (
-        <ConnectionRow
-          connection={item}
+        <AthleteCard
+          item={item}
+          days={days}
           ending={state.ending.includes(item.id)}
           onEnd={() => confirmEnd(item.id, personName(item.person))}
           onOpen={() => router.push(`/coaching/athlete/${item.id}`)}
-          status={item.shares_workouts ? "Workouts shared" : "Workouts not shared"}
         />
       )}
       ListHeaderComponent={header}
       ListEmptyComponent={
         firstLoad ? (
           <ActivityIndicator color={roman.gold} accessibilityLabel="Loading athletes" />
-        ) : list.error && !list.loaded ? null : (
+        ) : (list.error && !list.loaded) || list.denied ? null : (
           <Text style={styles.empty}>
             No athletes connected yet. Create an invite code to get started.
           </Text>
         )
       }
+      ListFooterComponent={
+        list.loadingMore ? (
+          <ActivityIndicator color={roman.gold} accessibilityLabel="Loading more athletes" />
+        ) : list.moreError ? (
+          <View style={styles.banner}>
+            <Text accessibilityRole="alert" style={styles.error}>
+              {list.moreError}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+              onPress={() => void athleteOverviewStore.loadMore()}
+            >
+              <Text style={styles.secondaryText}>Try again</Text>
+            </Pressable>
+          </View>
+        ) : null
+      }
+      onEndReachedThreshold={0.4}
+      onEndReached={() => void athleteOverviewStore.loadMore()}
       refreshControl={
         <RefreshControl
           refreshing={list.loading && list.loaded}
-          onRefresh={() => void coachingStore.load("coach")}
+          onRefresh={() => void athleteOverviewStore.refresh()}
           tintColor={roman.gold}
         />
+      }
+    />
+  );
+}
+
+/** One roster card: who, whether workouts are shared, and what they have recorded. */
+function AthleteCard({
+  item,
+  days,
+  ending,
+  onEnd,
+  onOpen,
+}: {
+  item: AthleteOverviewItem;
+  days: number;
+  ending: boolean;
+  onEnd: () => void;
+  onOpen: () => void;
+}) {
+  const activity = describeActivity(item.activity, days);
+  return (
+    <ConnectionRow
+      connection={item}
+      ending={ending}
+      onEnd={onEnd}
+      onOpen={onOpen}
+      status={item.shares_workouts ? "Workouts shared" : "Workouts not shared"}
+      detailLabel={activityLabel(activity)}
+      detail={
+        <View style={styles.activity}>
+          {activity.kind === "recorded" ? (
+            <>
+              {activity.latest ? <Text style={styles.meta}>{activity.latest}</Text> : null}
+              <Text style={styles.period}>{activity.period}</Text>
+              <Text style={styles.counts}>{activity.counts}</Text>
+            </>
+          ) : (
+            <Text style={styles.meta}>{activity.text}</Text>
+          )}
+        </View>
       }
     />
   );
@@ -278,6 +359,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cardTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 17 },
+  activity: { marginTop: 8, gap: 2 },
+  period: {
+    color: roman.textMuted,
+    fontFamily: romanFont.semibold,
+    fontSize: 11,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginTop: 4,
+  },
+  counts: { color: roman.text, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
   body: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 14, lineHeight: 21 },
   meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
   code: {

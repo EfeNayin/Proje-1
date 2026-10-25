@@ -9,8 +9,9 @@ const MIN_TOUCH = 44;
 
 /**
  * One accepted connection with an "End connection" control. `onOpen` turns the
- * name block into a button; `status` is an extra line under it; `children` sit
- * in a footer under the row (the athlete's sharing switch).
+ * name block into a button; `status` is an extra line under it; `detail` sits
+ * under the status inside that button and `detailLabel` is its spoken form;
+ * `children` sit in a footer under the row (the athlete's sharing switch).
  */
 export function ConnectionRow({
   connection,
@@ -18,6 +19,8 @@ export function ConnectionRow({
   onEnd,
   onOpen,
   status,
+  detail,
+  detailLabel,
   children,
 }: {
   connection: Connection;
@@ -25,6 +28,8 @@ export function ConnectionRow({
   onEnd: () => void;
   onOpen?: () => void;
   status?: string;
+  detail?: ReactNode;
+  detailLabel?: string;
   children?: ReactNode;
 }) {
   const name = personName(connection.person);
@@ -37,6 +42,7 @@ export function ConnectionRow({
       {handle ? <Text style={styles.meta}>{handle}</Text> : null}
       {since ? <Text style={styles.meta}>Connected {since}</Text> : null}
       {status ? <Text style={styles.status}>{status}</Text> : null}
+      {detail}
     </>
   );
 
@@ -46,7 +52,9 @@ export function ConnectionRow({
         {onOpen ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`${name}. ${status ? `${status}. ` : ""}Open workouts`}
+            accessibilityLabel={`${name}. ${status ? `${status}. ` : ""}${
+              detailLabel ? `${detailLabel}. ` : ""
+            }Open workouts`}
             style={({ pressed }) => [styles.text, pressed && styles.pressed]}
             onPress={onOpen}
           >

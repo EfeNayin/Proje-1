@@ -132,6 +132,45 @@ export function getAthleteWorkout(linkId: string, workoutId: string): Promise<At
   return apiRequest<AthleteWorkoutDetail>(`/coaching/athletes/${linkId}/workouts/${workoutId}`);
 }
 
+/** The one reporting window every card in a response is counted over: start <= performed_at < end. */
+export type ActivityWindow = { start: string; end: string; days: number };
+
+export type AthleteActivity = {
+  /** The most recent completed workout, all time; independent of the window. */
+  latest_workout: { title: string | null; performed_at: string } | null;
+  /** Completed workouts inside the window. */
+  workouts_in_window: number;
+  /** Working sets (not warm-ups, reps > 0) in those workouts. */
+  working_sets_in_window: number;
+};
+
+export type AthleteOverviewItem = Connection & {
+  /** null: the athlete is not sharing, so nothing is available. That is not zero. */
+  activity: AthleteActivity | null;
+};
+
+export type AthleteOverviewPage = {
+  items: AthleteOverviewItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  window: ActivityWindow;
+};
+
+/**
+ * One page of the roster with each sharing athlete's recorded activity. Pass
+ * the first page's `window.end` as `asOf` when asking for later pages so every
+ * card is counted over the same window.
+ */
+export function getAthleteOverview(
+  limit: number,
+  offset: number,
+  asOf?: string,
+): Promise<AthleteOverviewPage> {
+  const query = `limit=${limit}&offset=${offset}${asOf ? `&as_of=${encodeURIComponent(asOf)}` : ""}`;
+  return apiRequest<AthleteOverviewPage>(`/coaching/athletes/overview?${query}`);
+}
+
 // ── Program offers ───────────────────────────────────────────────────────
 // A coach sends a frozen copy of one of their programs; the athlete decides
 // whether to keep an independent copy. Offers hang off one connection, so they

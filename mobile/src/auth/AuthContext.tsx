@@ -13,6 +13,7 @@ import * as authApi from "../api/auth";
 import type { RegisterInput, UserProfile } from "../api/auth";
 import { setOnSessionExpired } from "../api/client";
 import { clearTokens, saveTokens } from "../api/tokens";
+import { athleteOverviewStore } from "../coaching/athleteOverviewSession";
 import { athleteWorkoutsStore } from "../coaching/athleteWorkoutsSession";
 import { coachingStore } from "../coaching/coachingSession";
 import { programOffersStore } from "../coaching/programOffersSession";
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // answers still in flight must not land on whoever signs in next.
     coachingStore.reset();
     athleteWorkoutsStore.reset();
+    athleteOverviewStore.reset();
     programOffersStore.reset();
     await clearTokens();
     // The active-workout pointer is a device key (see src/workout/activeWorkout.ts),
@@ -75,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void clearActiveWorkout();
       coachingStore.reset();
       athleteWorkoutsStore.reset();
+      athleteOverviewStore.reset();
       programOffersStore.reset();
       setUser(null);
       setStatus("signedOut");
