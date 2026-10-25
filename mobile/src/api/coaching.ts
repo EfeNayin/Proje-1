@@ -132,6 +132,41 @@ export function getAthleteWorkout(linkId: string, workoutId: string): Promise<At
   return apiRequest<AthleteWorkoutDetail>(`/coaching/athletes/${linkId}/workouts/${workoutId}`);
 }
 
+/**
+ * One earlier completed session of an exercise: the athlete's recorded working
+ * sets only (never warm-ups, reps > 0), in set order.
+ */
+export type AthleteExerciseSession = {
+  workout_id: string;
+  title: string | null;
+  performed_at: string;
+  sets: AthleteSet[];
+};
+
+export type AthleteExerciseHistoryPage = {
+  items: AthleteExerciseSession[];
+  /** Opaque; the backend accepts it only for the same connection, workout and exercise. */
+  next_cursor: string | null;
+};
+
+/**
+ * Earlier sessions of one exercise, opened from a completed workout. The athlete
+ * is named by the connection id only; the backend re-checks the connection, the
+ * sharing switch and the workout/exercise on every page.
+ */
+export function getAthleteExerciseHistory(
+  linkId: string,
+  workoutId: string,
+  exerciseId: string,
+  cursor: string | null,
+  limit = 10,
+): Promise<AthleteExerciseHistoryPage> {
+  const after = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+  return apiRequest<AthleteExerciseHistoryPage>(
+    `/coaching/athletes/${linkId}/workouts/${workoutId}/exercises/${exerciseId}/history?limit=${limit}${after}`,
+  );
+}
+
 /** The one reporting window every card in a response is counted over: start <= performed_at < end. */
 export type ActivityWindow = { start: string; end: string; days: number };
 

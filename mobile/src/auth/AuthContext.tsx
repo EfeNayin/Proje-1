@@ -13,6 +13,7 @@ import * as authApi from "../api/auth";
 import type { RegisterInput, UserProfile } from "../api/auth";
 import { setOnSessionExpired } from "../api/client";
 import { clearTokens, saveTokens } from "../api/tokens";
+import { athleteExerciseHistoryStore } from "../coaching/athleteExerciseHistorySession";
 import { athleteOverviewStore } from "../coaching/athleteOverviewSession";
 import { athleteWorkoutsStore } from "../coaching/athleteWorkoutsSession";
 import { coachingStore } from "../coaching/coachingSession";
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // athlete's workouts and pending results belong to this account only, and
     // answers still in flight must not land on whoever signs in next.
     coachingStore.reset();
+    athleteExerciseHistoryStore.reset();
     athleteWorkoutsStore.reset();
     athleteOverviewStore.reset();
     programOffersStore.reset();
@@ -76,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // sign-out itself must not wait on it.
       void clearActiveWorkout();
       coachingStore.reset();
+      athleteExerciseHistoryStore.reset();
       athleteWorkoutsStore.reset();
       athleteOverviewStore.reset();
       programOffersStore.reset();

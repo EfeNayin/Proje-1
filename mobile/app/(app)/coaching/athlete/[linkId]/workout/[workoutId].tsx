@@ -29,8 +29,13 @@ import {
   setCountText,
   setWeightText,
 } from "../../../../../../src/coaching/athleteWorkoutDisplay";
+import { AthleteExerciseHistoryPanel } from "../../../../../../src/coaching/AthleteExerciseHistoryPanel";
+import { athleteExerciseHistoryStore } from "../../../../../../src/coaching/athleteExerciseHistorySession";
 import { athleteWorkoutsStore } from "../../../../../../src/coaching/athleteWorkoutsSession";
+import { personName } from "../../../../../../src/coaching/presentation";
+import { useAthleteExerciseHistory } from "../../../../../../src/coaching/useAthleteExerciseHistory";
 import { useAthleteWorkouts } from "../../../../../../src/coaching/useAthleteWorkouts";
+import { useCoaching } from "../../../../../../src/coaching/useCoaching";
 import { useAuth } from "../../../../../../src/auth/AuthContext";
 import { roman, romanFont, useRomanFonts } from "../../../../../../src/romanTheme";
 import type { WeightUnit } from "../../../../../../src/units/weight";
@@ -65,6 +70,9 @@ function AthleteWorkout({
   const insets = useSafeAreaInsets();
   useRomanFonts();
   const view = useAthleteWorkouts(userId, linkId);
+  const history = useAthleteExerciseHistory(userId, linkId, workoutId);
+  const coaching = useCoaching(userId);
+  const athlete = coaching.athletes.items.find((item) => item.id === linkId);
   const { detail, denied } = view;
   const shown = detail.workoutId === workoutId ? detail : null;
   const data = shown?.data ?? null;
@@ -74,7 +82,11 @@ function AthleteWorkout({
       if (!userId) return;
       athleteWorkoutsStore.bind({ userId, linkId });
       void athleteWorkoutsStore.loadDetail(workoutId);
-      return () => athleteWorkoutsStore.closeDetail();
+      return () => {
+        // Leaving the workout takes the athlete's earlier sessions with it.
+        athleteExerciseHistoryStore.close();
+        athleteWorkoutsStore.closeDetail();
+      };
     }, [userId, linkId, workoutId]),
   );
 
@@ -145,14 +157,45 @@ function AthleteWorkout({
         <Text style={styles.empty}>No sets were recorded in this workout.</Text>
       ) : (
         data.exercises.map((exercise) => (
-          <ExerciseBlock key={exercise.exercise_id} exercise={exercise} unit={unit} />
+          <ExerciseBlock
+            key={exercise.exercise_id}
+            exercise={exercise}
+            unit={unit}
+            onOpenHistory={() => {
+              if (userId) {
+                void athleteExerciseHistoryStore.open({
+                  userId,
+                  linkId,
+                  workoutId,
+                  exerciseId: exercise.exercise_id,
+                });
+              }
+            }}
+          />
         ))
       )}
+      <AthleteExerciseHistoryPanel
+        state={history}
+        exerciseName={
+          data.exercises.find((item) => item.exercise_id === history.context?.exerciseId)?.name ??
+          "Exercise"
+        }
+        athleteName={athlete ? personName(athlete.person) : "This athlete"}
+        unit={unit}
+      />
     </ScrollView>
   );
 }
 
-function ExerciseBlock({ exercise, unit }: { exercise: AthleteExercise; unit: WeightUnit }) {
+function ExerciseBlock({
+  exercise,
+  unit,
+  onOpenHistory,
+}: {
+  exercise: AthleteExercise;
+  unit: WeightUnit;
+  onOpenHistory: () => void;
+}) {
   return (
     <View style={styles.card}>
       <Text accessibilityRole="header" style={styles.exerciseName}>
@@ -161,6 +204,15 @@ function ExerciseBlock({ exercise, unit }: { exercise: AthleteExercise; unit: We
       {exercise.sets.map((set, index) => (
         <SetRow key={`${set.set_number}-${index}`} set={set} unit={unit} />
       ))}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Earlier sessions of ${exercise.name}`}
+        accessibilityHint="Opens this athlete's earlier completed sessions of the exercise, read-only"
+        style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+        onPress={onOpenHistory}
+      >
+        <Text style={styles.secondaryText}>Earlier sessions</Text>
+      </Pressable>
     </View>
   );
 }
