@@ -167,6 +167,80 @@ export function getAthleteExerciseHistory(
   );
 }
 
+/**
+ * A coach's feedback on one completed workout of a sharing athlete. One entry
+ * per connection and workout. `version` is what an edit or delete must name;
+ * the backend refuses (409) when the entry changed since it was read.
+ */
+export type CoachFeedback = {
+  id: string;
+  body: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CoachFeedbackResult = { feedback: CoachFeedback | null };
+
+/** The coach's own entry for this workout, or none. Re-checks the connection and sharing. */
+export function getCoachFeedback(linkId: string, workoutId: string): Promise<CoachFeedbackResult> {
+  return apiRequest<CoachFeedbackResult>(`/coaching/athletes/${linkId}/workouts/${workoutId}/feedback`);
+}
+
+/**
+ * Safe to repeat with the same request id and the same text: the backend returns
+ * the entry it already made. A changed text must use a new request id.
+ */
+export function createCoachFeedback(
+  linkId: string,
+  workoutId: string,
+  requestId: string,
+  body: string,
+): Promise<CoachFeedback> {
+  return apiRequest<CoachFeedback>(
+    `/coaching/athletes/${linkId}/workouts/${workoutId}/feedback/requests/${requestId}`,
+    { method: "PUT", body: { body } },
+  );
+}
+
+export function updateCoachFeedback(
+  linkId: string,
+  workoutId: string,
+  body: string,
+  expectedVersion: number,
+): Promise<CoachFeedback> {
+  return apiRequest<CoachFeedback>(`/coaching/athletes/${linkId}/workouts/${workoutId}/feedback`, {
+    method: "PATCH",
+    body: { body, expected_version: expectedVersion },
+  });
+}
+
+export function deleteCoachFeedback(
+  linkId: string,
+  workoutId: string,
+  expectedVersion: number,
+): Promise<void> {
+  return apiRequest<void>(
+    `/coaching/athletes/${linkId}/workouts/${workoutId}/feedback?expected_version=${expectedVersion}`,
+    { method: "DELETE" },
+  );
+}
+
+/** Feedback one of the athlete's own workouts received; `coach` is the author's public name. */
+export type ReceivedFeedback = {
+  id: string;
+  coach: Person;
+  body: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReceivedFeedbackList = { items: ReceivedFeedback[] };
+
+export function getReceivedFeedback(workoutId: string): Promise<ReceivedFeedbackList> {
+  return apiRequest<ReceivedFeedbackList>(`/coaching/workouts/${workoutId}/feedback`);
+}
+
 /** The one reporting window every card in a response is counted over: start <= performed_at < end. */
 export type ActivityWindow = { start: string; end: string; days: number };
 

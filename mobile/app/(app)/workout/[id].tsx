@@ -32,6 +32,7 @@ import type {
 import * as workoutsApi from "../../../src/api/workouts";
 import type { LoggedSet, WorkoutDetail } from "../../../src/api/workouts";
 import { useAuth } from "../../../src/auth/AuthContext";
+import { ReceivedFeedbackSection } from "../../../src/coaching/ReceivedFeedbackSection";
 import { roman, romanFont } from "../../../src/romanTheme";
 import {
   formatWeight,
@@ -1313,6 +1314,8 @@ export default function ActiveWorkoutScreen() {
               </View>
             );
           })}
+
+          {isFinished ? <ReceivedFeedbackSection userId={userId ?? null} workoutId={workout.id} /> : null}
 
           {readOnly ? null : (
             <Pressable accessibilityRole="button" style={styles.addExercise} onPress={openPicker}>

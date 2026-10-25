@@ -161,7 +161,7 @@ function screen(helpers, initial = log([]), overrides = {}) {
   };
   for (const name of ['View', 'Text', 'Pressable', 'ActivityIndicator', 'KeyboardAvoidingView',
     'ScrollView', 'TitleField', 'SessionDuration', 'FinishedDuration', 'RestTimer', 'PreviousExercise',
-    'SetRow', 'ReadOnlySetRow', 'SetForm', 'Ionicons', 'SaveAsTemplateModal']) globals[name] = name;
+    'SetRow', 'ReadOnlySetRow', 'SetForm', 'Ionicons', 'SaveAsTemplateModal', 'ReceivedFeedbackSection']) globals[name] = name;
   Object.assign(globals, overrides);
   const component = load(source, globals).default;
   const render = () => { cursor = 0; effectCursor = 0; pending = []; const tree = component();

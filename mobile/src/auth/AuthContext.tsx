@@ -18,6 +18,8 @@ import { athleteOverviewStore } from "../coaching/athleteOverviewSession";
 import { athleteWorkoutsStore } from "../coaching/athleteWorkoutsSession";
 import { coachingStore } from "../coaching/coachingSession";
 import { programOffersStore } from "../coaching/programOffersSession";
+import { receivedFeedbackStore } from "../coaching/receivedFeedbackSession";
+import { workoutFeedbackStore } from "../coaching/workoutFeedbackSession";
 import { clearActiveWorkout } from "../workout/activeWorkout";
 import { restoreSession } from "./restoreSession";
 
@@ -50,6 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // answers still in flight must not land on whoever signs in next.
     coachingStore.reset();
     athleteExerciseHistoryStore.reset();
+    workoutFeedbackStore.reset();
+    receivedFeedbackStore.reset();
     athleteWorkoutsStore.reset();
     athleteOverviewStore.reset();
     programOffersStore.reset();
@@ -79,6 +83,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void clearActiveWorkout();
       coachingStore.reset();
       athleteExerciseHistoryStore.reset();
+      workoutFeedbackStore.reset();
+      receivedFeedbackStore.reset();
       athleteWorkoutsStore.reset();
       athleteOverviewStore.reset();
       programOffersStore.reset();

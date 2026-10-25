@@ -29,6 +29,7 @@ import {
   setCountText,
   setWeightText,
 } from "../../../../../../src/coaching/athleteWorkoutDisplay";
+import { CoachFeedbackSection } from "../../../../../../src/coaching/CoachFeedbackSection";
 import { AthleteExerciseHistoryPanel } from "../../../../../../src/coaching/AthleteExerciseHistoryPanel";
 import { athleteExerciseHistoryStore } from "../../../../../../src/coaching/athleteExerciseHistorySession";
 import { athleteWorkoutsStore } from "../../../../../../src/coaching/athleteWorkoutsSession";
@@ -36,6 +37,8 @@ import { personName } from "../../../../../../src/coaching/presentation";
 import { useAthleteExerciseHistory } from "../../../../../../src/coaching/useAthleteExerciseHistory";
 import { useAthleteWorkouts } from "../../../../../../src/coaching/useAthleteWorkouts";
 import { useCoaching } from "../../../../../../src/coaching/useCoaching";
+import { useWorkoutFeedback } from "../../../../../../src/coaching/useWorkoutFeedback";
+import { workoutFeedbackStore } from "../../../../../../src/coaching/workoutFeedbackSession";
 import { useAuth } from "../../../../../../src/auth/AuthContext";
 import { roman, romanFont, useRomanFonts } from "../../../../../../src/romanTheme";
 import type { WeightUnit } from "../../../../../../src/units/weight";
@@ -71,6 +74,7 @@ function AthleteWorkout({
   useRomanFonts();
   const view = useAthleteWorkouts(userId, linkId);
   const history = useAthleteExerciseHistory(userId, linkId, workoutId);
+  const feedback = useWorkoutFeedback(userId, linkId, workoutId);
   const coaching = useCoaching(userId);
   const athlete = coaching.athletes.items.find((item) => item.id === linkId);
   const { detail, denied } = view;
@@ -82,6 +86,8 @@ function AthleteWorkout({
       if (!userId) return;
       athleteWorkoutsStore.bind({ userId, linkId });
       void athleteWorkoutsStore.loadDetail(workoutId);
+      // Re-reads on every focus unless a draft is open; a draft survives leaving and returning.
+      void workoutFeedbackStore.open({ userId, linkId, workoutId });
       return () => {
         // Leaving the workout takes the athlete's earlier sessions with it.
         athleteExerciseHistoryStore.close();
@@ -136,7 +142,13 @@ function AthleteWorkout({
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, padding]}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={[styles.content, padding]}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="interactive"
+      automaticallyAdjustKeyboardInsets
+    >
       <View style={styles.card}>
         <Text accessibilityRole="header" style={styles.title}>
           {data.title ?? "Workout"}
@@ -174,6 +186,10 @@ function AthleteWorkout({
           />
         ))
       )}
+      <CoachFeedbackSection
+        state={feedback}
+        athleteName={athlete ? personName(athlete.person) : "This athlete"}
+      />
       <AthleteExerciseHistoryPanel
         state={history}
         exerciseName={
