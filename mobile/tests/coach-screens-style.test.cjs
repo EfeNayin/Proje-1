@@ -31,7 +31,7 @@ test('coach screens: the coach files use the light theme and none of the Roman o
   }
 });
 
-test('coach screens: the stack gives every coach route the light header, and Research keeps its own', () => {
+test('coach screens: the stack gives every coach route (and Research) the light header', () => {
   const layout = read('app/(app)/_layout.tsx');
   const withLight = [...layout.matchAll(/name="([^"]+)"\s*options=\{\{[^}]*\.\.\.lightHeader/g)].map((m) => m[1]);
   assert.deepEqual(withLight.sort(), [
@@ -42,8 +42,8 @@ test('coach screens: the stack gives every coach route the light header, and Res
     'coaching/coaches',
     'coaching/program-offer/[offerId]',
     'coaching/programs-received',
+    'research',
   ]);
-  assert.match(layout, /name="research"\s*options=\{\{[^}]*romanHeader/);
 });
 
 test('coach screens: the sharing status is written out and programs are not tied to it', () => {

@@ -11,7 +11,6 @@ import { Redirect, Stack } from "expo-router";
 import { useAuth } from "../../src/auth/AuthContext";
 import { lightHeaderOptions } from "../../src/lightHeaderOptions";
 import { light } from "../../src/lightTheme";
-import { roman, romanFont, useRomanFonts } from "../../src/romanTheme";
 import { colors } from "../../src/theme";
 
 /**
@@ -26,16 +25,8 @@ export const unstable_settings = {
   anchor: "(tabs)",
 };
 
-// Screens that draw their content in the Roman theme keep the native header
-// (title + back arrow) but match its colours and font to the page.
-const romanHeader = {
-  headerStyle: { backgroundColor: roman.background },
-  headerTitleStyle: { color: roman.gold, fontFamily: romanFont.title, fontSize: 18 },
-  contentStyle: { backgroundColor: roman.background },
-};
-
-// The light counterpart for the coach screens (connections, workout review and
-// program offers):
+// Header for the light screens (Research and the coach screens: connections,
+// workout review and program offers),
 // set here rather than inside each screen so the header is already light while
 // the screen is pushed, and the page behind it does not flash dark.
 const lightHeader = {
@@ -45,9 +36,6 @@ const lightHeader = {
 
 export default function AppLayout() {
   const { status } = useAuth();
-  // Registers the bundled fonts for the native header below; a deep link to
-  // Research would otherwise draw its header before any screen had done so.
-  useRomanFonts();
 
   if (status === "signedOut") {
     return <Redirect href="/login" />;
@@ -69,7 +57,7 @@ export default function AppLayout() {
       <Stack.Screen name="diagnosis" options={{ title: "Diagnosis" }} />
       <Stack.Screen
         name="research"
-        options={{ title: "Research", ...romanHeader }}
+        options={{ title: "Research", ...lightHeader }}
       />
       <Stack.Screen name="coaching/athletes" options={{ title: "My Athletes", ...lightHeader }} />
       <Stack.Screen name="coaching/coaches" options={{ title: "My Coaches", ...lightHeader }} />
