@@ -40,7 +40,7 @@ test('invalid RIR cannot silently become unknown or be rounded into a valid valu
 function screen(name, props) {
   const source = read('app/(app)/workout/[id].tsx');
   const parsed = ts.createSourceFile('screen.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const names = ['RirField', 'SetForm', 'SetRow', 'ReadOnlySetRow'];
+  const names = ['RirField', 'SetForm', 'SetRow', 'ReadOnlySetRow', 'rirCell'];
   const functions = parsed.statements.filter(node => ts.isFunctionDeclaration(node) &&
     names.includes(node.name?.text)).map(node => node.getText(parsed)).join('\n');
   const state = [];
@@ -60,7 +60,7 @@ function screen(name, props) {
     React: { createElement: (type, properties, ...children) => ({ type, props: { ...properties, children } }) },
     View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable',
     ActivityIndicator: 'ActivityIndicator', Ionicons: 'Ionicons',
-    Alert: { alert() {} }, roman: {},
+    Alert: { alert() {} }, light: {},
     styles: new Proxy({}, { get: (_, key) => key }),
   });
   return () => { cursor = 0; return api[name](props); };
@@ -71,7 +71,7 @@ function nodes(tree) {
   return [tree, ...nodes(tree.props?.children)];
 }
 const field = tree => nodes(tree).find(node => node.type?.name === 'RirField');
-const add = tree => nodes(tree).find(node => node.props.style === 'addSet');
+const add = tree => nodes(tree).find(node => node.props.accessibilityLabel === 'Log set');
 const confirm = tree => nodes(tree).find(node => node.type === 'Pressable' &&
   nodes(node).some(child => child.props.name === 'checkmark'));
 const settle = () => new Promise(resolve => setImmediate(resolve));
@@ -143,7 +143,7 @@ test('editing can clear RIR and a failed update keeps the editor and draft', asy
 test('finished session rows display recorded RIR zero but no invented value for unknown', () => {
   for (const value of [null, 0, 4]) {
     const render = screen('ReadOnlySetRow', { set: { ...lastSet, rir: value }, unit: 'kg' });
-    assert.equal(JSON.stringify(render()).includes(' · RIR'), value !== null);
+    assert.equal(/RIR \d/.test(JSON.stringify(render())), value !== null);
   }
 });
 

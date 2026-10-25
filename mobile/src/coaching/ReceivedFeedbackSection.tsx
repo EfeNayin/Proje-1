@@ -3,7 +3,7 @@ import { useCallback } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { ReceivedFeedback } from "../api/coaching";
-import { roman, romanFont } from "../romanTheme";
+import { light } from "../lightTheme";
 import { feedbackTimeLines } from "./feedbackDisplay";
 import { personHandle, personName } from "./presentation";
 import type { ReceivedFeedbackState } from "./receivedFeedback";
@@ -49,7 +49,7 @@ export function ReceivedFeedbackView({
   // Nothing at all until there is something to say: no empty "Coach feedback" box.
   if (!state.loaded && !state.error) {
     return state.loading ? (
-      <ActivityIndicator color={roman.gold} accessibilityLabel="Loading coach feedback" />
+      <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading coach feedback" />
     ) : null;
   }
   if (state.loaded && state.items.length === 0 && !state.error) return null;
@@ -111,30 +111,28 @@ function Entry({ item }: { item: ReceivedFeedback }) {
 
 const styles = StyleSheet.create({
   section: {
-    backgroundColor: roman.surface,
-    borderColor: roman.goldLight,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
     marginTop: 8,
     marginBottom: 16,
     gap: 8,
   },
-  heading: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 16, lineHeight: 22 },
-  note: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
+  heading: { color: light.text, fontSize: 17, fontWeight: "600", lineHeight: 22 },
+  note: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
   block: { gap: 4 },
   entry: {
     gap: 4,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: roman.border,
+    borderTopColor: light.separator,
   },
-  author: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14, lineHeight: 20 },
-  handle: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 12 },
-  body: { color: roman.text, fontFamily: romanFont.regular, fontSize: 15, lineHeight: 22 },
-  meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 12, lineHeight: 18 },
-  error: { color: roman.danger, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
+  author: { color: light.text, fontSize: 14, fontWeight: "600", lineHeight: 20 },
+  handle: { color: light.textSecondary, fontSize: 12, fontWeight: "400" },
+  body: { color: light.text, fontSize: 15, lineHeight: 22 },
+  meta: { color: light.textSecondary, fontSize: 12, lineHeight: 18 },
+  error: { color: light.danger, fontSize: 14, fontWeight: "500", lineHeight: 20 },
   action: { minHeight: MIN_TOUCH, justifyContent: "center", alignSelf: "flex-start", paddingHorizontal: 4, borderRadius: 8 },
-  actionText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
-  pressed: { backgroundColor: roman.surfaceRaised },
+  actionText: { color: light.text, fontSize: 14, fontWeight: "600" },
+  pressed: { backgroundColor: light.pressed },
 });

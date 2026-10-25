@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { getPreviousExerciseSession, type LoggedSet, type PreviousExerciseSession } from "../api/workouts";
-import { roman, romanFont } from "../romanTheme";
+import { light } from "../lightTheme";
 import { formatWeight, type WeightUnit } from "../units/weight";
 import { ExerciseHistory } from "./ExerciseHistory";
 import { compareSessionWeights, formatRecordedWeightChange } from "./sessionComparison";
@@ -34,12 +34,12 @@ export function PreviousExercise({ workoutId, exerciseId, exerciseName, unit, cu
     <View style={styles.container}>
       <Pressable accessibilityRole="button" accessibilityState={{ expanded }}
         onPress={() => { setResult({ status: "loading" }); setExpanded(value => !value); }}
-        style={styles.button}>
+        style={styles.toggle}>
         <Text style={styles.link}>{expanded ? "Hide previous session" : "Previous session"}</Text>
       </Pressable>
       {expanded ? (
-        <View style={styles.content}>
-          {result.status === "loading" ? <ActivityIndicator color={roman.gold} /> : null}
+        <View style={styles.panel}>
+          {result.status === "loading" ? <ActivityIndicator color={light.textSecondary} /> : null}
           {result.status === "error" ? (
             <View>
               <Text style={styles.detail}>Could not load previous sets.</Text>
@@ -105,10 +105,21 @@ export function PreviousExercise({ workoutId, exerciseId, exerciseName, unit, cu
 }
 
 const styles = StyleSheet.create({
-  container: { marginBottom: 8 },
+  container: { marginBottom: 4 },
   button: { paddingVertical: 8, minHeight: 44, justifyContent: "center" },
-  link: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 14 },
+  // The control that opens the summary: a grey pill so it reads as a button.
+  toggle: {
+    alignSelf: "flex-start",
+    minHeight: 40,
+    justifyContent: "center",
+    paddingHorizontal: 14,
+    marginVertical: 4,
+    borderRadius: 20,
+    backgroundColor: light.background,
+  },
+  link: { color: light.text, fontSize: 15, fontWeight: "600" },
+  panel: { gap: 4, backgroundColor: light.background, borderRadius: 10, padding: 12, marginBottom: 4 },
   content: { gap: 4 },
-  title: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 14 },
-  detail: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 12, lineHeight: 18 },
+  title: { color: light.text, fontSize: 14, fontWeight: "600" },
+  detail: { color: light.textSecondary, fontSize: 13, lineHeight: 18 },
 });

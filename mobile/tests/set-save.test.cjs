@@ -156,12 +156,13 @@ function screen(helpers, initial = log([]), overrides = {}) {
     ...load(read('src/units/weight.ts')), ...load(read('src/workout/rir.ts')),
     React: { createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) },
     Platform: { OS: 'ios' }, Stack: { Screen: 'Screen' },
-    styles: new Proxy({}, { get: (_, key) => key }), roman: {},
+    styles: new Proxy({}, { get: (_, key) => key }), light: {},
     useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
   };
   for (const name of ['View', 'Text', 'Pressable', 'ActivityIndicator', 'KeyboardAvoidingView',
     'ScrollView', 'TitleField', 'SessionDuration', 'FinishedDuration', 'RestTimer', 'PreviousExercise',
-    'SetRow', 'ReadOnlySetRow', 'SetForm', 'Ionicons', 'SaveAsTemplateModal', 'ReceivedFeedbackSection']) globals[name] = name;
+    'SetRow', 'ReadOnlySetRow', 'SetForm', 'Ionicons', 'SaveAsTemplateModal', 'ReceivedFeedbackSection',
+    'FocusedDarkStatusBar', 'SummaryCell']) globals[name] = name;
   Object.assign(globals, overrides);
   const component = load(source, globals).default;
   const render = () => { cursor = 0; effectCursor = 0; pending = []; const tree = component();

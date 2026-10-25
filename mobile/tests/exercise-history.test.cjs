@@ -58,7 +58,7 @@ function view(request, props = { workoutId: 'current', exerciseId: 'bench', exer
     },
     'react-native-safe-area-context': { SafeAreaProvider: 'SafeAreaProvider', SafeAreaView: 'SafeAreaView' },
     '../api/workouts': { getExerciseHistory: request },
-    '../romanTheme': { roman: {}, romanFont: {} }, '../units/weight': units,
+    '../lightTheme': { light: {} }, '../units/weight': units,
   });
   return {
     render() {

@@ -66,6 +66,17 @@ test('picker still delivers each deposited exercise only once', () => {
   assert.deepEqual(routes, ['/workout/exercise-picker']);
 });
 
+test('only a caller that asks for the light look opens the picker with it', () => {
+  const plain = picker();
+  plain.api.usePickedExercise(() => {}).openPicker();
+  assert.deepEqual(plain.routes, ['/workout/exercise-picker']);
+
+  const light = picker();
+  light.api.usePickedExercise(() => {}, { appearance: 'light' }).openPicker();
+  assert.deepEqual(JSON.parse(JSON.stringify(light.routes)),
+    [{ pathname: '/workout/exercise-picker', params: { appearance: 'light' } }]);
+});
+
 test('web server rendering starts in light mode even when the device reports dark', () => {
   const React = dependency('react');
   const { renderToString } = dependency('react-dom/server');

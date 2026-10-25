@@ -883,7 +883,7 @@ const receivedModule = load('src/coaching/ReceivedFeedbackSection.tsx', {
   'expo-router': { useFocusEffect: () => {} },
   react: { useCallback: (fn) => fn },
   'react-native': rn,
-  '../romanTheme': theme,
+  '../lightTheme': { light: {} },
   './feedbackDisplay': display,
   './presentation': presentation,
   './receivedFeedback': {},

@@ -4,10 +4,13 @@
  * Sets are grouped by exercise. Every mutation posts to the API and replaces
  * local state with the response, so the totals and set numbering on screen
  * are always the server's, never a local guess that could drift.
+ *
+ * Styled with the light palette (src/lightTheme.ts) like the Training home.
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,7 +36,7 @@ import * as workoutsApi from "../../../src/api/workouts";
 import type { LoggedSet, WorkoutDetail } from "../../../src/api/workouts";
 import { useAuth } from "../../../src/auth/AuthContext";
 import { ReceivedFeedbackSection } from "../../../src/coaching/ReceivedFeedbackSection";
-import { roman, romanFont } from "../../../src/romanTheme";
+import { light } from "../../../src/lightTheme";
 import {
   formatWeight,
   formatWeightValue,
@@ -134,16 +137,35 @@ function formatSessionDate(iso: string): string {
   });
 }
 
+/**
+ * This screen is light, but the app root sets light status-bar icons for the
+ * dark screens. Dark icons only while this screen is the focused one, so the
+ * screens pushed over it (the picker) are not left with a stale style.
+ */
+function FocusedDarkStatusBar() {
+  const focused = useIsFocused();
+  return focused ? <StatusBar style="dark" /> : null;
+}
+
+/** "12" over "working sets": one value, one label, read together. */
+function SummaryCell({ value, label }: { value: string; label: string }) {
+  return (
+    <View accessible accessibilityLabel={`${value} ${label}`} style={styles.summaryItem}>
+      <Text style={styles.summaryValue}>{value}</Text>
+      <Text style={styles.summaryLabel}>{label}</Text>
+    </View>
+  );
+}
+
+/** The stored string reads " · RIR 2" after the reps; in its own column it is "RIR 2". */
+function rirCell(rir: number | null): string {
+  return formatRecordedRir(rir).replace(" · ", "");
+}
+
 function SessionDuration({ startedAt }: { startedAt: string }) {
   const elapsed = useElapsedSeconds(new Date(startedAt).getTime());
 
-  return (
-    <View style={styles.summaryItem}>
-      <Ionicons name="time-outline" size={16} color={roman.gold} />
-      <Text style={styles.summaryValue}>{formatDuration(elapsed)}</Text>
-      <Text style={styles.summaryLabel}>duration</Text>
-    </View>
-  );
+  return <SummaryCell value={formatDuration(elapsed)} label="duration" />;
 }
 
 /** Real, fixed duration of a finished session — not a ticking counter. */
@@ -153,13 +175,7 @@ function FinishedDuration({ startedAt, endedAt }: { startedAt: string; endedAt: 
     Math.floor((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000),
   );
 
-  return (
-    <View style={styles.summaryItem}>
-      <Ionicons name="timer-outline" size={16} color={roman.gold} />
-      <Text style={styles.summaryValue}>{formatDuration(seconds)}</Text>
-      <Text style={styles.summaryLabel}>duration</Text>
-    </View>
-  );
+  return <SummaryCell value={formatDuration(seconds)} label="duration" />;
 }
 
 /**
@@ -211,11 +227,15 @@ function RestTimer({
           hitSlop={6}
         >
           <Text style={styles.restTarget}>Target {formatRest(seconds)}</Text>
-          <Ionicons name="chevron-down" size={14} color={roman.textMuted} />
+          <Ionicons name="chevron-down" size={14} color={light.textSecondary} />
         </Pressable>
       </View>
 
-      <View style={styles.restCountdownBox}>
+      <View
+        accessible
+        accessibilityLabel={`${finished ? "Rest over" : running ? "Rest remaining" : "Rest target"} ${formatRest(remaining)}`}
+        style={styles.restCountdownBox}
+      >
         <Text style={[styles.restCountdown, finished && styles.restDone]}>
           {formatRest(remaining)}
         </Text>
@@ -232,7 +252,7 @@ function RestTimer({
         <Ionicons
           name={running ? "stop" : "play"}
           size={18}
-          color={running ? roman.text : roman.background}
+          color={running ? light.text : light.onPrimary}
         />
       </Pressable>
     </View>
@@ -276,13 +296,13 @@ function TitleField({
         onSubmitEditing={commit}
         editable={editable}
         placeholder="Name this workout"
-        placeholderTextColor={roman.placeholder}
-        selectionColor={roman.gold}
+        placeholderTextColor={light.textSecondary}
+        selectionColor={light.text}
         returnKeyType="done"
         maxLength={200}
       />
       {/* The pencil is what says the name can be edited. */}
-      {editable ? <Ionicons name="create-outline" size={16} color={roman.textMuted} /> : null}
+      {editable ? <Ionicons name="create-outline" size={16} color={light.textSecondary} /> : null}
     </View>
   );
 }
@@ -304,8 +324,8 @@ function RirField({ value, onChangeText, disabled }: {
         editable={!disabled}
         keyboardType="number-pad"
         placeholder="—"
-        placeholderTextColor={roman.placeholder}
-        selectionColor={roman.gold}
+        placeholderTextColor={light.textSecondary}
+        selectionColor={light.text}
       />
     </View>
   );
@@ -381,7 +401,7 @@ function SetRow({
       <View style={styles.setRowEditing}>
         {/* Spelled out as well as tinted, so the editing row is not marked by colour alone. */}
         <View style={styles.editingHeader}>
-          <Ionicons name="create-outline" size={15} color={roman.gold} />
+          <Ionicons name="create-outline" size={15} color={light.text} />
           <Text style={styles.editingLabel}>
             Editing set {set.is_warmup ? "(warm-up)" : set.set_number}
           </Text>
@@ -397,7 +417,7 @@ function SetRow({
               onChangeText={setWeight}
               editable={!saving}
               keyboardType="decimal-pad"
-              selectionColor={roman.gold}
+              selectionColor={light.text}
               autoFocus
               selectTextOnFocus
             />
@@ -411,7 +431,7 @@ function SetRow({
               onChangeText={setReps}
               editable={!saving}
               keyboardType="number-pad"
-              selectionColor={roman.gold}
+              selectionColor={light.text}
               selectTextOnFocus
               onSubmitEditing={() => void save()}
             />
@@ -435,7 +455,7 @@ function SetRow({
             style={styles.editAction}
             disabled={saving}
           >
-            <Ionicons name="trash-outline" size={18} color={roman.danger} />
+            <Ionicons name="trash-outline" size={18} color={light.danger} />
             <Text style={[styles.editActionText, styles.editActionDanger]}>Delete</Text>
           </Pressable>
           <View style={styles.editActionsRight}>
@@ -446,7 +466,7 @@ function SetRow({
               style={styles.editAction}
               disabled={saving}
             >
-              <Ionicons name="close" size={20} color={roman.textMuted} />
+              <Ionicons name="close" size={20} color={light.textSecondary} />
               <Text style={styles.editActionText}>Cancel</Text>
             </Pressable>
             <Pressable
@@ -457,9 +477,9 @@ function SetRow({
               disabled={saving}
             >
               {saving ? (
-                <ActivityIndicator size="small" color={roman.background} />
+                <ActivityIndicator size="small" color={light.onPrimary} />
               ) : (
-                <Ionicons name="checkmark" size={20} color={roman.background} />
+                <Ionicons name="checkmark" size={20} color={light.onPrimary} />
               )}
               <Text style={[styles.editActionText, styles.editActionPrimaryText]}>Save</Text>
             </Pressable>
@@ -493,7 +513,7 @@ function SetRow({
       </View>
       <Text style={styles.setWeight}>{formatWeight(Number(set.weight_kg), unit)}</Text>
       <Text style={styles.setReps}>× {set.reps}</Text>
-      <Text style={styles.setRir}>{formatRecordedRir(set.rir)}</Text>
+      <Text style={styles.setRir}>{rirCell(set.rir)}</Text>
     </Pressable>
   );
 }
@@ -509,7 +529,7 @@ function ReadOnlySetRow({ set, unit }: { set: LoggedSet; unit: WeightUnit }) {
       </View>
       <Text style={styles.setWeight}>{formatWeight(Number(set.weight_kg), unit)}</Text>
       <Text style={styles.setReps}>× {set.reps}</Text>
-      <Text style={styles.setRir}>{formatRecordedRir(set.rir)}</Text>
+      <Text style={styles.setRir}>{rirCell(set.rir)}</Text>
     </View>
   );
 }
@@ -593,8 +613,8 @@ function SetForm({
             onChangeText={setWeight}
             editable={!disabled}
             placeholder={weightHint}
-            placeholderTextColor={roman.placeholder}
-            selectionColor={roman.gold}
+            placeholderTextColor={light.textSecondary}
+            selectionColor={light.text}
             keyboardType="decimal-pad"
             returnKeyType="next"
           />
@@ -609,8 +629,8 @@ function SetForm({
             onChangeText={setReps}
             editable={!disabled}
             placeholder={repsHint}
-            placeholderTextColor={roman.placeholder}
-            selectionColor={roman.gold}
+            placeholderTextColor={light.textSecondary}
+            selectionColor={light.text}
             keyboardType="number-pad"
             returnKeyType="done"
             onSubmitEditing={() => void submit()}
@@ -633,7 +653,7 @@ function SetForm({
           <Ionicons
             name={isWarmup ? "checkbox" : "square-outline"}
             size={22}
-            color={isWarmup ? roman.gold : roman.textMuted}
+            color={isWarmup ? light.primary : light.textSecondary}
           />
           <Text style={[styles.warmupText, isWarmup && styles.warmupTextActive]}>Warm-up set</Text>
         </Pressable>
@@ -641,14 +661,14 @@ function SetForm({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Log set"
-          style={styles.addSet}
+          style={({ pressed }) => [styles.addSet, pressed && styles.primaryPressed, disabled && styles.disabledControl]}
           onPress={() => void submit()}
           disabled={disabled}
         >
           {busy || submitting ? (
-            <ActivityIndicator color={roman.background} size="small" />
+            <ActivityIndicator color={light.onPrimary} size="small" />
           ) : (
-            <Ionicons name="add" size={20} color={roman.background} />
+            <Ionicons name="add" size={20} color={light.onPrimary} />
           )}
           <Text style={styles.addSetText}>Log set</Text>
         </Pressable>
@@ -815,13 +835,13 @@ function SaveAsTemplateModal({
                 onChangeText={setName}
                 placeholder="Template name"
                 editable={!saving && !pendingSave && saveRequestLoaded}
-                placeholderTextColor={roman.textMuted}
+                placeholderTextColor={light.textSecondary}
               />
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
 
               {loadingPrograms ? (
-                <ActivityIndicator color={roman.gold} style={styles.sheetLoading} />
+                <ActivityIndicator color={light.textSecondary} style={styles.sheetLoading} />
               ) : programs.length === 0 && pendingSave ? (
                 <Text style={styles.sheetLabel}>Continue to check your previous save.</Text>
               ) : programs.length === 0 ? (
@@ -849,7 +869,7 @@ function SaveAsTemplateModal({
                     >
                       <Text style={styles.sheetRowText}>{program.name}</Text>
                       {selectedProgramId === program.id ? (
-                        <Ionicons name="checkmark" size={18} color={roman.gold} />
+                        <Ionicons name="checkmark" size={18} color={light.text} />
                       ) : null}
                     </Pressable>
                   ))}
@@ -869,13 +889,17 @@ function SaveAsTemplateModal({
                 <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={[styles.modalButton, saving && styles.modalButtonDisabled]}
+                style={({ pressed }) => [
+                  styles.modalButton,
+                  pressed && styles.primaryPressed,
+                  saving && styles.modalButtonDisabled,
+                ]}
                 onPress={() => void handleSave()}
                 disabled={saving || !saveRequestLoaded ||
                   (!pendingSave && (loadingPrograms || programs.length === 0))}
               >
                 {saving ? (
-                  <ActivityIndicator color={roman.background} />
+                  <ActivityIndicator color={light.onPrimary} />
                 ) : (
                   <Text style={styles.modalButtonText}>{pendingSave ? "Continue save" : "Save"}</Text>
                 )}
@@ -936,11 +960,14 @@ export default function ActiveWorkoutScreen() {
     void setRestSeconds(value);
   }, []);
 
-  const { openPicker } = usePickedExercise((exercise) => {
-    setPending((current) =>
-      current.some((item) => item.id === exercise.id) ? current : [...current, exercise],
-    );
-  });
+  const { openPicker } = usePickedExercise(
+    (exercise) => {
+      setPending((current) =>
+        current.some((item) => item.id === exercise.id) ? current : [...current, exercise],
+      );
+    },
+    { appearance: "light" },
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1115,7 +1142,8 @@ export default function ActiveWorkoutScreen() {
     return (
       <View style={styles.centered}>
         <Stack.Screen options={{ headerShown: false }} />
-        <ActivityIndicator color={roman.gold} />
+        <FocusedDarkStatusBar />
+        <ActivityIndicator color={light.textSecondary} />
       </View>
     );
   }
@@ -1124,13 +1152,14 @@ export default function ActiveWorkoutScreen() {
     return (
       <View style={styles.centered}>
         <Stack.Screen options={{ headerShown: false }} />
+        <FocusedDarkStatusBar />
         <Text accessibilityRole="alert" style={styles.error}>{error ?? "Workout not found"}</Text>
         <Pressable
           accessibilityRole="button"
-          style={styles.centeredAction}
+          style={({ pressed }) => [styles.centeredPrimary, pressed && styles.primaryPressed]}
           onPress={() => { setLoading(true); setError(null); setLoadAttempt(value => value + 1); }}
         >
-          <Text style={styles.finishText}>Try again</Text>
+          <Text style={styles.primaryText}>Try again</Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -1160,6 +1189,7 @@ export default function ActiveWorkoutScreen() {
         {/* The screen draws its own top bar (back, name, finish) below, so the
             native header is off: both together would show the name twice. */}
         <Stack.Screen options={{ headerShown: false }} />
+        <FocusedDarkStatusBar />
 
         <View style={[styles.topBar, { paddingTop: insets.top }]}>
           <View style={styles.topBarRow}>
@@ -1169,7 +1199,7 @@ export default function ActiveWorkoutScreen() {
               style={styles.topBarBack}
               onPress={() => router.back()}
             >
-              <Ionicons name="chevron-back" size={24} color={roman.text} />
+              <Ionicons name="chevron-back" size={26} color={light.text} />
             </Pressable>
 
             <View style={styles.topBarTitle}>
@@ -1212,12 +1242,16 @@ export default function ActiveWorkoutScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Finish workout"
                 accessibilityState={{ busy: finishing, disabled: finishing || setSaveBlocked }}
-                style={[styles.finishButton, (finishing || setSaveBlocked) && styles.finishButtonDisabled]}
+                style={({ pressed }) => [
+                  styles.finishButton,
+                  pressed && styles.primaryPressed,
+                  (finishing || setSaveBlocked) && styles.finishButtonDisabled,
+                ]}
                 onPress={confirmFinish}
                 disabled={finishing || setSaveBlocked}
               >
                 {finishing ? (
-                  <ActivityIndicator size="small" color={roman.background} />
+                  <ActivityIndicator size="small" color={light.onPrimary} />
                 ) : (
                   <Text style={styles.finishText}>Finish</Text>
                 )}
@@ -1234,21 +1268,16 @@ export default function ActiveWorkoutScreen() {
           {planDescription ? <Text style={styles.sessionDate}>{planDescription}</Text> : null}
 
           <View style={styles.summary}>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>{workout.total_sets}</Text>
-              <Text style={styles.summaryLabel}>working sets</Text>
-            </View>
+            <SummaryCell value={String(workout.total_sets)} label="working sets" />
             <View style={styles.summaryDivider} />
             {isFinished && workout.finished_at ? (
               workout.finished_automatically === false ? (
                 <FinishedDuration startedAt={workout.performed_at} endedAt={workout.finished_at} />
               ) : (
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>—</Text>
-                  <Text style={styles.summaryLabel}>
-                    {workout.finished_automatically ? "auto-closed" : "duration unavailable"}
-                  </Text>
-                </View>
+                <SummaryCell
+                  value="—"
+                  label={workout.finished_automatically ? "auto-closed" : "duration unavailable"}
+                />
               )
             ) : (
               <SessionDuration startedAt={workout.performed_at} />
@@ -1260,7 +1289,10 @@ export default function ActiveWorkoutScreen() {
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {pendingSetRequest ? (
             <View style={styles.planComparison}>
-              <Text style={styles.blockTitle}>Set awaiting confirmation</Text>
+              <View style={styles.pendingHeader}>
+                <Ionicons name="alert-circle-outline" size={20} color={light.text} />
+                <Text style={styles.pendingTitle}>Set awaiting confirmation</Text>
+              </View>
               <Text style={styles.planDetail}>
                 {pendingSetRequest.exerciseName}: {formatWeight(pendingSetRequest.input.weight_kg, unit)} × {pendingSetRequest.input.reps}
                 {formatRecordedRir(pendingSetRequest.input.rir ?? null)}
@@ -1270,8 +1302,9 @@ export default function ActiveWorkoutScreen() {
                 This set may already be saved. Retry to confirm it before adding another set or finishing.
               </Text>
               <Pressable disabled={busyExercise !== null}
-                onPress={() => { void handleSetSave().catch(() => undefined); }} style={styles.addExercise}>
-                <Text style={styles.addExerciseText}>{busyExercise !== null ? "Confirming…" : "Retry pending set"}</Text>
+                onPress={() => { void handleSetSave().catch(() => undefined); }}
+                style={({ pressed }) => [styles.retryButton, pressed && styles.primaryPressed, busyExercise !== null && styles.disabledControl]}>
+                <Text style={styles.primaryText}>{busyExercise !== null ? "Confirming…" : "Retry pending set"}</Text>
               </Pressable>
             </View>
           ) : null}
@@ -1286,6 +1319,15 @@ export default function ActiveWorkoutScreen() {
                   workoutId={workout.id} exerciseId={block.exerciseId} exerciseName={block.name} unit={unit}
                   currentSets={block.sets}
                 />
+
+                {block.sets.length > 0 ? (
+                  <View style={styles.columnHeader}>
+                    <View style={styles.columnSet} />
+                    <Text style={[styles.columnLabel, styles.columnWeight]}>Weight</Text>
+                    <Text style={[styles.columnLabel, styles.columnReps]}>Reps</Text>
+                    <Text style={[styles.columnLabel, styles.columnRir]}>RIR</Text>
+                  </View>
+                ) : null}
 
                 {readOnly || setSaveBlocked
                   ? block.sets.map((set) => <ReadOnlySetRow key={set.id} set={set} unit={unit} />)
@@ -1318,8 +1360,12 @@ export default function ActiveWorkoutScreen() {
           {isFinished ? <ReceivedFeedbackSection userId={userId ?? null} workoutId={workout.id} /> : null}
 
           {readOnly ? null : (
-            <Pressable accessibilityRole="button" style={styles.addExercise} onPress={openPicker}>
-              <Ionicons name="add" size={20} color={roman.gold} />
+            <Pressable
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.addExercise, pressed && styles.rowPressed]}
+              onPress={openPicker}
+            >
+              <Ionicons name="add" size={20} color={light.text} />
               <Text style={styles.addExerciseText}>Add exercise</Text>
             </Pressable>
           )}
@@ -1346,21 +1392,36 @@ export default function ActiveWorkoutScreen() {
 
 const MIN_TOUCH = 44;
 
+// Light palette, system font. Numbers use tabular figures so columns line up.
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: roman.background },
+  screen: { flex: 1, backgroundColor: light.background },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: roman.background,
+    backgroundColor: light.background,
     padding: 24,
   },
   centeredAction: { minHeight: MIN_TOUCH, justifyContent: "center", paddingHorizontal: 16 },
-  content: { paddingHorizontal: 14, paddingTop: 12 },
+  centeredPrimary: {
+    minHeight: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: light.primary,
+    borderRadius: 14,
+    paddingHorizontal: 24,
+    marginTop: 8,
+  },
+  content: { paddingHorizontal: 16, paddingTop: 12 },
+
+  primaryPressed: { backgroundColor: light.primaryPressed },
+  rowPressed: { backgroundColor: light.pressed },
+  disabledControl: { opacity: 0.5 },
+  primaryText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
 
   topBar: {
-    backgroundColor: roman.background,
-    borderBottomColor: roman.border,
+    backgroundColor: light.background,
+    borderBottomColor: light.separator,
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 8,
   },
@@ -1379,142 +1440,139 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 12,
   },
-  topBarGhostText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 15 },
+  topBarGhostText: { color: light.text, fontSize: 16, fontWeight: "600" },
   finishButton: {
-    minWidth: 76,
-    minHeight: MIN_TOUCH,
+    minWidth: 72,
+    minHeight: 40,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: roman.gold,
-    borderRadius: 10,
-    paddingHorizontal: 16,
+    backgroundColor: light.primary,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    marginRight: 4,
   },
   finishButtonDisabled: { opacity: 0.5 },
-  finishText: {
-    color: roman.background,
-    fontFamily: romanFont.semibold,
-    fontSize: 13,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  backText: { color: roman.textMuted, fontFamily: romanFont.medium, fontSize: 15 },
+  finishText: { color: light.onPrimary, fontSize: 15, fontWeight: "600" },
+  backText: { color: light.textSecondary, fontSize: 16, fontWeight: "500" },
 
   titleWrap: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "100%" },
   titleInput: {
     flexShrink: 1,
     minHeight: MIN_TOUCH,
-    color: roman.text,
-    fontFamily: romanFont.title,
-    fontSize: 18,
-    letterSpacing: 0.5,
+    color: light.text,
+    fontSize: 17,
+    fontWeight: "600",
     textAlign: "center",
     paddingVertical: 8,
   },
   titleReadOnly: {
-    color: roman.text,
-    fontFamily: romanFont.title,
-    fontSize: 18,
-    letterSpacing: 0.5,
+    color: light.text,
+    fontSize: 17,
+    fontWeight: "600",
     textAlign: "center",
   },
   sessionDate: {
-    color: roman.textMuted,
-    fontFamily: romanFont.regular,
+    color: light.textSecondary,
     fontSize: 13,
     marginBottom: 8,
   },
 
   summary: {
     flexDirection: "row",
-    flexWrap: "wrap",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     marginBottom: 12,
   },
-  summaryItem: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 },
-  summaryDivider: { width: 1, alignSelf: "stretch", minHeight: 16, backgroundColor: roman.border },
+  summaryItem: { flex: 1, minWidth: 0, gap: 2 },
+  summaryDivider: { width: StyleSheet.hairlineWidth, alignSelf: "stretch", backgroundColor: light.separator, marginHorizontal: 16 },
   summaryValue: {
-    color: roman.text,
-    fontFamily: romanFont.semibold,
-    fontSize: 16,
+    color: light.text,
+    fontSize: 22,
+    fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
-  summaryLabel: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 12, flexShrink: 1 },
+  summaryLabel: { color: light.textSecondary, fontSize: 13 },
 
   rest: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 8,
-    backgroundColor: roman.surface,
-    borderColor: roman.gold,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 8,
+    paddingLeft: 16,
+    paddingRight: 12,
     marginBottom: 12,
   },
   restInfo: { flexShrink: 1 },
-  restTitle: {
-    color: roman.gold,
-    fontFamily: romanFont.semibold,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
+  restTitle: { color: light.text, fontSize: 15, fontWeight: "600" },
   restDuration: {
     minHeight: MIN_TOUCH,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
   },
-  restTarget: { color: roman.textMuted, fontFamily: romanFont.medium, fontSize: 13 },
+  restTarget: { color: light.textSecondary, fontSize: 13 },
   restCountdownBox: { alignItems: "center" },
   restCountdown: {
-    color: roman.text,
-    fontFamily: romanFont.semibold,
+    color: light.text,
     fontSize: 28,
+    fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
-  restDone: { color: roman.goldLight },
-  restOver: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 11 },
+  restDone: { color: light.positive },
+  restOver: { color: light.positive, fontSize: 12, fontWeight: "600" },
   restButton: {
     width: MIN_TOUCH,
     height: MIN_TOUCH,
-    borderRadius: 10,
-    backgroundColor: roman.gold,
+    borderRadius: MIN_TOUCH / 2,
+    backgroundColor: light.primary,
     alignItems: "center",
     justifyContent: "center",
   },
-  restButtonActive: { backgroundColor: roman.surfaceRaised, borderColor: roman.border, borderWidth: 1 },
-  error: { color: roman.danger, fontFamily: romanFont.medium, fontSize: 13, marginTop: 8, marginBottom: 8 },
+  restButtonActive: { backgroundColor: light.pressed },
+  error: { color: light.danger, fontSize: 13, fontWeight: "500", marginTop: 8, marginBottom: 8 },
 
   block: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
   },
-  blockTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 17, marginBottom: 2 },
+  blockTitle: { color: light.text, fontSize: 17, fontWeight: "600", marginBottom: 2 },
   planComparison: {
-    backgroundColor: roman.surface,
-    borderColor: roman.gold,
+    backgroundColor: light.surface,
+    borderColor: light.text,
     borderWidth: 1,
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
-    gap: 4,
+    gap: 6,
   },
-  planDetail: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
+  pendingHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pendingTitle: { flex: 1, color: light.text, fontSize: 16, fontWeight: "600" },
+  planDetail: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
+  retryButton: {
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: light.primary,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    marginTop: 4,
+  },
+
+  // Column heads share their widths with the set rows so the numbers align.
+  columnHeader: { flexDirection: "row", alignItems: "center", gap: 8, paddingTop: 4, paddingBottom: 2 },
+  columnSet: { width: 30 },
+  columnLabel: { color: light.textSecondary, fontSize: 12 },
+  columnWeight: { width: 92, textAlign: "right" },
+  columnReps: { width: 56 },
+  columnRir: { flex: 1 },
 
   setRow: {
     minHeight: 48,
@@ -1522,60 +1580,51 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     paddingVertical: 6,
-    borderBottomColor: roman.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderTopColor: light.separator,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   setBadge: {
     width: 30,
     height: 28,
-    borderRadius: 6,
+    borderRadius: 8,
+    backgroundColor: light.background,
     alignItems: "center",
     justifyContent: "center",
   },
-  warmupBadge: { borderColor: roman.border, borderWidth: 1 },
-  setNumber: { color: roman.textMuted, fontFamily: romanFont.semibold, fontSize: 14 },
-  warmupLabel: { color: roman.goldLight },
+  warmupBadge: { backgroundColor: light.surface, borderColor: light.separator, borderWidth: 1 },
+  setNumber: { color: light.textSecondary, fontSize: 14, fontWeight: "600" },
+  warmupLabel: { color: light.text },
   setWeight: {
     width: 92,
     textAlign: "right",
-    color: roman.text,
-    fontFamily: romanFont.semibold,
+    color: light.text,
     fontSize: 16,
+    fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
   setReps: {
     width: 56,
-    color: roman.text,
-    fontFamily: romanFont.semibold,
+    color: light.text,
     fontSize: 16,
+    fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
   setRir: {
     flex: 1,
-    color: roman.textMuted,
-    fontFamily: romanFont.regular,
+    color: light.textSecondary,
     fontSize: 14,
     fontVariant: ["tabular-nums"],
   },
 
-  // The set being corrected: boxed and tinted, and named in words by the label.
+  // The set being corrected: grey well with the word "Editing", not colour alone.
   setRowEditing: {
-    backgroundColor: roman.goldTint,
-    borderColor: roman.gold,
-    borderWidth: 1,
-    borderLeftWidth: 3,
-    borderRadius: 10,
+    backgroundColor: light.background,
+    borderRadius: 12,
     padding: 12,
     marginVertical: 6,
   },
   editingHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
-  editingLabel: {
-    color: roman.goldLight,
-    fontFamily: romanFont.semibold,
-    fontSize: 12,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  editingLabel: { color: light.text, fontSize: 14, fontWeight: "600" },
   editActions: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1584,7 +1633,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 10,
   },
-  editActionsRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  editActionsRight: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
   editAction: {
     minHeight: MIN_TOUCH,
     flexDirection: "row",
@@ -1592,38 +1641,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: 12,
   },
-  editActionPrimary: { backgroundColor: roman.gold },
-  editActionText: { color: roman.textMuted, fontFamily: romanFont.semibold, fontSize: 13 },
-  editActionDanger: { color: roman.danger },
-  editActionPrimaryText: { color: roman.background },
+  editActionPrimary: { backgroundColor: light.primary },
+  editActionText: { color: light.textSecondary, fontSize: 15, fontWeight: "600" },
+  editActionDanger: { color: light.danger },
+  editActionPrimaryText: { color: light.onPrimary },
 
   entryPanel: {
-    backgroundColor: roman.background,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.background,
     borderRadius: 12,
     padding: 12,
     marginTop: 10,
   },
-  entryRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  entryField: { flex: 1, minWidth: 0 },
+  // Wraps instead of squeezing: on a narrow screen or with larger text the
+  // third field drops to a second line rather than being clipped.
+  entryRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: 8 },
+  entryField: { flexGrow: 1, flexBasis: 88, minWidth: 88 },
   fieldLabel: {
-    color: roman.textMuted,
-    fontFamily: romanFont.medium,
-    fontSize: 11,
+    color: light.textSecondary,
+    fontSize: 12,
     marginBottom: 4,
   },
   fieldInput: {
     minHeight: 48,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 10,
-    color: roman.text,
-    fontFamily: romanFont.semibold,
+    color: light.text,
     fontSize: 18,
+    fontWeight: "600",
     fontVariant: ["tabular-nums"],
     textAlign: "center",
     paddingHorizontal: 8,
@@ -1645,25 +1691,19 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   warmupActive: {},
-  warmupText: { color: roman.textMuted, fontFamily: romanFont.medium, fontSize: 13 },
-  warmupTextActive: { color: roman.goldLight },
+  warmupText: { color: light.textSecondary, fontSize: 14 },
+  warmupTextActive: { color: light.text },
   addSet: {
-    minHeight: MIN_TOUCH,
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: roman.gold,
-    borderRadius: 10,
-    paddingHorizontal: 18,
+    backgroundColor: light.primary,
+    borderRadius: 12,
+    paddingHorizontal: 20,
   },
-  addSetText: {
-    color: roman.background,
-    fontFamily: romanFont.semibold,
-    fontSize: 13,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  addSetText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
 
   addExercise: {
     minHeight: 52,
@@ -1673,20 +1713,11 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 16,
     borderRadius: 12,
-    borderColor: roman.gold,
-    borderWidth: 1,
-    borderStyle: "dashed",
+    backgroundColor: light.surface,
   },
-  addExerciseText: {
-    color: roman.goldLight,
-    fontFamily: romanFont.semibold,
-    fontSize: 14,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  addExerciseText: { color: light.text, fontSize: 16, fontWeight: "600" },
   hint: {
-    color: roman.textMuted,
-    fontFamily: romanFont.regular,
+    color: light.textSecondary,
     fontSize: 13,
     textAlign: "center",
     marginTop: 14,
@@ -1696,39 +1727,31 @@ const styles = StyleSheet.create({
   sheetBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: light.scrim,
   },
   sheet: {
     maxHeight: "80%",
-    backgroundColor: roman.surface,
+    backgroundColor: light.surface,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    borderTopColor: roman.gold,
-    borderTopWidth: 1,
     paddingTop: 24,
   },
   sheetScroll: { flexShrink: 1 },
   sheetScrollContent: { paddingHorizontal: 24, paddingBottom: 8 },
-  sheetTitle: { color: roman.text, fontFamily: romanFont.title, fontSize: 20, marginBottom: 16 },
+  sheetTitle: { color: light.text, fontSize: 20, fontWeight: "600", marginBottom: 16 },
   sheetInput: {
     minHeight: 48,
-    backgroundColor: roman.background,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.background,
     borderRadius: 10,
-    color: roman.text,
-    fontFamily: romanFont.regular,
+    color: light.text,
     fontSize: 16,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginBottom: 16,
   },
   sheetLabel: {
-    color: roman.textMuted,
-    fontFamily: romanFont.semibold,
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1,
+    color: light.textSecondary,
+    fontSize: 13,
     marginBottom: 6,
   },
   sheetRow: {
@@ -1738,23 +1761,21 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12,
     paddingVertical: 10,
-    borderBottomColor: roman.border,
+    borderBottomColor: light.separator,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  sheetRowText: { flex: 1, color: roman.text, fontFamily: romanFont.medium, fontSize: 16 },
-  sheetEmpty: { color: roman.textMuted, fontFamily: romanFont.regular, marginBottom: 8 },
+  sheetRowText: { flex: 1, color: light.text, fontSize: 16 },
+  sheetEmpty: { color: light.textSecondary, marginBottom: 8 },
   sheetLoading: { marginVertical: 16 },
   sheetCreateProgram: {
     minHeight: MIN_TOUCH,
     justifyContent: "center",
-    backgroundColor: roman.background,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.background,
     borderRadius: 10,
     paddingHorizontal: 12,
     alignItems: "center",
   },
-  sheetCreateProgramText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
+  sheetCreateProgramText: { color: light.text, fontSize: 15, fontWeight: "600" },
 
   modalActions: {
     flexDirection: "row",
@@ -1767,17 +1788,13 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 52,
     justifyContent: "center",
-    backgroundColor: roman.gold,
-    borderRadius: 12,
+    backgroundColor: light.primary,
+    borderRadius: 14,
     padding: 14,
     alignItems: "center",
   },
-  modalButtonSecondary: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
-  },
+  modalButtonSecondary: { backgroundColor: light.background },
   modalButtonDisabled: { opacity: 0.7 },
-  modalButtonText: { color: roman.background, fontFamily: romanFont.semibold, fontSize: 15 },
-  modalButtonSecondaryText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 15 },
+  modalButtonText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
+  modalButtonSecondaryText: { color: light.text, fontSize: 16, fontWeight: "600" },
 });

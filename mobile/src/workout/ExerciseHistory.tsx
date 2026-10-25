@@ -13,7 +13,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { getExerciseHistory, type PreviousExerciseSession } from "../api/workouts";
-import { roman, romanFont } from "../romanTheme";
+import { light } from "../lightTheme";
 import { formatWeight, type WeightUnit } from "../units/weight";
 
 type HistoryState = {
@@ -89,7 +89,7 @@ export function ExerciseHistory({ workoutId, exerciseId, exerciseName, unit }: {
 
   return (
     <View style={styles.container}>
-      <Pressable accessibilityRole="button" style={styles.button} onPress={open}>
+      <Pressable accessibilityRole="button" style={styles.footerButton} onPress={open}>
         <Text style={styles.link}>All earlier sessions</Text>
       </Pressable>
       {visible ? (
@@ -147,7 +147,7 @@ export function ExerciseHistory({ workoutId, exerciseId, exerciseName, unit }: {
                   }
                   ListFooterComponent={
                     <View style={styles.footer}>
-                      {history.status === "loading" ? <ActivityIndicator color={roman.gold} /> : null}
+                      {history.status === "loading" ? <ActivityIndicator color={light.textSecondary} /> : null}
                       {history.status === "error" ? (
                         <View>
                           <Text style={styles.detail}>
@@ -155,14 +155,14 @@ export function ExerciseHistory({ workoutId, exerciseId, exerciseName, unit }: {
                               ? "Could not load exercise history."
                               : "Could not load older sessions. Loaded sessions are kept."}
                           </Text>
-                          <Pressable accessibilityRole="button" style={styles.button} onPress={retry}>
+                          <Pressable accessibilityRole="button" style={styles.footerButton} onPress={retry}>
                             <Text style={styles.link}>Retry history</Text>
                           </Pressable>
                         </View>
                       ) : null}
                       {history.status === "ready" ? (
                         history.nextCursor !== null ? (
-                          <Pressable accessibilityRole="button" style={styles.button} onPress={loadMore}>
+                          <Pressable accessibilityRole="button" style={styles.footerButton} onPress={loadMore}>
                             <Text style={styles.link}>Load older sessions</Text>
                           </Pressable>
                         ) : (
@@ -184,38 +184,51 @@ export function ExerciseHistory({ workoutId, exerciseId, exerciseName, unit }: {
 }
 
 const styles = StyleSheet.create({
-  container: { marginBottom: 8 },
-  button: { paddingVertical: 8, minHeight: 44, justifyContent: "center" },
-  link: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 14 },
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  container: { marginBottom: 4 },
+  link: { color: light.text, fontSize: 15, fontWeight: "600" },
+  footerButton: {
+    alignSelf: "flex-start",
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    marginTop: 4,
+    borderRadius: 22,
+    backgroundColor: light.surface,
+  },
+  overlay: { flex: 1, backgroundColor: light.scrim, justifyContent: "flex-end" },
   panel: {
     height: "85%",
-    backgroundColor: roman.surface,
+    backgroundColor: light.background,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    borderTopColor: roman.gold,
-    borderTopWidth: 1,
+    overflow: "hidden",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 8,
+    backgroundColor: light.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: roman.border,
+    borderBottomColor: light.separator,
   },
   headerText: { flex: 1, marginRight: 8 },
-  headerTitle: { color: roman.text, fontFamily: romanFont.title, fontSize: 18, letterSpacing: 0.5 },
-  headerSubtitle: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, marginTop: 2 },
+  headerTitle: { color: light.text, fontSize: 17, fontWeight: "600" },
+  headerSubtitle: { color: light.textSecondary, fontSize: 13, marginTop: 2 },
   closeButton: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
-  closeIcon: { color: roman.text, fontSize: 18 },
+  closeIcon: { color: light.text, fontSize: 18 },
   list: { flex: 1 },
-  listContent: { paddingHorizontal: 16, paddingBottom: 16 },
+  listContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16 },
   footer: { paddingVertical: 8 },
-  session: { gap: 4, paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: roman.border },
-  title: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 14 },
-  detail: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 12, lineHeight: 18, paddingVertical: 4 },
+  session: {
+    gap: 4,
+    padding: 12,
+    marginTop: 8,
+    borderRadius: 12,
+    backgroundColor: light.surface,
+  },
+  title: { color: light.text, fontSize: 15, fontWeight: "600" },
+  detail: { color: light.textSecondary, fontSize: 13, lineHeight: 18, paddingVertical: 2 },
 });

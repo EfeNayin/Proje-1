@@ -50,7 +50,10 @@ export function takePickedExercise(): PickedExercise | null {
  * picker is popped. `onPick` decides how to fold the result into this
  * screen's own local state — the hook only guarantees delivery, not shape.
  */
-export function usePickedExercise(onPick: (exercise: PickedExercise) => void): {
+export function usePickedExercise(
+  onPick: (exercise: PickedExercise) => void,
+  options: { appearance?: "light" } = {},
+): {
   openPicker: () => void;
 } {
   const router = useRouter();
@@ -70,9 +73,16 @@ export function usePickedExercise(onPick: (exercise: PickedExercise) => void): {
     }, []),
   );
 
+  // The picker is shared. Only a caller that asks for the light look gets a
+  // route param; every other caller keeps the plain route and its old styling.
+  const appearance = options.appearance;
   const openPicker = useCallback(() => {
-    router.push("/workout/exercise-picker");
-  }, [router]);
+    if (appearance === "light") {
+      router.push({ pathname: "/workout/exercise-picker", params: { appearance } });
+    } else {
+      router.push("/workout/exercise-picker");
+    }
+  }, [router, appearance]);
 
   return { openPicker };
 }
