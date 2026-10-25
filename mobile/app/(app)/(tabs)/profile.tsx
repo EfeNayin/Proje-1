@@ -30,7 +30,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fullName, initials } from "../../../src/api/auth";
 import * as bodyApi from "../../../src/api/body";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
 import { light } from "../../../src/lightTheme";
 import {
   createBodySummaryLoader,
@@ -144,7 +143,6 @@ export default function ProfileScreen() {
   if (!user) {
     return (
       <View style={styles.screen}>
-        <FocusedDarkStatusBar />
         {topBar}
         <View style={styles.centered}>
           <ActivityIndicator color={light.textSecondary} />
@@ -164,7 +162,6 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.screen}>
-      <FocusedDarkStatusBar />
       {topBar}
       <ScrollView
         style={styles.flex}

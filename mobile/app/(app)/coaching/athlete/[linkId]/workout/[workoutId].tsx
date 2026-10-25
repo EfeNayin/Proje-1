@@ -41,7 +41,6 @@ import { useCoaching } from "../../../../../../src/coaching/useCoaching";
 import { useWorkoutFeedback } from "../../../../../../src/coaching/useWorkoutFeedback";
 import { workoutFeedbackStore } from "../../../../../../src/coaching/workoutFeedbackSession";
 import { useAuth } from "../../../../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../../../../src/FocusedDarkStatusBar";
 import { light } from "../../../../../../src/lightTheme";
 import type { WeightUnit } from "../../../../../../src/units/weight";
 
@@ -102,7 +101,6 @@ function AthleteWorkout({
   if (denied) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
-        <FocusedDarkStatusBar />
         <Text accessibilityRole="alert" style={styles.empty}>
           {denied === "ended"
             ? "This connection has ended, so this workout is no longer available."
@@ -114,7 +112,6 @@ function AthleteWorkout({
   if (shown?.missing) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
-        <FocusedDarkStatusBar />
         <Text accessibilityRole="alert" style={styles.empty}>
           This workout is no longer available.
         </Text>
@@ -124,7 +121,6 @@ function AthleteWorkout({
   if (!data) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
-        <FocusedDarkStatusBar />
         {shown?.error ? (
           <View style={styles.banner}>
             <Text accessibilityRole="alert" style={styles.error}>
@@ -153,7 +149,6 @@ function AthleteWorkout({
       keyboardDismissMode="interactive"
       automaticallyAdjustKeyboardInsets
     >
-      <FocusedDarkStatusBar />
       <View style={styles.card}>
         <Text accessibilityRole="header" style={styles.title}>
           {data.title ?? "Workout"}

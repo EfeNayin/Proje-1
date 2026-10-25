@@ -25,14 +25,6 @@ test('auth screens: light theme, system font, no statue, gradient, Roman or gold
   assert.doesNotMatch(styles, /fontFamily|textTransform|letterSpacing|gold|position: "fixed"/);
 });
 
-test('auth screens: one status-bar owner each and a light stack background', () => {
-  for (const [file, get] of Object.entries(screens)) assert.match(get(), /FocusedDarkStatusBar/, file);
-  const layout = read('app/(auth)/_layout.tsx');
-  assert.match(layout, /headerShown: false/);
-  assert.match(layout, /backgroundColor: light\.background/);
-  assert.doesNotMatch(layout, /StatusBar/);
-});
-
 test('sign-in: heading kept, the identifier is email, password manager props unchanged', () => {
   const source = login();
   assert.match(source, /Find your strength\./);

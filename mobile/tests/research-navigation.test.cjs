@@ -24,9 +24,9 @@ test('app stack is anchored on the tabs, so a deep link to Research still has Tr
 test('back control is the native arrow only: no title text, titled "Research", no custom replacement', () => {
   const layout = read('app/(app)/_layout.tsx');
   assert.match(layout, /headerBackButtonDisplayMode: "minimal"/);
-  // Extra options are only styling (header colours / font); the title and the
+  // Header colours now come from the stack's defaults; the title and the
   // absence of a custom back control are what this guards.
-  assert.match(layout, /<Stack\.Screen\s+name="research"\s+options=\{\{\s*title: "Research",/);
+  assert.match(layout, /<Stack\.Screen\s+name="research"\s+options=\{\{\s*title: "Research"/);
   assert.doesNotMatch(layout, /headerLeft|headerBackVisible|headerBackTitle/);
   const screen = read('app/(app)/research.tsx');
   assert.doesNotMatch(screen, /headerLeft|router\.back|router\.replace|Stack\.Screen/);

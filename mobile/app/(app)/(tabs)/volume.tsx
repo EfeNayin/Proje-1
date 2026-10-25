@@ -25,7 +25,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as analyticsApi from "../../../src/api/analytics";
 import type { MuscleWeeklyVolume } from "../../../src/api/analytics";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
 import { light, lightStatus } from "../../../src/lightTheme";
 import { createWeeklyVolumeLoader, initialVolumeState } from "../../../src/volume/weeklyVolumeLoader";
 import {
@@ -211,16 +210,13 @@ export default function VolumeScreen() {
   }, [week]);
 
   const topBar = (
-    <>
-      <FocusedDarkStatusBar />
-      <View style={[styles.topBar, { paddingTop: insets.top }]}>
-        <View style={styles.topBarRow}>
-          <Text accessibilityRole="header" style={styles.topBarTitle}>
-            Volume
-          </Text>
-        </View>
+    <View style={[styles.topBar, { paddingTop: insets.top }]}>
+      <View style={styles.topBarRow}>
+        <Text accessibilityRole="header" style={styles.topBarTitle}>
+          Volume
+        </Text>
       </View>
-    </>
+    </View>
   );
 
   if (state.loading) {

@@ -23,7 +23,6 @@ import {
 
 import * as programsApi from "../../../../src/api/programs";
 import type { TemplateExerciseInput, WorkoutTemplate } from "../../../../src/api/programs";
-import { FocusedDarkStatusBar } from "../../../../src/FocusedDarkStatusBar";
 import { light } from "../../../../src/lightTheme";
 import { setActiveWorkout } from "../../../../src/workout/activeWorkout";
 import { usePickedExercise } from "../../../../src/workout/usePickedExercise";
@@ -277,7 +276,6 @@ export default function TemplateEditor() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <FocusedDarkStatusBar />
         <ActivityIndicator color={light.textSecondary} />
       </View>
     );
@@ -286,7 +284,6 @@ export default function TemplateEditor() {
   if (!template) {
     return (
       <View style={styles.centered}>
-        <FocusedDarkStatusBar />
         <Text style={styles.error}>{error ?? "Template not found"}</Text>
       </View>
     );
@@ -301,7 +298,6 @@ export default function TemplateEditor() {
       // iOS: lifts the content above the keyboard and scrolls the focused field into view.
       automaticallyAdjustKeyboardInsets
     >
-      <FocusedDarkStatusBar />
       {/* The native header stays (title + delete) but is light, like this screen. */}
       <Stack.Screen
         options={{

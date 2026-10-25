@@ -23,7 +23,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../../src/FocusedDarkStatusBar";
 import { light } from "../../../../src/lightTheme";
 import { OfferProgramView } from "../../../../src/coaching/OfferProgramView";
 import { offerStatusLabel } from "../../../../src/coaching/offerDisplay";
@@ -102,7 +101,6 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
   if (shown?.unavailable) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
-        <FocusedDarkStatusBar />
         <Text accessibilityRole="alert" style={styles.empty}>
           This program is no longer available. The connection with your coach may have ended.
         </Text>
@@ -120,7 +118,6 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
   if (!offer) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
-        <FocusedDarkStatusBar />
         {shown?.error ? (
           <View style={styles.banner}>
             <Text accessibilityRole="alert" style={styles.error}>
@@ -150,7 +147,6 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
       contentContainerStyle={[styles.content, padding]}
       keyboardShouldPersistTaps="handled"
     >
-      <FocusedDarkStatusBar />
       <View style={styles.card}>
         {/* The word and its icon say where the offer stands, never the colour alone. */}
         <View style={styles.statusRow}>

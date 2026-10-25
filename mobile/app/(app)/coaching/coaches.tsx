@@ -33,7 +33,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { InvitePreview } from "../../../src/api/coaching";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
 import { light } from "../../../src/lightTheme";
 import { coachingStore } from "../../../src/coaching/coachingSession";
 import { ConnectionRow } from "../../../src/coaching/ConnectionRow";
@@ -305,7 +304,6 @@ function MyCoaches({ userId }: { userId: string | null }) {
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <FocusedDarkStatusBar />
       <FlatList
         style={styles.screen}
         contentContainerStyle={[

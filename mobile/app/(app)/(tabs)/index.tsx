@@ -3,8 +3,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
@@ -124,9 +123,6 @@ function groupByDay(workouts: WorkoutSummary[]): HistorySection[] {
 export default function TrainingHome() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  // Only while this tab is focused: the app-wide status bar is light-on-dark, which
-  // would be unreadable here, and the other tabs are still dark.
-  const focused = useIsFocused();
   const [history] = useState(() => createWorkoutHistory(workoutsApi.listWorkouts));
   const { items: workouts, loading, loadingMore, hasMore, error } = useSyncExternalStore(
     history.subscribe, history.getSnapshot,
@@ -251,12 +247,9 @@ export default function TrainingHome() {
     </View>
   );
 
-  const statusBar = focused ? <StatusBar style="dark" /> : null;
-
   if (loading && workouts.length === 0) {
     return (
       <View style={styles.screen}>
-        {statusBar}
         {topBar}
         <View style={styles.centered}>
           <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading workouts" />
@@ -269,7 +262,6 @@ export default function TrainingHome() {
 
   return (
     <View style={styles.screen}>
-      {statusBar}
       {topBar}
       <SectionList
         style={styles.list}

@@ -31,21 +31,6 @@ test('coach screens: the coach files use the light theme and none of the Roman o
   }
 });
 
-test('coach screens: the stack gives every coach route (and Research) the light header', () => {
-  const layout = read('app/(app)/_layout.tsx');
-  const withLight = [...layout.matchAll(/name="([^"]+)"\s*options=\{\{[^}]*\.\.\.lightHeader/g)].map((m) => m[1]);
-  assert.deepEqual(withLight.sort(), [
-    'coaching/athlete/[linkId]/index',
-    'coaching/athlete/[linkId]/send-program',
-    'coaching/athlete/[linkId]/workout/[workoutId]',
-    'coaching/athletes',
-    'coaching/coaches',
-    'coaching/program-offer/[offerId]',
-    'coaching/programs-received',
-    'research',
-  ]);
-});
-
 test('coach screens: the sharing status is written out and programs are not tied to it', () => {
   const coaches = read('app/(app)/coaching/coaches.tsx');
   assert.match(coaches, /Sharing is on/);
@@ -53,12 +38,6 @@ test('coach screens: the sharing status is written out and programs are not tied
   assert.match(coaches, /do not depend on this setting/);
   // Turning sharing on still asks first.
   assert.match(coaches, /Share your workouts with/);
-});
-
-test('coach screens: every light screen owns the status bar through the shared focused component', () => {
-  for (const file of light.filter((f) => f.startsWith('app/'))) {
-    assert.match(read(file), /FocusedDarkStatusBar/, file);
-  }
 });
 
 // ── ConnectionRow: shared by My Athletes and My Coaches ────────────────────

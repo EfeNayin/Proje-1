@@ -29,7 +29,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as researchApi from "../../src/api/research";
 import type { Publication } from "../../src/api/research";
-import { FocusedDarkStatusBar } from "../../src/FocusedDarkStatusBar";
 import { light } from "../../src/lightTheme";
 import { createPublicationFeed } from "../../src/research/publicationFeed";
 import { pubmedLink } from "../../src/research/sourceLink";
@@ -210,61 +209,53 @@ export default function ResearchScreen() {
 
   // First load, or it failed: no list to show yet.
   if (items.length === 0 && (loading || !loaded)) {
-    return (
-      <>
-        <FocusedDarkStatusBar />
-        {error ? (
-          <View style={styles.centered}>
-            <Text accessibilityRole="alert" style={styles.errorTitle}>
-              Could not load publications.
-            </Text>
-            <Text style={styles.centeredText}>{error.message}</Text>
-            <Pressable
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-              onPress={() => void feed.refresh()}
-            >
-              <Text style={styles.buttonText}>Try again</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View style={styles.centered}>
-            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading publications" />
-          </View>
-        )}
-      </>
+    return error ? (
+      <View style={styles.centered}>
+        <Text accessibilityRole="alert" style={styles.errorTitle}>
+          Could not load publications.
+        </Text>
+        <Text style={styles.centeredText}>{error.message}</Text>
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+          onPress={() => void feed.refresh()}
+        >
+          <Text style={styles.buttonText}>Try again</Text>
+        </Pressable>
+      </View>
+    ) : (
+      <View style={styles.centered}>
+        <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading publications" />
+      </View>
     );
   }
 
   return (
-    <>
-      <FocusedDarkStatusBar />
-      <FlatList
-        style={styles.screen}
-        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 24 }}
-        data={items}
-        keyExtractor={(item) => item.pmid}
-        renderItem={({ item, index }) => <PublicationRow publication={item} first={index === 0} />}
-        ListHeaderComponent={header}
-        // A failed refresh is not an empty result: only say "no publications"
-        // when PubMed answered and the list really is empty.
-        ListEmptyComponent={
-          error ? null : (
-            <Text style={styles.centeredText}>PubMed returned no matching publications.</Text>
-          )
-        }
-        ListFooterComponent={footer}
-        onEndReached={() => void feed.loadMore()}
-        onEndReachedThreshold={0.4}
-        refreshControl={
-          <RefreshControl
-            refreshing={loading}
-            onRefresh={() => void feed.refresh()}
-            tintColor={light.textSecondary}
-          />
-        }
-      />
-    </>
+    <FlatList
+      style={styles.screen}
+      contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 24 }}
+      data={items}
+      keyExtractor={(item) => item.pmid}
+      renderItem={({ item, index }) => <PublicationRow publication={item} first={index === 0} />}
+      ListHeaderComponent={header}
+      // A failed refresh is not an empty result: only say "no publications"
+      // when PubMed answered and the list really is empty.
+      ListEmptyComponent={
+        error ? null : (
+          <Text style={styles.centeredText}>PubMed returned no matching publications.</Text>
+        )
+      }
+      ListFooterComponent={footer}
+      onEndReached={() => void feed.loadMore()}
+      onEndReachedThreshold={0.4}
+      refreshControl={
+        <RefreshControl
+          refreshing={loading}
+          onRefresh={() => void feed.refresh()}
+          tintColor={light.textSecondary}
+        />
+      }
+    />
   );
 }
 

@@ -27,7 +27,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as programsApi from "../../../src/api/programs";
 import type { ProgramDetail } from "../../../src/api/programs";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
 import { light } from "../../../src/lightTheme";
 import { createProgramMutations } from "../../../src/programs/programActions";
 
@@ -237,7 +236,6 @@ export default function ProgramScreen() {
   if (!program) {
     return (
       <View style={styles.screen}>
-        <FocusedDarkStatusBar />
         <TopBar topInset={insets.top} />
         <View style={styles.centered}>
           {loadError ? (
@@ -275,7 +273,6 @@ export default function ProgramScreen() {
 
   return (
     <View style={styles.screen}>
-      <FocusedDarkStatusBar />
       <TopBar topInset={insets.top} onDelete={handleDelete} deleting={deleting} />
 
       <ScrollView

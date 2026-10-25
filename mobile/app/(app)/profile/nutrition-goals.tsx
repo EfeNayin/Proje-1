@@ -24,7 +24,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -47,8 +47,6 @@ import {
   updateNutritionGoals,
 } from "../../../src/api/nutrition";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
-import { lightHeaderOptions } from "../../../src/lightHeaderOptions";
 import { light } from "../../../src/lightTheme";
 import {
   isMacroAutoAdjustEnabled,
@@ -211,17 +209,9 @@ export default function NutritionGoalsScreen() {
     };
   }, [reloadKey]);
 
-  const header = (
-    <>
-      <Stack.Screen options={lightHeaderOptions} />
-      <FocusedDarkStatusBar />
-    </>
-  );
-
   if (!user || loading) {
     return (
       <View style={styles.loading}>
-        {header}
         <ActivityIndicator color={light.textSecondary} />
       </View>
     );
@@ -232,7 +222,6 @@ export default function NutritionGoalsScreen() {
   if (goals === null) {
     return (
       <View style={styles.loading}>
-        {header}
         <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.loadError}>
           {`Could not load your nutrition goals. ${error ?? ""}`.trim()}
         </Text>
@@ -364,7 +353,6 @@ export default function NutritionGoalsScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      {header}
 
       <View style={styles.autoAdjustRow}>
         <View style={styles.autoAdjustText}>

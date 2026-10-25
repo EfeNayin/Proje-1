@@ -11,17 +11,10 @@ const read = (file) => readFileSync(path.join(root, file), 'utf8').replace(/\r\n
 
 const screen = () => read('app/(app)/research.tsx');
 
-test('research: light theme, system font, owns the status bar through the shared component', () => {
+test('research: light theme and system font', () => {
   const source = screen();
   assert.match(source, /lightTheme/);
-  assert.match(source, /FocusedDarkStatusBar/);
   assert.doesNotMatch(source, /romanTheme|romanFont|useRomanFonts|roman\./);
-});
-
-test('research: the stack gives Research the light header and no Roman header is left', () => {
-  const layout = read('app/(app)/_layout.tsx');
-  assert.match(layout, /name="research"\s+options=\{\{\s*title: "Research",\s*\.\.\.lightHeader/);
-  assert.doesNotMatch(layout, /romanHeader|romanTheme|useRomanFonts/);
 });
 
 test('research: titles, journals, abstracts and the original-text note are never clipped', () => {

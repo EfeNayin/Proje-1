@@ -9,7 +9,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useState } from "react";
-import { Stack, useFocusEffect } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
@@ -24,8 +24,6 @@ import {
 import * as bodyApi from "../../../src/api/body";
 import type { BodyMeasurement, BodySummary } from "../../../src/api/body";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
-import { lightHeaderOptions } from "../../../src/lightHeaderOptions";
 import { light } from "../../../src/lightTheme";
 import {
   BODY_WEIGHT_MAX_KG,
@@ -236,17 +234,9 @@ export default function WeightHistoryScreen() {
     }
   };
 
-  const header = (
-    <>
-      <Stack.Screen options={lightHeaderOptions} />
-      <FocusedDarkStatusBar />
-    </>
-  );
-
   if (loading && !hasLoaded) {
     return (
       <View style={styles.centered}>
-        {header}
         <ActivityIndicator color={light.textSecondary} />
       </View>
     );
@@ -255,7 +245,6 @@ export default function WeightHistoryScreen() {
   if (!hasLoaded) {
     return (
       <View style={styles.centered}>
-        {header}
         <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.loadError}>
           {`Could not load your weight history. ${loadError ?? ""}`.trim()}
         </Text>
@@ -279,7 +268,6 @@ export default function WeightHistoryScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      {header}
       {loadError ? (
         <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
           {`Could not refresh. Showing the last loaded entries. ${loadError}`}

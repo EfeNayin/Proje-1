@@ -9,8 +9,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -135,16 +134,6 @@ function formatSessionDate(iso: string): string {
     day: "numeric",
     month: "short",
   });
-}
-
-/**
- * This screen is light, but the app root sets light status-bar icons for the
- * dark screens. Dark icons only while this screen is the focused one, so the
- * screens pushed over it (the picker) are not left with a stale style.
- */
-function FocusedDarkStatusBar() {
-  const focused = useIsFocused();
-  return focused ? <StatusBar style="dark" /> : null;
 }
 
 /** "12" over "working sets": one value, one label, read together. */
@@ -1139,7 +1128,6 @@ export default function ActiveWorkoutScreen() {
     return (
       <View style={styles.centered}>
         <Stack.Screen options={{ headerShown: false }} />
-        <FocusedDarkStatusBar />
         <ActivityIndicator color={light.textSecondary} />
       </View>
     );
@@ -1149,7 +1137,6 @@ export default function ActiveWorkoutScreen() {
     return (
       <View style={styles.centered}>
         <Stack.Screen options={{ headerShown: false }} />
-        <FocusedDarkStatusBar />
         <Text accessibilityRole="alert" style={styles.error}>{error ?? "Workout not found"}</Text>
         <Pressable
           accessibilityRole="button"
@@ -1186,7 +1173,6 @@ export default function ActiveWorkoutScreen() {
         {/* The screen draws its own top bar (back, name, finish) below, so the
             native header is off: both together would show the name twice. */}
         <Stack.Screen options={{ headerShown: false }} />
-        <FocusedDarkStatusBar />
 
         <View style={[styles.topBar, { paddingTop: insets.top }]}>
           <View style={styles.topBarRow}>

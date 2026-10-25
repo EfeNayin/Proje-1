@@ -29,7 +29,6 @@ import type { ProgramPreview } from "../../../../../src/api/coaching";
 import { listPrograms } from "../../../../../src/api/programs";
 import type { ProgramSummary } from "../../../../../src/api/programs";
 import { useAuth } from "../../../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../../../src/FocusedDarkStatusBar";
 import { light } from "../../../../../src/lightTheme";
 import { OfferProgramView } from "../../../../../src/coaching/OfferProgramView";
 import {
@@ -176,7 +175,6 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
   if (ended) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
-        <FocusedDarkStatusBar />
         <Text accessibilityRole="alert" style={styles.empty}>
           This connection has ended, so programs can no longer be sent.
         </Text>
@@ -366,45 +364,42 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
   );
 
   return (
-    <>
-      <FocusedDarkStatusBar />
-      <FlatList
-        style={styles.screen}
-        contentContainerStyle={[styles.content, padding]}
-        // While a program is chosen the list gives way to its preview.
-        data={chosen ? [] : (programs ?? [])}
-        keyExtractor={(item) => item.id}
-        keyboardShouldPersistTaps="handled"
-        ListHeaderComponent={header}
-        ListFooterComponent={footer}
-        ListEmptyComponent={
-          chosen ? null : programs === null ? (
-            loadError ? null : (
-              <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading your programs" />
-            )
-          ) : (
-            <Text style={styles.empty}>
-              You have no programs yet. Create one under Programs, add exercises, then come back.
-            </Text>
+    <FlatList
+      style={styles.screen}
+      contentContainerStyle={[styles.content, padding]}
+      // While a program is chosen the list gives way to its preview.
+      data={chosen ? [] : (programs ?? [])}
+      keyExtractor={(item) => item.id}
+      keyboardShouldPersistTaps="handled"
+      ListHeaderComponent={header}
+      ListFooterComponent={footer}
+      ListEmptyComponent={
+        chosen ? null : programs === null ? (
+          loadError ? null : (
+            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading your programs" />
           )
-        }
-        renderItem={({ item }) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={item.is_active ? `${item.name}, your active program` : item.name}
-            accessibilityHint="Shows what would be sent"
-            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-            onPress={() => void choose(item.id)}
-          >
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{item.name}</Text>
-              {item.is_active ? <Text style={styles.meta}>Your active program</Text> : null}
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
-          </Pressable>
-        )}
-      />
-    </>
+        ) : (
+          <Text style={styles.empty}>
+            You have no programs yet. Create one under Programs, add exercises, then come back.
+          </Text>
+        )
+      }
+      renderItem={({ item }) => (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={item.is_active ? `${item.name}, your active program` : item.name}
+          accessibilityHint="Shows what would be sent"
+          style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+          onPress={() => void choose(item.id)}
+        >
+          <View style={styles.rowText}>
+            <Text style={styles.rowTitle}>{item.name}</Text>
+            {item.is_active ? <Text style={styles.meta}>Your active program</Text> : null}
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
+        </Pressable>
+      )}
+    />
   );
 }
 

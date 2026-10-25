@@ -25,7 +25,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { AthleteOverviewItem } from "../../../src/api/coaching";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
 import { light } from "../../../src/lightTheme";
 import { activityLabel, describeActivity } from "../../../src/coaching/activityDisplay";
 import { athleteOverviewStore } from "../../../src/coaching/athleteOverviewSession";
@@ -117,7 +116,6 @@ export default function MyAthletesScreen() {
   if (!coachEnabled) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
-        <FocusedDarkStatusBar />
         <View style={styles.card}>
           <Text accessibilityRole="header" style={styles.cardTitle}>
             Coach tools
@@ -252,62 +250,59 @@ export default function MyAthletesScreen() {
   );
 
   return (
-    <>
-      <FocusedDarkStatusBar />
-      <FlatList
-        style={styles.screen}
-        contentContainerStyle={[styles.content, padding]}
-        data={list.items}
-        keyExtractor={(item) => item.id}
-        keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => (
-          <AthleteCard
-            item={item}
-            days={days}
-            ending={state.ending.includes(item.id)}
-            onEnd={() => confirmEnd(item.id, personName(item.person))}
-            onOpen={() => router.push(`/coaching/athlete/${item.id}`)}
-          />
-        )}
-        ListHeaderComponent={header}
-        ListEmptyComponent={
-          firstLoad ? (
-            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading athletes" />
-          ) : (list.error && !list.loaded) || list.denied ? null : (
-            <Text style={styles.empty}>
-              No athletes connected yet. Create an invite code to get started.
+    <FlatList
+      style={styles.screen}
+      contentContainerStyle={[styles.content, padding]}
+      data={list.items}
+      keyExtractor={(item) => item.id}
+      keyboardShouldPersistTaps="handled"
+      renderItem={({ item }) => (
+        <AthleteCard
+          item={item}
+          days={days}
+          ending={state.ending.includes(item.id)}
+          onEnd={() => confirmEnd(item.id, personName(item.person))}
+          onOpen={() => router.push(`/coaching/athlete/${item.id}`)}
+        />
+      )}
+      ListHeaderComponent={header}
+      ListEmptyComponent={
+        firstLoad ? (
+          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading athletes" />
+        ) : (list.error && !list.loaded) || list.denied ? null : (
+          <Text style={styles.empty}>
+            No athletes connected yet. Create an invite code to get started.
+          </Text>
+        )
+      }
+      ListFooterComponent={
+        list.loadingMore ? (
+          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading more athletes" />
+        ) : list.moreError ? (
+          <View style={styles.banner}>
+            <Text accessibilityRole="alert" style={styles.error}>
+              {list.moreError}
             </Text>
-          )
-        }
-        ListFooterComponent={
-          list.loadingMore ? (
-            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading more athletes" />
-          ) : list.moreError ? (
-            <View style={styles.banner}>
-              <Text accessibilityRole="alert" style={styles.error}>
-                {list.moreError}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-                onPress={() => void athleteOverviewStore.loadMore()}
-              >
-                <Text style={styles.secondaryText}>Try again</Text>
-              </Pressable>
-            </View>
-          ) : null
-        }
-        onEndReachedThreshold={0.4}
-        onEndReached={() => void athleteOverviewStore.loadMore()}
-        refreshControl={
-          <RefreshControl
-            refreshing={list.loading && list.loaded}
-            onRefresh={() => void athleteOverviewStore.refresh()}
-            tintColor={light.textSecondary}
-          />
-        }
-      />
-    </>
+            <Pressable
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+              onPress={() => void athleteOverviewStore.loadMore()}
+            >
+              <Text style={styles.secondaryText}>Try again</Text>
+            </Pressable>
+          </View>
+        ) : null
+      }
+      onEndReachedThreshold={0.4}
+      onEndReached={() => void athleteOverviewStore.loadMore()}
+      refreshControl={
+        <RefreshControl
+          refreshing={list.loading && list.loaded}
+          onRefresh={() => void athleteOverviewStore.refresh()}
+          tintColor={light.textSecondary}
+        />
+      }
+    />
   );
 }
 

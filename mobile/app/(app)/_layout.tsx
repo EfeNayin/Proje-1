@@ -11,7 +11,6 @@ import { Redirect, Stack } from "expo-router";
 import { useAuth } from "../../src/auth/AuthContext";
 import { lightHeaderOptions } from "../../src/lightHeaderOptions";
 import { light } from "../../src/lightTheme";
-import { colors } from "../../src/theme";
 
 /**
  * Deep links (and reloads) that land on a screen below the tabs, such as
@@ -25,15 +24,6 @@ export const unstable_settings = {
   anchor: "(tabs)",
 };
 
-// Header for the light screens (Research and the coach screens: connections,
-// workout review and program offers),
-// set here rather than inside each screen so the header is already light while
-// the screen is pushed, and the page behind it does not flash dark.
-const lightHeader = {
-  ...lightHeaderOptions,
-  contentStyle: { backgroundColor: light.background },
-};
-
 export default function AppLayout() {
   const { status } = useAuth();
 
@@ -43,44 +33,27 @@ export default function AppLayout() {
 
   return (
     <Stack
+      // Every screen in this area is light. The header and the page behind it
+      // are set once here rather than per screen, so a pushed screen never
+      // flashes a different colour while it mounts.
       screenOptions={{
-        headerStyle: { backgroundColor: colors.background },
-        headerTintColor: colors.text,
-        headerShadowVisible: false,
+        ...lightHeaderOptions,
         // Arrow only: without this iOS shows the previous screen's title, which for
         // screens pushed from the tabs is the raw route name "(tabs)".
         headerBackButtonDisplayMode: "minimal",
-        contentStyle: { backgroundColor: colors.background },
+        contentStyle: { backgroundColor: light.background },
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="diagnosis" options={{ title: "Diagnosis" }} />
-      <Stack.Screen
-        name="research"
-        options={{ title: "Research", ...lightHeader }}
-      />
-      <Stack.Screen name="coaching/athletes" options={{ title: "My Athletes", ...lightHeader }} />
-      <Stack.Screen name="coaching/coaches" options={{ title: "My Coaches", ...lightHeader }} />
-      <Stack.Screen
-        name="coaching/athlete/[linkId]/index"
-        options={{ title: "Athlete", ...lightHeader }}
-      />
-      <Stack.Screen
-        name="coaching/athlete/[linkId]/workout/[workoutId]"
-        options={{ title: "Workout", ...lightHeader }}
-      />
-      <Stack.Screen
-        name="coaching/athlete/[linkId]/send-program"
-        options={{ title: "Send program", ...lightHeader }}
-      />
-      <Stack.Screen
-        name="coaching/programs-received"
-        options={{ title: "Received programs", ...lightHeader }}
-      />
-      <Stack.Screen
-        name="coaching/program-offer/[offerId]"
-        options={{ title: "Program", ...lightHeader }}
-      />
+      <Stack.Screen name="research" options={{ title: "Research" }} />
+      <Stack.Screen name="coaching/athletes" options={{ title: "My Athletes" }} />
+      <Stack.Screen name="coaching/coaches" options={{ title: "My Coaches" }} />
+      <Stack.Screen name="coaching/athlete/[linkId]/index" options={{ title: "Athlete" }} />
+      <Stack.Screen name="coaching/athlete/[linkId]/workout/[workoutId]" options={{ title: "Workout" }} />
+      <Stack.Screen name="coaching/athlete/[linkId]/send-program" options={{ title: "Send program" }} />
+      <Stack.Screen name="coaching/programs-received" options={{ title: "Received programs" }} />
+      <Stack.Screen name="coaching/program-offer/[offerId]" options={{ title: "Program" }} />
       <Stack.Screen name="workout/[id]" options={{ title: "Workout" }} />
       <Stack.Screen
         name="workout/exercise-picker"

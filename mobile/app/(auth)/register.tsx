@@ -17,7 +17,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../src/auth/AuthContext";
 import { authStyles as styles } from "../../src/auth/authStyles";
 import { createRegisterSubmitter } from "../../src/auth/registerSubmit";
-import { FocusedDarkStatusBar } from "../../src/FocusedDarkStatusBar";
 import { light } from "../../src/lightTheme";
 
 export default function RegisterScreen() {
@@ -68,7 +67,6 @@ export default function RegisterScreen() {
 
   return (
     <View style={styles.root}>
-      <FocusedDarkStatusBar />
       <KeyboardAvoidingView
         style={styles.flex}
         // iOS pushes content up; Android already resizes the window.

@@ -29,7 +29,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as programsApi from "../../../src/api/programs";
 import type { ProgramSummary } from "../../../src/api/programs";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
 import { light } from "../../../src/lightTheme";
 import { createProgramCreator } from "../../../src/programs/programActions";
 
@@ -111,7 +110,6 @@ export default function ProgramsScreen() {
       // iOS pushes content up; Android already resizes the window.
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <FocusedDarkStatusBar />
       <View style={[styles.topBar, { paddingTop: insets.top }]}>
         <View style={styles.topBarRow}>
           <Text accessibilityRole="header" style={styles.topBarTitle}>

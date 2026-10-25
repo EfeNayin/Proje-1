@@ -11,7 +11,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -28,8 +28,6 @@ import { updateMe } from "../../../src/api/auth";
 import * as bodyApi from "../../../src/api/body";
 import type { BodySummary } from "../../../src/api/body";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
-import { lightHeaderOptions } from "../../../src/lightHeaderOptions";
 import { light } from "../../../src/lightTheme";
 import {
   bodyWeightRangeLabel,
@@ -292,8 +290,6 @@ export default function PersonalDetailsScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Stack.Screen options={lightHeaderOptions} />
-      <FocusedDarkStatusBar />
       <View style={styles.goalCard}>
         <View style={styles.goalText}>
           <Text style={styles.goalLabel}>Goal weight</Text>

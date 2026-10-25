@@ -24,15 +24,12 @@
  *   following their home timezone is never overridden without asking.
  */
 
-import { Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import * as Localization from "expo-localization";
 
 import { updateMe } from "../../../src/api/auth";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
-import { lightHeaderOptions } from "../../../src/lightHeaderOptions";
 import { light } from "../../../src/lightTheme";
 import {
   isReadinessCheckinEnabled,
@@ -127,8 +124,6 @@ export default function PreferencesScreen() {
   if (!user) {
     return (
       <View style={styles.loading}>
-        <Stack.Screen options={lightHeaderOptions} />
-        <FocusedDarkStatusBar />
         <ActivityIndicator color={light.textSecondary} />
       </View>
     );
@@ -136,8 +131,6 @@ export default function PreferencesScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Stack.Screen options={lightHeaderOptions} />
-      <FocusedDarkStatusBar />
       <SectionLabel>Weight unit</SectionLabel>
       <View style={[styles.card, styles.row]}>
         <View style={styles.rowText}>

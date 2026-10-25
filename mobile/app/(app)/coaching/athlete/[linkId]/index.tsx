@@ -36,7 +36,6 @@ import { personHandle, personName } from "../../../../../src/coaching/presentati
 import { useAthleteWorkouts } from "../../../../../src/coaching/useAthleteWorkouts";
 import { useCoaching } from "../../../../../src/coaching/useCoaching";
 import { useAuth } from "../../../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../../../src/FocusedDarkStatusBar";
 import { light } from "../../../../../src/lightTheme";
 
 const MIN_TOUCH = 44;
@@ -141,7 +140,6 @@ function AthleteWorkouts({ userId, linkId }: { userId: string | null; linkId: st
   if (message) {
     return (
       <View style={[styles.screen, styles.content, { paddingBottom: insets.bottom + 24 }]}>
-        <FocusedDarkStatusBar />
         {header}
         <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.empty}>
           {message}
@@ -151,59 +149,56 @@ function AthleteWorkouts({ userId, linkId }: { userId: string | null; linkId: st
   }
 
   return (
-    <>
-      <FocusedDarkStatusBar />
-      <FlatList
-        style={styles.screen}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
-        data={list.items}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={header}
-        renderItem={({ item }) => (
-          <SessionRow
-            session={item}
-            onOpen={() => router.push(`/coaching/athlete/${linkId}/workout/${item.id}`)}
-          />
-        )}
-        onEndReachedThreshold={0.4}
-        onEndReached={() => void athleteWorkoutsStore.loadMore()}
-        ListEmptyComponent={
-          firstLoad ? (
-            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading workouts" />
-          ) : list.error && !list.loaded ? null : (
-            <Text style={styles.empty}>
-              No completed workouts recorded yet. They appear here once {name} finishes one in the
-              app.
+    <FlatList
+      style={styles.screen}
+      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
+      data={list.items}
+      keyExtractor={(item) => item.id}
+      ListHeaderComponent={header}
+      renderItem={({ item }) => (
+        <SessionRow
+          session={item}
+          onOpen={() => router.push(`/coaching/athlete/${linkId}/workout/${item.id}`)}
+        />
+      )}
+      onEndReachedThreshold={0.4}
+      onEndReached={() => void athleteWorkoutsStore.loadMore()}
+      ListEmptyComponent={
+        firstLoad ? (
+          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading workouts" />
+        ) : list.error && !list.loaded ? null : (
+          <Text style={styles.empty}>
+            No completed workouts recorded yet. They appear here once {name} finishes one in the
+            app.
+          </Text>
+        )
+      }
+      ListFooterComponent={
+        list.loadingMore ? (
+          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading more workouts" />
+        ) : list.moreError ? (
+          <View style={styles.banner}>
+            <Text accessibilityRole="alert" style={styles.error}>
+              {list.moreError}
             </Text>
-          )
-        }
-        ListFooterComponent={
-          list.loadingMore ? (
-            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading more workouts" />
-          ) : list.moreError ? (
-            <View style={styles.banner}>
-              <Text accessibilityRole="alert" style={styles.error}>
-                {list.moreError}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-                onPress={() => void athleteWorkoutsStore.loadMore()}
-              >
-                <Text style={styles.secondaryText}>Try again</Text>
-              </Pressable>
-            </View>
-          ) : null
-        }
-        refreshControl={
-          <RefreshControl
-            refreshing={list.loading && list.loaded}
-            onRefresh={() => void refresh()}
-            tintColor={light.textSecondary}
-          />
-        }
-      />
-    </>
+            <Pressable
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+              onPress={() => void athleteWorkoutsStore.loadMore()}
+            >
+              <Text style={styles.secondaryText}>Try again</Text>
+            </Pressable>
+          </View>
+        ) : null
+      }
+      refreshControl={
+        <RefreshControl
+          refreshing={list.loading && list.loaded}
+          onRefresh={() => void refresh()}
+          tintColor={light.textSecondary}
+        />
+      }
+    />
   );
 }
 

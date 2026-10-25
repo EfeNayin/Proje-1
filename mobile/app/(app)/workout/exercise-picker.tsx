@@ -25,7 +25,6 @@ import {
 
 import * as exercisesApi from "../../../src/api/exercises";
 import type { Category, ExerciseSummary } from "../../../src/api/exercises";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
 import { light } from "../../../src/lightTheme";
 import { radius, spacing } from "../../../src/theme";
 import { depositPickedExercise } from "../../../src/workout/usePickedExercise";
@@ -93,7 +92,6 @@ export default function ExercisePicker() {
 
   return (
     <View style={styles.screen}>
-      <FocusedDarkStatusBar />
       {/* The modal header comes from the app Stack; this makes it light too. */}
       <Stack.Screen
         options={{

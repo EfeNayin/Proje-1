@@ -23,7 +23,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { ReceivedOffer } from "../../../src/api/coaching";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
 import { light } from "../../../src/lightTheme";
 import { offerStatusLabel, summaryText } from "../../../src/coaching/offerDisplay";
 import { formatConnectedDate, personName } from "../../../src/coaching/presentation";
@@ -55,77 +54,74 @@ function ReceivedPrograms({ userId }: { userId: string | null }) {
   const firstLoad = !received.loaded && received.loading;
 
   return (
-    <>
-      <FocusedDarkStatusBar />
-      <FlatList
-        style={styles.screen}
-        contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 24 }]}
-        data={received.items}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <OfferRow offer={item} onOpen={() => router.push(`/coaching/program-offer/${item.id}`)} />
-        )}
-        ListHeaderComponent={
-          <View>
-            <Text style={styles.intro}>
-              A coach can send you a program, but it only becomes yours when you accept. Accepting
-              adds an independent copy; it never changes your active program.
-            </Text>
-            {received.error ? (
-              <View style={styles.banner}>
-                <Text accessibilityRole="alert" style={styles.error}>
-                  {received.loaded ? "Could not refresh." : "Could not load programs."}{" "}
-                  {received.error}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-                  onPress={() => void programOffersStore.refreshReceived()}
-                >
-                  <Text style={styles.secondaryText}>Try again</Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </View>
-        }
-        ListEmptyComponent={
-          firstLoad ? (
-            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading programs" />
-          ) : received.error && !received.loaded ? null : (
-            <Text style={styles.empty}>
-              No programs received. When a coach you are connected to sends one, it appears here.
-            </Text>
-          )
-        }
-        ListFooterComponent={
-          received.loadingMore ? (
-            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading more programs" />
-          ) : received.moreError ? (
+    <FlatList
+      style={styles.screen}
+      contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 24 }]}
+      data={received.items}
+      keyExtractor={(item) => item.id}
+      renderItem={({ item }) => (
+        <OfferRow offer={item} onOpen={() => router.push(`/coaching/program-offer/${item.id}`)} />
+      )}
+      ListHeaderComponent={
+        <View>
+          <Text style={styles.intro}>
+            A coach can send you a program, but it only becomes yours when you accept. Accepting
+            adds an independent copy; it never changes your active program.
+          </Text>
+          {received.error ? (
             <View style={styles.banner}>
               <Text accessibilityRole="alert" style={styles.error}>
-                {received.moreError}
+                {received.loaded ? "Could not refresh." : "Could not load programs."}{" "}
+                {received.error}
               </Text>
               <Pressable
                 accessibilityRole="button"
                 style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-                onPress={() => void programOffersStore.loadMoreReceived()}
+                onPress={() => void programOffersStore.refreshReceived()}
               >
                 <Text style={styles.secondaryText}>Try again</Text>
               </Pressable>
             </View>
-          ) : null
-        }
-        onEndReachedThreshold={0.4}
-        onEndReached={() => void programOffersStore.loadMoreReceived()}
-        refreshControl={
-          <RefreshControl
-            refreshing={received.loading && received.loaded}
-            onRefresh={() => void programOffersStore.refreshReceived()}
-            tintColor={light.textSecondary}
-          />
-        }
-      />
-    </>
+          ) : null}
+        </View>
+      }
+      ListEmptyComponent={
+        firstLoad ? (
+          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading programs" />
+        ) : received.error && !received.loaded ? null : (
+          <Text style={styles.empty}>
+            No programs received. When a coach you are connected to sends one, it appears here.
+          </Text>
+        )
+      }
+      ListFooterComponent={
+        received.loadingMore ? (
+          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading more programs" />
+        ) : received.moreError ? (
+          <View style={styles.banner}>
+            <Text accessibilityRole="alert" style={styles.error}>
+              {received.moreError}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+              onPress={() => void programOffersStore.loadMoreReceived()}
+            >
+              <Text style={styles.secondaryText}>Try again</Text>
+            </Pressable>
+          </View>
+        ) : null
+      }
+      onEndReachedThreshold={0.4}
+      onEndReached={() => void programOffersStore.loadMoreReceived()}
+      refreshControl={
+        <RefreshControl
+          refreshing={received.loading && received.loaded}
+          onRefresh={() => void programOffersStore.refreshReceived()}
+          tintColor={light.textSecondary}
+        />
+      }
+    />
   );
 }
 

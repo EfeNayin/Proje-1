@@ -11,7 +11,7 @@ import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AuthProvider, useAuth } from "../src/auth/AuthContext";
-import { colors } from "../src/theme";
+import { light } from "../src/lightTheme";
 
 function RootNavigator() {
   const { status, retryRestore } = useAuth();
@@ -19,7 +19,7 @@ function RootNavigator() {
   if (status === "loading") {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.accent} />
+        <ActivityIndicator size="large" color={light.textSecondary} />
       </View>
     );
   }
@@ -42,7 +42,7 @@ function RootNavigator() {
   // Both groups are declared; each group's own layout redirects if the user
   // is on the wrong side of the auth boundary.
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: light.background } }}>
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(app)" />
     </Stack>
@@ -52,28 +52,38 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <StatusBar style="light" />
+      {/* The one status-bar owner: every screen is light, so dark icons everywhere. */}
+      <StatusBar style="dark" />
       <RootNavigator />
     </AuthProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  title: { color: colors.text, fontSize: 20, fontWeight: "600" },
-  message: { color: colors.textMuted, textAlign: "center", marginTop: 12, maxWidth: 340 },
+  title: { color: light.text, fontSize: 20, fontWeight: "600" },
+  message: {
+    color: light.textSecondary,
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: "center",
+    marginTop: 12,
+    maxWidth: 340,
+  },
   retry: {
-    backgroundColor: colors.accent,
+    minHeight: 52,
+    backgroundColor: light.primary,
     paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
     marginTop: 24,
   },
-  retryText: { color: colors.accentText, fontWeight: "600" },
+  retryText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
   loading: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
+    backgroundColor: light.background,
     padding: 24,
   },
 });

@@ -6,7 +6,7 @@
  * to the Personal Details / Preferences sections from a later task.
  */
 
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -23,8 +23,6 @@ import {
 import { initials, updateMe } from "../../../src/api/auth";
 import { ApiError } from "../../../src/api/client";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
-import { lightHeaderOptions } from "../../../src/lightHeaderOptions";
 import { light } from "../../../src/lightTheme";
 
 export default function EditProfileScreen() {
@@ -84,8 +82,6 @@ export default function EditProfileScreen() {
       style={styles.flex}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <Stack.Screen options={lightHeaderOptions} />
-      <FocusedDarkStatusBar />
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
