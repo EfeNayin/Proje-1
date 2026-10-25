@@ -41,14 +41,23 @@ from app.models import CoachAthleteLink, Set, User, Workout
 NOT_SHARING = "This athlete is not sharing workouts with you."
 
 
-async def _authorise(db: AsyncSession, coach: User, link_id: UUID) -> CoachAthleteLink:
-    link = await db.scalar(
-        select(CoachAthleteLink).where(
-            CoachAthleteLink.id == link_id,
-            CoachAthleteLink.coach_id == coach.id,
-            CoachAthleteLink.ended_at.is_(None),
-        )
+async def _authorise(
+    db: AsyncSession, coach: User, link_id: UUID, *, lock: bool = False
+) -> CoachAthleteLink:
+    """The coach's active, sharing link, or 404/403.
+
+    `lock=True` takes the same row lock that ending the link and switching
+    sharing off take, so a write that authorised here commits before either
+    of them can proceed (and one that arrives after them is refused).
+    """
+    statement = select(CoachAthleteLink).where(
+        CoachAthleteLink.id == link_id,
+        CoachAthleteLink.coach_id == coach.id,
+        CoachAthleteLink.ended_at.is_(None),
     )
+    if lock:
+        statement = statement.with_for_update()
+    link = await db.scalar(statement)
     # Someone else's link, an unknown one and an ended one all look the same.
     if link is None:
         raise NotFoundError("Connection not found.")

@@ -15,6 +15,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Text,
     UniqueConstraint,
     text,
@@ -23,7 +24,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, created_at
+from app.models.base import Base, created_at, updated_at
 
 
 class CoachInvite(Base):
@@ -177,4 +178,54 @@ class ProgramOffer(Base):
             postgresql_where=text("status = 'pending'"),
         ),
         Index("idx_program_offers_link", "link_id", text("created_at DESC")),
+    )
+
+
+class WorkoutFeedback(Base):
+    """A coach's feedback on one completed workout, written for the athlete to read.
+
+    It belongs to ONE connection (link_id) and one workout, at most one per pair.
+    Only that connection's coach may read or change it, and only while the link
+    is active and the athlete shares workouts. A reconnection is a new link, so
+    it never reaches this row. The athlete reads it as long as the workout
+    exists, whatever happens to the link afterwards; deleting the workout
+    deletes it.
+
+    `version` is the concurrency token: an edit or delete must name the version
+    it saw. (link_id, create_request_id) is the create receipt, and
+    `create_hash` ties that receipt to the text it created, so a repeat of the
+    same create returns this row and a reused id with other text is refused.
+    """
+
+    __tablename__ = "workout_feedback"
+
+    id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    link_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("coach_athlete_links.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    workout_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("workouts.id", ondelete="CASCADE"), nullable=False
+    )
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    create_request_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    create_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[created_at]
+    updated_at: Mapped[updated_at]
+
+    __table_args__ = (
+        CheckConstraint(
+            "char_length(body) <= 2000 AND body ~ '\\S'", name="workout_feedback_body_check"
+        ),
+        CheckConstraint("version >= 1", name="workout_feedback_version_check"),
+        UniqueConstraint("link_id", "workout_id", name="workout_feedback_one_per_link_workout"),
+        UniqueConstraint("link_id", "create_request_id", name="workout_feedback_create_receipt"),
+        Index("idx_workout_feedback_workout", "workout_id", "created_at"),
     )

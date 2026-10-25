@@ -129,6 +129,67 @@ class AthleteExerciseHistoryCursor(BaseModel):
     exercise_id: UUID
 
 
+# ── Workout feedback ─────────────────────────────────────────────────────
+
+FEEDBACK_MAX_LENGTH = 2000
+
+
+def _clean_feedback(value: str) -> str:
+    """Plain text only: surrounding whitespace goes, blank is refused."""
+    if "\x00" in value:
+        raise ValueError("Feedback must be plain text.")
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("Feedback cannot be blank.")
+    return cleaned
+
+
+class FeedbackCreate(BaseModel):
+    body: str = Field(max_length=FEEDBACK_MAX_LENGTH)
+
+    @model_validator(mode="after")
+    def _clean(self) -> Self:
+        self.body = _clean_feedback(self.body)
+        return self
+
+
+class FeedbackUpdate(FeedbackCreate):
+    """The version the editor was looking at; a newer one means someone changed it."""
+
+    expected_version: int = Field(ge=1)
+
+
+class CoachFeedback(BaseModel):
+    """The coach's own feedback on a workout, as the coach sees it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    body: str
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class CoachFeedbackResult(BaseModel):
+    # None: this coach has written nothing on this workout (through this connection).
+    feedback: CoachFeedback | None
+
+
+class ReceivedFeedback(BaseModel):
+    """Feedback on the athlete's own workout, with the author's public name only."""
+
+    id: UUID
+    coach: PersonSummary
+    body: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReceivedFeedbackList(BaseModel):
+    items: list[ReceivedFeedback]
+
+
 # ── Roster activity overview ─────────────────────────────────────────────
 
 

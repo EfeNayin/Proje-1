@@ -12,20 +12,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.domains.auth.dependencies import CurrentUser
-from app.domains.coaching import offers, overview, service, workout_access
+from app.domains.coaching import feedback, offers, overview, service, workout_access
 from app.domains.coaching.schemas import (
     AthleteExerciseHistoryPage,
     AthleteOverviewPage,
     AthleteWorkoutDetail,
     AthleteWorkoutList,
+    CoachFeedback,
+    CoachFeedbackResult,
     Connection,
     ConnectionList,
+    FeedbackCreate,
+    FeedbackUpdate,
     InviteCodeRequest,
     InviteCreated,
     InvitePreview,
     PersonSummary,
     ProgramOfferRequest,
     ProgramPreview,
+    ReceivedFeedbackList,
     ReceivedOfferDetail,
     ReceivedOfferList,
     SentOfferDetail,
@@ -208,6 +213,91 @@ async def get_athlete_exercise_history(
     return await workout_access.get_exercise_history(
         db, current_user, link_id, workout_id, exercise_id, query
     )
+
+
+_FEEDBACK = "/athletes/{link_id}/workouts/{workout_id}/feedback"
+
+
+@router.get(
+    _FEEDBACK,
+    response_model=CoachFeedbackResult,
+    summary="Coach: your own feedback on a sharing athlete's completed workout",
+)
+async def get_workout_feedback(
+    link_id: UUID, workout_id: UUID, current_user: CurrentUser, db: DbSession, response: Response
+) -> CoachFeedbackResult:
+    response.headers["Cache-Control"] = "no-store"
+    return await feedback.get_feedback(db, current_user, link_id, workout_id)
+
+
+@router.put(
+    _FEEDBACK + "/requests/{request_id}",
+    response_model=CoachFeedback,
+    status_code=status.HTTP_201_CREATED,
+    summary="Coach: leave feedback the athlete can read; repeating a request is safe",
+)
+async def create_workout_feedback(
+    link_id: UUID,
+    workout_id: UUID,
+    request_id: UUID,
+    payload: FeedbackCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+    response: Response,
+) -> CoachFeedback:
+    response.headers["Cache-Control"] = "no-store"
+    created, is_new = await feedback.create_feedback(
+        db, current_user, link_id, workout_id, request_id, payload.body
+    )
+    if not is_new:
+        response.status_code = status.HTTP_200_OK
+    return created
+
+
+@router.patch(
+    _FEEDBACK,
+    response_model=CoachFeedback,
+    summary="Coach: edit your feedback; refused if it changed since `expected_version`",
+)
+async def update_workout_feedback(
+    link_id: UUID,
+    workout_id: UUID,
+    payload: FeedbackUpdate,
+    current_user: CurrentUser,
+    db: DbSession,
+    response: Response,
+) -> CoachFeedback:
+    response.headers["Cache-Control"] = "no-store"
+    return await feedback.update_feedback(
+        db, current_user, link_id, workout_id, payload.body, payload.expected_version
+    )
+
+
+@router.delete(
+    _FEEDBACK,
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Coach: delete your feedback; refused if it changed since `expected_version`",
+)
+async def delete_workout_feedback(
+    link_id: UUID,
+    workout_id: UUID,
+    expected_version: Annotated[int, Query(ge=1)],
+    current_user: CurrentUser,
+    db: DbSession,
+) -> None:
+    await feedback.delete_feedback(db, current_user, link_id, workout_id, expected_version)
+
+
+@router.get(
+    "/workouts/{workout_id}/feedback",
+    response_model=ReceivedFeedbackList,
+    summary="Athlete: the feedback coaches left on your own workout",
+)
+async def list_received_feedback(
+    workout_id: UUID, current_user: CurrentUser, db: DbSession, response: Response
+) -> ReceivedFeedbackList:
+    response.headers["Cache-Control"] = "no-store"
+    return await feedback.list_received(db, current_user, workout_id)
 
 
 @router.get(
