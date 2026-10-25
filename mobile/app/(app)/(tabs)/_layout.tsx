@@ -29,9 +29,9 @@ export default function TabsLayout() {
           // The screen draws its own title bar; a native header as well would
           // show "Training" twice.
           headerShown: false,
-          // Training and Programs are the light tabs so far. The navigator applies the
+          // Training, Programs and Volume are the light tabs so far. The navigator applies the
           // focused screen's tab bar options, so these affect the bar only while
-          // Training is focused; the other tabs keep the dark bar above.
+          // Training is focused; Profile keeps the dark bar above.
           sceneStyle: { backgroundColor: light.background },
           tabBarStyle: {
             backgroundColor: light.surface,
@@ -68,6 +68,14 @@ export default function TabsLayout() {
           title: "Volume",
           // Draws its own title bar; a native header as well would show "Volume" twice.
           headerShown: false,
+          // Light like Training and Programs; only applied while Volume is focused.
+          sceneStyle: { backgroundColor: light.background },
+          tabBarStyle: {
+            backgroundColor: light.surface,
+            borderTopColor: light.separator,
+          },
+          tabBarActiveTintColor: light.text,
+          tabBarInactiveTintColor: light.textSecondary,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="stats-chart" size={size} color={color} />
           ),

@@ -233,3 +233,19 @@ test('the accessible sentence carries the marker values the bar only shows visua
   const v = view.describeMuscle(muscle({ direct_sets: 8, status: 'below_mev', mev: 10, mav: 14, mrv: 20, name: 'biceps' }));
   assert.equal(v.accessibilityLabel, 'Biceps: 8 direct sets. Below MEV. Reference MEV 10, MAV 14, MRV 20.');
 });
+
+// The light screen colours every status from lightStatus; a status without an entry would crash the row.
+test('every volume status has light-screen colours that are readable on white', () => {
+  const { lightStatus } = load('src/lightTheme.ts');
+  const luminance = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrastOnWhite = (hex) => 1.05 / (luminance(hex) + 0.05);
+  assert.deepEqual(Object.keys(lightStatus).sort(), Object.keys(view.STATUS_LABELS).sort());
+  for (const [status, { text, fill }] of Object.entries(lightStatus)) {
+    assert.ok(contrastOnWhite(text) >= 4.5, `${status} text`);
+    assert.ok(contrastOnWhite(fill) >= 3, `${status} fill`);
+  }
+});
