@@ -34,7 +34,8 @@ const romanHeader = {
   contentStyle: { backgroundColor: roman.background },
 };
 
-// The light counterpart for the coach connection and workout-review screens:
+// The light counterpart for the coach screens (connections, workout review and
+// program offers):
 // set here rather than inside each screen so the header is already light while
 // the screen is pushed, and the page behind it does not flash dark.
 const lightHeader = {
@@ -82,15 +83,15 @@ export default function AppLayout() {
       />
       <Stack.Screen
         name="coaching/athlete/[linkId]/send-program"
-        options={{ title: "Send program", ...romanHeader }}
+        options={{ title: "Send program", ...lightHeader }}
       />
       <Stack.Screen
         name="coaching/programs-received"
-        options={{ title: "Received programs", ...romanHeader }}
+        options={{ title: "Received programs", ...lightHeader }}
       />
       <Stack.Screen
         name="coaching/program-offer/[offerId]"
-        options={{ title: "Program", ...romanHeader }}
+        options={{ title: "Program", ...lightHeader }}
       />
       <Stack.Screen name="workout/[id]" options={{ title: "Workout" }} />
       <Stack.Screen

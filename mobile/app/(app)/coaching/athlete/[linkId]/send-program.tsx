@@ -11,6 +11,7 @@
  * The backend also checks ownership and the connection again when the send arrives.
  */
 
+import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -28,6 +29,8 @@ import type { ProgramPreview } from "../../../../../src/api/coaching";
 import { listPrograms } from "../../../../../src/api/programs";
 import type { ProgramSummary } from "../../../../../src/api/programs";
 import { useAuth } from "../../../../../src/auth/AuthContext";
+import { FocusedDarkStatusBar } from "../../../../../src/FocusedDarkStatusBar";
+import { light } from "../../../../../src/lightTheme";
 import { OfferProgramView } from "../../../../../src/coaching/OfferProgramView";
 import {
   exerciseCount,
@@ -39,7 +42,6 @@ import { formatConnectedDate, personName } from "../../../../../src/coaching/pre
 import { programOffersStore } from "../../../../../src/coaching/programOffersSession";
 import { useCoaching } from "../../../../../src/coaching/useCoaching";
 import { useProgramOffers } from "../../../../../src/coaching/useProgramOffers";
-import { roman, romanFont, useRomanFonts } from "../../../../../src/romanTheme";
 
 const MIN_TOUCH = 44;
 
@@ -48,6 +50,8 @@ type Chosen = {
   loading: boolean;
   error: string | null;
   preview: ProgramPreview | null;
+  /** The shown version replaced one the coach had been reviewing: it needs a fresh confirmation. Display only. */
+  changed: boolean;
 };
 
 export default function SendProgramScreen() {
@@ -67,7 +71,6 @@ export default function SendProgramScreen() {
 function SendProgram({ userId, linkId }: { userId: string | null; linkId: string }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  useRomanFonts();
   const coaching = useCoaching(userId);
   const offers = useProgramOffers(userId);
   const link = coaching.athletes.items.find((item) => item.id === linkId);
@@ -79,6 +82,8 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
   const [loadError, setLoadError] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Chosen | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Display only: a refusal or an uncertain send reads as an error, a confirmation as plain text.
+  const [noticeFailed, setNoticeFailed] = useState(false);
   const latestList = useRef(0);
   const latestChoice = useRef(0);
 
@@ -114,20 +119,22 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
   );
 
   /** Load what would be sent. A reload replaces the shown version and needs a new confirmation. */
-  const choose = async (id: string, message: string | null = null) => {
+  const choose = async (id: string, message: string | null = null, changed = false) => {
     setNotice(message);
+    setNoticeFailed(message !== null);
     const mine = ++latestChoice.current;
-    setChosen({ id, loading: true, error: null, preview: null });
+    setChosen({ id, loading: true, error: null, preview: null, changed });
     try {
       const preview = await getProgramPreview(linkId, id);
       if (mine !== latestChoice.current) return;
-      setChosen({ id, loading: false, error: null, preview });
+      setChosen({ id, loading: false, error: null, preview, changed });
     } catch (error) {
       if (mine !== latestChoice.current) return;
       if ((error as { status?: unknown } | null)?.status === 404) {
         // Deleted since it was listed, or the connection ended.
         setChosen(null);
         setNotice("This program no longer exists, or the connection has ended.");
+        setNoticeFailed(true);
         void loadPrograms();
         void programOffersStore.refreshSent();
         return;
@@ -137,6 +144,7 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
         loading: false,
         error: error instanceof Error ? error.message : "Could not load this program",
         preview: null,
+        changed,
       });
     }
   };
@@ -144,19 +152,22 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
   const send = async () => {
     if (!chosen?.preview) return;
     setNotice(null);
+    setNoticeFailed(false);
     const outcome = await programOffersStore.send(linkId, chosen.id, chosen.preview.fingerprint);
     if (outcome.kind === "ignored" || outcome.kind === "stale") return;
     if (outcome.kind === "changed") {
       // Nothing was sent. Show the current version; sending it is a new decision.
-      void choose(chosen.id, `${outcome.message} The updated version is shown below.`);
+      void choose(chosen.id, `${outcome.message} The updated version is shown below.`, true);
       return;
     }
     if (outcome.kind === "done") {
       setChosen(null);
       setNotice(`Sent to ${name}. They choose whether to add it; nothing changes for them until then.`);
+      setNoticeFailed(false);
       return;
     }
     setNotice(outcome.message);
+    setNoticeFailed(true);
     if (outcome.kind === "unavailable") void programOffersStore.refreshSent();
   };
 
@@ -165,6 +176,7 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
   if (ended) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
+        <FocusedDarkStatusBar />
         <Text accessibilityRole="alert" style={styles.empty}>
           This connection has ended, so programs can no longer be sent.
         </Text>
@@ -177,19 +189,31 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
 
   const header = (
     <View style={styles.headerGap}>
+      {/* The recipient stays in view from choosing a program to confirming it. */}
+      <View style={styles.recipient}>
+        <Text style={styles.label}>Sending to</Text>
+        <Text accessibilityRole="header" numberOfLines={2} style={styles.recipientName}>
+          {name}
+        </Text>
+      </View>
       <Text style={styles.intro}>
-        Choose one of your programs to send to {name}. They see a copy as it is now and decide
-        whether to add it as their own; you cannot edit or open their copy.
+        {chosen
+          ? "Nothing has been sent yet. Review the program below, then confirm."
+          : `Choose one of your programs to send to ${name}. They see a copy as it is now and decide whether to add it as their own; you cannot edit or open their copy.`}
       </Text>
       {notice ? (
-        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.notice}>
+        <Text
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+          style={noticeFailed ? styles.error : styles.notice}
+        >
           {notice}
         </Text>
       ) : null}
       {chosen ? (
         <View style={styles.headerGap}>
           {chosen.loading ? (
-            <ActivityIndicator color={roman.gold} accessibilityLabel="Loading program" />
+            <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading program" />
           ) : chosen.error ? (
             <View style={styles.banner}>
               <Text accessibilityRole="alert" style={styles.error}>
@@ -205,12 +229,17 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
             </View>
           ) : preview ? (
             <>
-              <View style={styles.card}>
-                <Text style={styles.label}>Sending to</Text>
-                <Text accessibilityRole="header" style={styles.cardTitle}>
-                  {name}
-                </Text>
-              </View>
+              {chosen.changed ? (
+                <View style={styles.changed} accessibilityRole="alert">
+                  <View style={styles.changedHead}>
+                    <Ionicons name="alert-circle-outline" size={18} color={light.text} />
+                    <Text style={styles.changedTitle}>This program changed</Text>
+                  </View>
+                  <Text style={styles.body}>
+                    Nothing was sent. Read the updated version below and confirm again to send it.
+                  </Text>
+                </View>
+              ) : null}
               <OfferProgramView program={preview} />
               <View style={styles.card}>
                 {exerciseCount(preview) === 0 ? (
@@ -240,13 +269,14 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
                   onPress={() => void send()}
                 >
                   {sending ? (
-                    <ActivityIndicator color={roman.background} />
+                    <ActivityIndicator color={light.onPrimary} />
                   ) : (
-                    <Text style={styles.primaryText}>Send to {name}</Text>
+                    <Text style={styles.primaryText}>{chosen.changed ? `Send updated version to ${name}` : `Send to ${name}`}</Text>
                   )}
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
+                  accessibilityLabel="Choose another program"
                   accessibilityState={{ disabled: sending }}
                   disabled={sending}
                   style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
@@ -305,7 +335,7 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
       ) : null}
       {sent.items.length === 0 ? (
         !sent.loaded && sent.loading ? (
-          <ActivityIndicator color={roman.gold} accessibilityLabel="Loading sent programs" />
+          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading sent programs" />
         ) : sent.error && !sent.loaded ? null : (
           <Text style={styles.meta}>Nothing sent yet.</Text>
         )
@@ -336,86 +366,79 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
   );
 
   return (
-    <FlatList
-      style={styles.screen}
-      contentContainerStyle={[styles.content, padding]}
-      // While a program is chosen the list gives way to its preview.
-      data={chosen ? [] : (programs ?? [])}
-      keyExtractor={(item) => item.id}
-      keyboardShouldPersistTaps="handled"
-      ListHeaderComponent={header}
-      ListFooterComponent={footer}
-      ListEmptyComponent={
-        chosen ? null : programs === null ? (
-          loadError ? null : (
-            <ActivityIndicator color={roman.gold} accessibilityLabel="Loading your programs" />
+    <>
+      <FocusedDarkStatusBar />
+      <FlatList
+        style={styles.screen}
+        contentContainerStyle={[styles.content, padding]}
+        // While a program is chosen the list gives way to its preview.
+        data={chosen ? [] : (programs ?? [])}
+        keyExtractor={(item) => item.id}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={header}
+        ListFooterComponent={footer}
+        ListEmptyComponent={
+          chosen ? null : programs === null ? (
+            loadError ? null : (
+              <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading your programs" />
+            )
+          ) : (
+            <Text style={styles.empty}>
+              You have no programs yet. Create one under Programs, add exercises, then come back.
+            </Text>
           )
-        ) : (
-          <Text style={styles.empty}>
-            You have no programs yet. Create one under Programs, add exercises, then come back.
-          </Text>
-        )
-      }
-      renderItem={({ item }) => (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={item.is_active ? `${item.name}, your active program` : item.name}
-          accessibilityHint="Shows what would be sent"
-          style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-          onPress={() => void choose(item.id)}
-        >
-          <Text style={styles.rowTitle}>{item.name}</Text>
-          {item.is_active ? <Text style={styles.meta}>Your active program</Text> : null}
-        </Pressable>
-      )}
-    />
+        }
+        renderItem={({ item }) => (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={item.is_active ? `${item.name}, your active program` : item.name}
+            accessibilityHint="Shows what would be sent"
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+            onPress={() => void choose(item.id)}
+          >
+            <View style={styles.rowText}>
+              <Text style={styles.rowTitle}>{item.name}</Text>
+              {item.is_active ? <Text style={styles.meta}>Your active program</Text> : null}
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
+          </Pressable>
+        )}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: roman.background },
+  screen: { flex: 1, backgroundColor: light.background },
   content: { paddingHorizontal: 16, paddingTop: 8 },
   headerGap: { gap: 12, marginBottom: 12 },
-  footer: { gap: 12, marginTop: 24 },
-  intro: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 14, lineHeight: 21 },
+  footer: { gap: 8, marginTop: 24 },
+  intro: { color: light.textSecondary, fontSize: 14, lineHeight: 21 },
+  recipient: { backgroundColor: light.surface, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, gap: 2 },
+  recipientName: { color: light.text, fontSize: 20, fontWeight: "700", lineHeight: 26 },
   card: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
     gap: 8,
   },
-  cardTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 17, lineHeight: 24 },
-  label: {
-    color: roman.textMuted,
-    fontFamily: romanFont.medium,
-    fontSize: 12,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  sectionLabel: {
-    color: roman.textMuted,
-    fontFamily: romanFont.semibold,
-    fontSize: 12,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  body: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 14, lineHeight: 21 },
-  meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
-  notice: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
-  error: { color: roman.danger, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
+  changed: { backgroundColor: light.surface, borderRadius: 12, padding: 16, gap: 6 },
+  changedHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  changedTitle: { color: light.text, fontSize: 16, fontWeight: "700" },
+  label: { color: light.textSecondary, fontSize: 13, fontWeight: "600" },
+  sectionLabel: { color: light.textSecondary, fontSize: 13, fontWeight: "600", marginLeft: 4 },
+  body: { color: light.textSecondary, fontSize: 14, lineHeight: 21 },
+  meta: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
+  notice: { color: light.text, fontSize: 14, fontWeight: "500", lineHeight: 20 },
+  error: { color: light.danger, fontSize: 14, lineHeight: 20 },
   banner: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
     gap: 8,
   },
   empty: {
-    color: roman.textMuted,
-    fontFamily: romanFont.regular,
+    color: light.textSecondary,
     fontSize: 14,
     lineHeight: 21,
     textAlign: "center",
@@ -423,42 +446,35 @@ const styles = StyleSheet.create({
   },
   row: {
     minHeight: 56,
-    justifyContent: "center",
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: light.surface,
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    marginBottom: 12,
-    gap: 2,
+    marginBottom: 8,
   },
-  rowTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 16, lineHeight: 22 },
+  rowText: { flex: 1, gap: 2 },
+  rowTitle: { color: light.text, fontSize: 16, fontWeight: "600", lineHeight: 22 },
   sentRow: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     gap: 2,
   },
-  sentTitle: { color: roman.text, fontFamily: romanFont.medium, fontSize: 15, lineHeight: 21 },
+  sentTitle: { color: light.text, fontSize: 15, fontWeight: "500", lineHeight: 21 },
   primary: {
     minHeight: 52,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: roman.gold,
-    borderRadius: 12,
+    backgroundColor: light.primary,
+    borderRadius: 14,
     paddingHorizontal: 16,
   },
-  primaryPressed: { backgroundColor: roman.goldPressed },
-  primaryText: {
-    color: roman.background,
-    fontFamily: romanFont.semibold,
-    fontSize: 14,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  primaryPressed: { backgroundColor: light.primaryPressed },
+  primaryText: { color: light.onPrimary, fontSize: 16, fontWeight: "600", textAlign: "center" },
   secondary: {
     minHeight: MIN_TOUCH,
     alignSelf: "flex-start",
@@ -466,7 +482,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 8,
   },
-  secondaryText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
-  pressed: { backgroundColor: roman.surfaceRaised },
+  secondaryText: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
+  pressed: { backgroundColor: light.pressed },
   busy: { opacity: 0.6 },
 });

@@ -8,25 +8,22 @@ const ts = require(require.resolve('typescript', { paths: [process.env.BODYTRACK
 const root = path.join(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
-// The coach connection and workout-review screens are light; program sending,
-// received programs and offer review are a separate task and keep their theme.
+// Every coach screen is light: connections, workout review and program offers.
 const light = [
   'app/(app)/coaching/athletes.tsx',
   'app/(app)/coaching/coaches.tsx',
   'app/(app)/coaching/athlete/[linkId]/index.tsx',
   'app/(app)/coaching/athlete/[linkId]/workout/[workoutId].tsx',
-  'src/coaching/ConnectionRow.tsx',
-  'src/coaching/CoachFeedbackSection.tsx',
-  'src/coaching/AthleteExerciseHistoryPanel.tsx',
-];
-const deferred = [
   'app/(app)/coaching/athlete/[linkId]/send-program.tsx',
   'app/(app)/coaching/programs-received.tsx',
   'app/(app)/coaching/program-offer/[offerId].tsx',
+  'src/coaching/ConnectionRow.tsx',
+  'src/coaching/CoachFeedbackSection.tsx',
+  'src/coaching/AthleteExerciseHistoryPanel.tsx',
   'src/coaching/OfferProgramView.tsx',
 ];
 
-test('coach screens: the scoped files use the light theme and none of the Roman one', () => {
+test('coach screens: the coach files use the light theme and none of the Roman one', () => {
   for (const file of light) {
     const source = read(file);
     assert.match(source, /lightTheme/, file);
@@ -34,22 +31,19 @@ test('coach screens: the scoped files use the light theme and none of the Roman 
   }
 });
 
-test('coach screens: the deferred program screens were left on their own theme', () => {
-  for (const file of deferred) assert.match(read(file), /romanTheme/, file);
-});
-
-test('coach screens: the stack gives the four scoped routes the light header and nothing else', () => {
+test('coach screens: the stack gives every coach route the light header, and Research keeps its own', () => {
   const layout = read('app/(app)/_layout.tsx');
   const withLight = [...layout.matchAll(/name="([^"]+)"\s*options=\{\{[^}]*\.\.\.lightHeader/g)].map((m) => m[1]);
   assert.deepEqual(withLight.sort(), [
     'coaching/athlete/[linkId]/index',
+    'coaching/athlete/[linkId]/send-program',
     'coaching/athlete/[linkId]/workout/[workoutId]',
     'coaching/athletes',
     'coaching/coaches',
+    'coaching/program-offer/[offerId]',
+    'coaching/programs-received',
   ]);
-  for (const name of ['send-program', 'programs-received', 'program-offer/[offerId]']) {
-    assert.match(layout, new RegExp(`name="coaching/(?:athlete/\\[linkId\\]/)?${name.replace(/[[\]/]/g, '\\$&')}"\\s*options=\\{\\{[^}]*romanHeader`), name);
-  }
+  assert.match(layout, /name="research"\s*options=\{\{[^}]*romanHeader/);
 });
 
 test('coach screens: the sharing status is written out and programs are not tied to it', () => {
@@ -121,4 +115,15 @@ test('connection row: ending is always offered, named after the person, and bloc
 test('connection row: the sharing status is text, shown whatever the colours are', () => {
   const nodes = draw({ status: 'Workouts not shared' });
   assert.ok(nodes.some((n) => n.type === 'Text' && [n.props.children].flat().join('') === 'Workouts not shared'));
+});
+
+test('send program: a changed program is only re-shown, and sending stays a separate explicit press', () => {
+  const screen = read('app/(app)/coaching/athlete/[linkId]/send-program.tsx');
+  // One send call in the whole screen, behind the Send button's handler.
+  assert.equal((screen.match(/programOffersStore\.send\(/g) ?? []).length, 1);
+  const changed = screen.slice(screen.indexOf('outcome.kind === "changed"'), screen.indexOf('outcome.kind === "done"'));
+  assert.match(changed, /void choose\(chosen\.id, .*, true\)/);
+  assert.doesNotMatch(changed, /\.send\(/);
+  // The fingerprint sent is the one of the version that is on screen.
+  assert.match(screen, /programOffersStore\.send\(linkId, chosen\.id, chosen\.preview\.fingerprint\)/);
 });

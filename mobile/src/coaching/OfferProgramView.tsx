@@ -1,13 +1,16 @@
 import { StyleSheet, Text, View } from "react-native";
 
 import type { OfferProgram } from "../api/coaching";
-import { roman, romanFont } from "../romanTheme";
+import { light } from "../lightTheme";
 import { exerciseCount, prescriptionText, summaryText } from "./offerDisplay";
 
 /**
  * A program as it is offered: its days and every exercise's prescription,
  * read-only. Used for what a coach is about to send and for what an athlete is
  * about to accept, so both sides read the same thing.
+ *
+ * Nothing here is shortened: names wrap and notes are shown whole, because a
+ * prescription or note cut off at the end of a line is a different instruction.
  */
 export function OfferProgramView({ program }: { program: OfferProgram }) {
   return (
@@ -36,7 +39,9 @@ export function OfferProgramView({ program }: { program: OfferProgram }) {
                 key={`${position}:${exercise.exercise_id}`}
                 style={styles.exercise}
                 accessible
-                accessibilityLabel={`${exercise.exercise_name}, ${prescriptionText(exercise)}`}
+                accessibilityLabel={`${exercise.exercise_name}, ${prescriptionText(exercise)}${
+                  exercise.notes ? `. ${exercise.notes}` : ""
+                }`}
               >
                 <Text style={styles.exerciseName}>{exercise.exercise_name}</Text>
                 <Text style={styles.prescription}>{prescriptionText(exercise)}</Text>
@@ -53,18 +58,21 @@ export function OfferProgramView({ program }: { program: OfferProgram }) {
 const styles = StyleSheet.create({
   root: { gap: 12 },
   card: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
     gap: 8,
   },
-  title: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 18, lineHeight: 24 },
-  dayTitle: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 15, lineHeight: 21 },
-  meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
-  notes: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 14, lineHeight: 20 },
-  exercise: { gap: 2, paddingTop: 8, borderTopColor: roman.border, borderTopWidth: 1 },
-  exerciseName: { color: roman.text, fontFamily: romanFont.medium, fontSize: 15, lineHeight: 21 },
-  prescription: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 14 },
+  title: { color: light.text, fontSize: 22, fontWeight: "700", lineHeight: 28 },
+  dayTitle: { color: light.text, fontSize: 17, fontWeight: "600", lineHeight: 22 },
+  meta: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
+  notes: { color: light.textSecondary, fontSize: 14, lineHeight: 20 },
+  exercise: {
+    gap: 2,
+    paddingTop: 10,
+    borderTopColor: light.separator,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  exerciseName: { color: light.text, fontSize: 16, fontWeight: "500", lineHeight: 22 },
+  prescription: { color: light.text, fontSize: 14, lineHeight: 20, fontVariant: ["tabular-nums"] },
 });

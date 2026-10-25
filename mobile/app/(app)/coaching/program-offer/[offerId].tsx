@@ -8,6 +8,7 @@
  * original afterwards. The coach never gets access to the copy.
  */
 
+import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
@@ -22,12 +23,13 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../../../src/auth/AuthContext";
+import { FocusedDarkStatusBar } from "../../../../src/FocusedDarkStatusBar";
+import { light } from "../../../../src/lightTheme";
 import { OfferProgramView } from "../../../../src/coaching/OfferProgramView";
 import { offerStatusLabel } from "../../../../src/coaching/offerDisplay";
-import { personHandle, personName } from "../../../../src/coaching/presentation";
+import { formatConnectedDate, personHandle, personName } from "../../../../src/coaching/presentation";
 import { programOffersStore } from "../../../../src/coaching/programOffersSession";
 import { useProgramOffers } from "../../../../src/coaching/useProgramOffers";
-import { roman, romanFont, useRomanFonts } from "../../../../src/romanTheme";
 
 const MIN_TOUCH = 44;
 
@@ -44,12 +46,19 @@ export default function ProgramOfferScreen() {
   );
 }
 
+const STATUS_ICON = {
+  pending: "time-outline",
+  accepted: "checkmark-circle-outline",
+  declined: "close-circle-outline",
+} as const;
+
 function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: string }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  useRomanFonts();
   const view = useProgramOffers(userId);
   const [notice, setNotice] = useState<string | null>(null);
+  // Display only: a refusal reads as an error, a success as a plain confirmation.
+  const [noticeFailed, setNoticeFailed] = useState(false);
   const shown = view.detail.offerId === offerId ? view.detail : null;
   const offer = shown?.data ?? null;
   const busy = view.responding === offerId;
@@ -66,6 +75,7 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
 
   const run = async (action: "accept" | "decline") => {
     setNotice(null);
+    setNoticeFailed(false);
     const outcome =
       action === "accept"
         ? await programOffersStore.accept(offerId)
@@ -80,6 +90,7 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
       return;
     }
     setNotice(outcome.message);
+    setNoticeFailed(true);
   };
 
   const confirmDecline = () =>
@@ -91,6 +102,7 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
   if (shown?.unavailable) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
+        <FocusedDarkStatusBar />
         <Text accessibilityRole="alert" style={styles.empty}>
           This program is no longer available. The connection with your coach may have ended.
         </Text>
@@ -108,6 +120,7 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
   if (!offer) {
     return (
       <View style={[styles.screen, styles.content, padding]}>
+        <FocusedDarkStatusBar />
         {shown?.error ? (
           <View style={styles.banner}>
             <Text accessibilityRole="alert" style={styles.error}>
@@ -122,7 +135,7 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
             </Pressable>
           </View>
         ) : (
-          <ActivityIndicator color={roman.gold} accessibilityLabel="Loading program" />
+          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading program" />
         )}
       </View>
     );
@@ -137,12 +150,26 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
       contentContainerStyle={[styles.content, padding]}
       keyboardShouldPersistTaps="handled"
     >
+      <FocusedDarkStatusBar />
       <View style={styles.card}>
-        <Text style={styles.status}>{offerStatusLabel(offer.status)}</Text>
+        {/* The word and its icon say where the offer stands, never the colour alone. */}
+        <View style={styles.statusRow}>
+          <Ionicons name={STATUS_ICON[offer.status]} size={16} color={light.text} />
+          <Text style={styles.status}>{offerStatusLabel(offer.status)}</Text>
+        </View>
         <Text accessibilityRole="header" style={styles.cardTitle}>
           From {from}
         </Text>
         {handle ? <Text style={styles.meta}>{handle}</Text> : null}
+        {formatConnectedDate(offer.sent_at) ? (
+          <Text style={styles.meta}>Sent {formatConnectedDate(offer.sent_at)}</Text>
+        ) : null}
+        {offer.responded_at && formatConnectedDate(offer.responded_at) ? (
+          <Text style={styles.meta}>
+            {offer.status === "accepted" ? "Added" : "Declined"}{" "}
+            {formatConnectedDate(offer.responded_at)}
+          </Text>
+        ) : null}
       </View>
 
       {shown?.error ? (
@@ -156,7 +183,11 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
       <OfferProgramView program={offer.program} />
 
       {notice ? (
-        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.notice}>
+        <Text
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+          style={noticeFailed ? styles.error : styles.notice}
+        >
           {notice}
         </Text>
       ) : null}
@@ -181,7 +212,7 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
             onPress={() => void run("accept")}
           >
             {busy ? (
-              <ActivityIndicator color={roman.background} />
+              <ActivityIndicator color={light.onPrimary} />
             ) : (
               <Text style={styles.primaryText}>Add to my programs</Text>
             )}
@@ -191,10 +222,10 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
             accessibilityLabel="Decline this program"
             accessibilityState={{ disabled: busy }}
             disabled={busy}
-            style={({ pressed }) => [styles.secondary, pressed && styles.pressed, busy && styles.busy]}
+            style={({ pressed }) => [styles.decline, pressed && styles.pressed, busy && styles.busy]}
             onPress={confirmDecline}
           >
-            <Text style={styles.secondaryText}>Decline</Text>
+            <Text style={styles.declineText}>Decline</Text>
           </Pressable>
         </View>
       ) : offer.status === "accepted" ? (
@@ -202,8 +233,8 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
           {offer.program_id ? (
             <>
               <Text style={styles.body}>
-                This program is in your programs as your own copy. Open it to activate it or
-                change it.
+                This program is in your programs as your own copy. It was added inactive, so your
+                active program was not changed. Open it to activate it or change it.
               </Text>
               <Pressable
                 accessibilityRole="button"
@@ -230,39 +261,29 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: roman.background },
+  screen: { flex: 1, backgroundColor: light.background },
   content: { paddingHorizontal: 16, paddingTop: 8, gap: 12 },
   card: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
     gap: 8,
   },
-  cardTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 17, lineHeight: 24 },
-  status: {
-    color: roman.gold,
-    fontFamily: romanFont.semibold,
-    fontSize: 11,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  body: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 14, lineHeight: 21 },
-  meta: { color: roman.textMuted, fontFamily: romanFont.regular, fontSize: 13, lineHeight: 19 },
-  notice: { color: roman.goldLight, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
-  error: { color: roman.danger, fontFamily: romanFont.medium, fontSize: 14, lineHeight: 20 },
+  cardTitle: { color: light.text, fontSize: 18, fontWeight: "600", lineHeight: 24 },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  status: { color: light.text, fontSize: 14, fontWeight: "600" },
+  body: { color: light.textSecondary, fontSize: 14, lineHeight: 21 },
+  meta: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
+  notice: { color: light.text, fontSize: 14, fontWeight: "500", lineHeight: 20 },
+  error: { color: light.danger, fontSize: 14, lineHeight: 20 },
   banner: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+    backgroundColor: light.surface,
     borderRadius: 12,
     padding: 16,
     gap: 8,
   },
   empty: {
-    color: roman.textMuted,
-    fontFamily: romanFont.regular,
+    color: light.textSecondary,
     fontSize: 14,
     lineHeight: 21,
     textAlign: "center",
@@ -272,18 +293,22 @@ const styles = StyleSheet.create({
     minHeight: 52,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: roman.gold,
-    borderRadius: 12,
+    backgroundColor: light.primary,
+    borderRadius: 14,
     paddingHorizontal: 16,
   },
-  primaryPressed: { backgroundColor: roman.goldPressed },
-  primaryText: {
-    color: roman.background,
-    fontFamily: romanFont.semibold,
-    fontSize: 14,
-    letterSpacing: 1,
-    textTransform: "uppercase",
+  primaryPressed: { backgroundColor: light.primaryPressed },
+  primaryText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
+  // Decline is a full-width, clearly separate control, not a link beside Add.
+  decline: {
+    minHeight: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: light.background,
+    borderRadius: 14,
+    paddingHorizontal: 16,
   },
+  declineText: { color: light.text, fontSize: 16, fontWeight: "600" },
   secondary: {
     minHeight: MIN_TOUCH,
     alignSelf: "flex-start",
@@ -291,7 +316,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 8,
   },
-  secondaryText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
-  pressed: { backgroundColor: roman.surfaceRaised },
+  secondaryText: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
+  pressed: { backgroundColor: light.pressed },
   busy: { opacity: 0.6 },
 });
