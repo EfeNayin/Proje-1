@@ -96,6 +96,18 @@ function AthleteWorkouts({ userId, linkId }: { userId: string | null; linkId: st
                 ? "Workouts shared"
                 : " "}
         </Text>
+        {/* Programs are a separate permission from workout sharing: always offered while connected. */}
+        {!ended ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Send a program to ${name}`}
+            accessibilityHint="Choose one of your programs and review it before sending"
+            style={({ pressed }) => [styles.sendButton, pressed && styles.pressed]}
+            onPress={() => router.push(`/coaching/athlete/${linkId}/send-program`)}
+          >
+            <Text style={styles.sendButtonText}>Send a program</Text>
+          </Pressable>
+        ) : null}
       </View>
       {list.error ? (
         <View style={styles.banner}>
@@ -271,4 +283,12 @@ const styles = StyleSheet.create({
   },
   secondaryText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
   pressed: { backgroundColor: roman.surfaceRaised },
+  sendButton: {
+    minHeight: MIN_TOUCH,
+    alignSelf: "flex-start",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderRadius: 8,
+  },
+  sendButtonText: { color: roman.goldLight, fontFamily: romanFont.semibold, fontSize: 14 },
 });

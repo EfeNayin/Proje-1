@@ -6,9 +6,13 @@
  * A new connection shares nothing. Each connection has its own switch for
  * letting that coach read the athlete's completed workout history; weight and
  * nutrition are never shared. Turning it on needs an explicit confirmation.
+ *
+ * Programs a coach sends are a separate matter: they arrive as offers (see the
+ * entry below), need no workout sharing, and only become the athlete's own
+ * program when they accept.
  */
 
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -31,7 +35,9 @@ import { useAuth } from "../../../src/auth/AuthContext";
 import { coachingStore } from "../../../src/coaching/coachingSession";
 import { ConnectionRow } from "../../../src/coaching/ConnectionRow";
 import { formatExpiry, personHandle, personName } from "../../../src/coaching/presentation";
+import { programOffersStore } from "../../../src/coaching/programOffersSession";
 import { useCoaching } from "../../../src/coaching/useCoaching";
+import { useProgramOffers } from "../../../src/coaching/useProgramOffers";
 import { roman, romanFont, useRomanFonts } from "../../../src/romanTheme";
 
 const MIN_TOUCH = 44;
@@ -48,7 +54,10 @@ export default function MyCoachesScreen() {
 function MyCoaches({ userId }: { userId: string | null }) {
   const insets = useSafeAreaInsets();
   useRomanFonts();
+  const router = useRouter();
   const state = useCoaching(userId);
+  const offers = useProgramOffers(userId);
+  const waiting = offers.received.items.filter((item) => item.status === "pending").length;
   const [code, setCodeState] = useState("");
   // What the input holds right now, readable from a lookup that finishes later.
   const typed = useRef("");
@@ -61,6 +70,8 @@ function MyCoaches({ userId }: { userId: string | null }) {
     useCallback(() => {
       coachingStore.bind(userId);
       void coachingStore.load("athlete");
+      programOffersStore.bind(userId);
+      void programOffersStore.refreshReceived();
     }, [userId]),
   );
 
@@ -243,6 +254,28 @@ function MyCoaches({ userId }: { userId: string | null }) {
         )}
       </View>
 
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={
+          waiting > 0
+            ? `Received programs, ${waiting} waiting for your answer`
+            : "Received programs"
+        }
+        accessibilityHint="Opens the programs your coaches sent you"
+        style={({ pressed }) => [styles.entry, pressed && styles.pressed]}
+        onPress={() => router.push("/coaching/programs-received")}
+      >
+        <View style={styles.entryText}>
+          <Text style={styles.cardTitle}>Received programs</Text>
+          <Text style={styles.meta}>
+            {waiting > 0
+              ? `${waiting} waiting for your answer`
+              : "Programs your coaches send you appear here. Nothing is added until you accept."}
+          </Text>
+        </View>
+        <Text style={styles.chevron}>›</Text>
+      </Pressable>
+
       <Text accessibilityRole="header" style={styles.sectionLabel}>
         Your coaches
       </Text>
@@ -368,6 +401,22 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cardTitle: { color: roman.text, fontFamily: romanFont.semibold, fontSize: 17 },
+  entry: {
+    minHeight: 64,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: roman.surface,
+    borderColor: roman.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingLeft: 16,
+    paddingRight: 8,
+    marginBottom: 20,
+    gap: 8,
+  },
+  entryText: { flex: 1, gap: 4 },
+  chevron: { color: roman.textMuted, fontSize: 28, width: MIN_TOUCH, textAlign: "center" },
   label: {
     color: roman.textMuted,
     fontFamily: romanFont.medium,

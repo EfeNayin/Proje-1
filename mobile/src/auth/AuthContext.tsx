@@ -15,6 +15,7 @@ import { setOnSessionExpired } from "../api/client";
 import { clearTokens, saveTokens } from "../api/tokens";
 import { athleteWorkoutsStore } from "../coaching/athleteWorkoutsSession";
 import { coachingStore } from "../coaching/coachingSession";
+import { programOffersStore } from "../coaching/programOffersSession";
 import { clearActiveWorkout } from "../workout/activeWorkout";
 import { restoreSession } from "./restoreSession";
 
@@ -47,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // answers still in flight must not land on whoever signs in next.
     coachingStore.reset();
     athleteWorkoutsStore.reset();
+    programOffersStore.reset();
     await clearTokens();
     // The active-workout pointer is a device key (see src/workout/activeWorkout.ts),
     // not scoped to an account. Left in place, it would resume — or, worse,
@@ -73,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void clearActiveWorkout();
       coachingStore.reset();
       athleteWorkoutsStore.reset();
+      programOffersStore.reset();
       setUser(null);
       setStatus("signedOut");
     });
