@@ -24,7 +24,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -47,11 +47,13 @@ import {
   updateNutritionGoals,
 } from "../../../src/api/nutrition";
 import { useAuth } from "../../../src/auth/AuthContext";
+import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
+import { lightHeaderOptions } from "../../../src/lightHeaderOptions";
+import { light } from "../../../src/lightTheme";
 import {
   isMacroAutoAdjustEnabled,
   setMacroAutoAdjustEnabled,
 } from "../../../src/nutrition/macroAutoAdjustPreference";
-import { colors, radius, spacing } from "../../../src/theme";
 
 const ACTIVITY_LEVELS: { value: ActivityLevel; label: string; description: string }[] = [
   { value: "sedentary", label: "Sedentary", description: "Desk job, no regular exercise" },
@@ -111,9 +113,10 @@ function GoalInput({
           style={styles.goalInput}
           value={value}
           onChangeText={onChangeText}
+          accessibilityLabel={`${label} goal, ${unit}`}
           keyboardType="number-pad"
           placeholder="—"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={light.textSecondary}
         />
         <Text style={styles.goalUnit}>{unit}</Text>
       </View>
@@ -139,7 +142,14 @@ function OptionRow({
 }) {
   return (
     <Pressable
-      style={[styles.optionRow, last && styles.optionRowNoBorder]}
+      accessibilityRole="radio"
+      accessibilityLabel={`${label}. ${description}`}
+      accessibilityState={{ selected }}
+      style={({ pressed }) => [
+        styles.optionRow,
+        last && styles.optionRowNoBorder,
+        pressed && styles.pressed,
+      ]}
       onPress={onPress}
     >
       <View style={[styles.optionRadio, selected && styles.optionRadioActive]}>
@@ -169,6 +179,7 @@ export default function NutritionGoalsScreen() {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const applyGoals = (next: NutritionGoals) => {
     setGoals(next);
@@ -198,12 +209,45 @@ export default function NutritionGoalsScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
+
+  const header = (
+    <>
+      <Stack.Screen options={lightHeaderOptions} />
+      <FocusedDarkStatusBar />
+    </>
+  );
 
   if (!user || loading) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator color={colors.accent} />
+        {header}
+        <ActivityIndicator color={light.textSecondary} />
+      </View>
+    );
+  }
+
+  // Could not load is not the same as "no goals set": showing the empty form
+  // here would invite saving blanks over targets that exist on the server.
+  if (goals === null) {
+    return (
+      <View style={styles.loading}>
+        {header}
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.loadError}>
+          {`Could not load your nutrition goals. ${error ?? ""}`.trim()}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Try loading your nutrition goals again"
+          style={({ pressed }) => [styles.saveButton, styles.retryButton, pressed && styles.saveButtonPressed]}
+          onPress={() => {
+            setError(null);
+            setLoading(true);
+            setReloadKey((key) => key + 1);
+          }}
+        >
+          <Text style={styles.saveButtonText}>Try again</Text>
+        </Pressable>
       </View>
     );
   }
@@ -315,8 +359,12 @@ export default function NutritionGoalsScreen() {
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      {header}
 
       <View style={styles.autoAdjustRow}>
         <View style={styles.autoAdjustText}>
@@ -326,10 +374,10 @@ export default function NutritionGoalsScreen() {
           </Text>
         </View>
         <Switch
+          accessibilityLabel="Auto-adjust macros"
           value={autoAdjust}
           onValueChange={handleToggleAutoAdjust}
-          trackColor={{ false: colors.border, true: colors.accent }}
-          thumbColor={colors.text}
+          trackColor={{ false: light.separator, true: light.primary }}
         />
       </View>
 
@@ -340,7 +388,9 @@ export default function NutritionGoalsScreen() {
         <GoalInput label="Fat" unit="g" value={fatText} onChangeText={handleFatChange} />
       </View>
 
-      <Text style={styles.sectionLabel}>Activity level</Text>
+      <Text accessibilityRole="header" style={styles.sectionLabel}>
+        Activity level
+      </Text>
       <View style={styles.optionsCard}>
         {ACTIVITY_LEVELS.map((option, index) => (
           <OptionRow
@@ -354,7 +404,9 @@ export default function NutritionGoalsScreen() {
         ))}
       </View>
 
-      <Text style={styles.sectionLabel}>Goal</Text>
+      <Text accessibilityRole="header" style={styles.sectionLabel}>
+        Goal
+      </Text>
       <View style={styles.optionsCard}>
         {GOALS.map((option, index) => (
           <OptionRow
@@ -370,35 +422,61 @@ export default function NutritionGoalsScreen() {
 
       {physicalDataMissing ? (
         <View style={styles.warning}>
-          <Ionicons name="alert-circle-outline" size={18} color={colors.textMuted} />
+          <Ionicons name="alert-circle-outline" size={18} color={light.textSecondary} />
           <Text style={styles.warningText}>
             Auto-calculation needs your height, weight and date of birth on file.
           </Text>
-          <Pressable onPress={() => router.push("/profile/personal-details")} hitSlop={8}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Go to Personal Details"
+            style={styles.warningLinkButton}
+            onPress={() => router.push("/profile/personal-details")}
+          >
             <Text style={styles.warningLink}>Go to Personal Details</Text>
           </Pressable>
         </View>
       ) : (
         <Pressable
-          style={[styles.generateButton, (!canGenerate || generating) && styles.buttonDisabled]}
+          accessibilityRole="button"
+          accessibilityLabel="Auto-Calculate"
+          accessibilityState={{ busy: generating, disabled: !canGenerate || generating }}
+          style={({ pressed }) => [
+            styles.generateButton,
+            pressed && styles.pressed,
+            (!canGenerate || generating) && styles.buttonDisabled,
+          ]}
           onPress={() => void handleGenerate()}
           disabled={!canGenerate || generating}
         >
           {generating ? (
-            <ActivityIndicator color={colors.accentText} />
+            <ActivityIndicator color={light.text} />
           ) : (
             <Text style={styles.generateButtonText}>Auto-Calculate</Text>
           )}
         </Pressable>
       )}
 
+      {/* Next to the buttons that can fail, not at the top where it may be scrolled out of view. */}
+      {error ? (
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
+
       <Pressable
-        style={[styles.saveButton, saving && styles.buttonDisabled]}
+        accessibilityRole="button"
+        accessibilityLabel="Save nutrition goals"
+        accessibilityState={{ busy: saving, disabled: saving }}
+        style={({ pressed }) => [
+          styles.saveButton,
+          pressed && styles.saveButtonPressed,
+          saving && styles.buttonDisabled,
+        ]}
         onPress={() => void handleSave()}
         disabled={saving}
       >
         {saving ? (
-          <ActivityIndicator color={colors.text} />
+          <ActivityIndicator color={light.onPrimary} />
         ) : (
           <Text style={styles.saveButtonText}>Save</Text>
         )}
@@ -408,128 +486,141 @@ export default function NutritionGoalsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: spacing.xl },
+  screen: { flex: 1, backgroundColor: light.background },
+  content: { padding: 16, paddingBottom: 32 },
   loading: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
+    padding: 16,
+    backgroundColor: light.background,
   },
-  error: { color: colors.danger, marginBottom: spacing.md },
+  loadError: {
+    color: light.danger,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  pressed: { backgroundColor: light.pressed },
+  error: { color: light.danger, fontSize: 14, lineHeight: 20, marginTop: 16 },
 
   autoAdjustRow: {
+    minHeight: 60,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
-  autoAdjustText: { flex: 1, marginRight: spacing.md },
-  rowLabel: { color: colors.text, fontSize: 15, fontWeight: "500" },
-  rowHint: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  autoAdjustText: { flex: 1, marginRight: 12 },
+  rowLabel: { color: light.text, fontSize: 16, lineHeight: 22 },
+  rowHint: { color: light.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 2 },
 
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.md },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
+  // flexBasis + minWidth: two per row on a phone, one per row on a narrow screen or at larger text.
   goalField: {
     flexBasis: "47%",
     flexGrow: 1,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    minWidth: 140,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    padding: 16,
   },
-  goalLabel: { color: colors.textMuted, fontSize: 12, marginBottom: spacing.xs },
-  goalInputRow: { flexDirection: "row", alignItems: "baseline", gap: spacing.xs },
+  goalLabel: { color: light.textSecondary, fontSize: 13, marginBottom: 4 },
+  goalInputRow: { flexDirection: "row", alignItems: "baseline", gap: 4 },
   goalInput: {
     flex: 1,
-    color: colors.text,
+    minWidth: 0,
+    minHeight: 32,
+    color: light.text,
     fontSize: 22,
     fontWeight: "700",
     padding: 0,
   },
-  goalUnit: { color: colors.textMuted, fontSize: 13 },
+  goalUnit: { color: light.textSecondary, fontSize: 13 },
 
   sectionLabel: {
-    color: colors.textMuted,
+    color: light.textSecondary,
     fontSize: 13,
     fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: spacing.sm,
-    marginTop: spacing.md,
+    marginBottom: 8,
+    marginTop: 16,
+    marginLeft: 4,
   },
 
   optionsCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    overflow: "hidden",
   },
   optionRow: {
+    minHeight: 56,
     flexDirection: "row",
     alignItems: "flex-start",
-    paddingVertical: spacing.md,
-    gap: spacing.sm,
-    borderBottomColor: colors.border,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 12,
+    borderBottomColor: light.separator,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   optionRowNoBorder: { borderBottomWidth: 0 },
   optionRadio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderColor: colors.border,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderColor: light.textSecondary,
     borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 1,
   },
-  optionRadioActive: { borderColor: colors.accent },
+  optionRadioActive: { borderColor: light.primary },
   optionRadioDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: colors.accent,
+    backgroundColor: light.primary,
   },
   optionText: { flex: 1 },
-  optionLabel: { color: colors.text, fontSize: 15, fontWeight: "600" },
-  optionDescription: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+  optionLabel: { color: light.text, fontSize: 16, lineHeight: 22, fontWeight: "600" },
+  optionDescription: { color: light.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 2 },
 
   warning: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginTop: spacing.lg,
-    gap: spacing.xs,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 24,
+    gap: 4,
   },
-  warningText: { color: colors.textMuted, fontSize: 13 },
-  warningLink: { color: colors.accent, fontSize: 13, fontWeight: "600" },
+  warningText: { color: light.textSecondary, fontSize: 13, lineHeight: 18 },
+  warningLinkButton: { minHeight: 44, alignSelf: "flex-start", justifyContent: "center" },
+  warningLink: { color: light.text, fontSize: 14, fontWeight: "600", textDecorationLine: "underline" },
 
   generateButton: {
-    backgroundColor: colors.surface,
-    borderColor: colors.accent,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    minHeight: 52,
+    backgroundColor: light.surface,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     alignItems: "center",
-    marginTop: spacing.lg,
+    justifyContent: "center",
+    marginTop: 24,
   },
-  generateButtonText: { color: colors.accent, fontSize: 16, fontWeight: "700" },
+  generateButtonText: { color: light.text, fontSize: 16, fontWeight: "600" },
 
   saveButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    minHeight: 52,
+    backgroundColor: light.primary,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     alignItems: "center",
-    marginTop: spacing.md,
+    justifyContent: "center",
+    marginTop: 12,
   },
+  saveButtonPressed: { backgroundColor: light.primaryPressed },
+  retryButton: { alignSelf: "stretch" },
   buttonDisabled: { opacity: 0.5 },
-  saveButtonText: { color: colors.accentText, fontSize: 16, fontWeight: "700" },
+  saveButtonText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
 });

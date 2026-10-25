@@ -1,13 +1,16 @@
 /**
  * Profile screen.
  *
- * The header card is editable (taps through to /profile/edit). Below it: the
- * latest weigh-in (linking to weight history) and the menu, grouped into
- * sections. Sign out sits apart at the bottom.
+ * Restrained light style shared with Training, Programs and Volume: system
+ * font, a compact identity row and grouped settings rows. The identity row
+ * taps through to /profile/edit. Below it: the latest weigh-in (linking to
+ * weight history) and the menu, grouped into sections. Sign out sits apart at
+ * the bottom.
  *
- * The weigh-in card shows the API's most recent measurement with its date and
+ * The weigh-in row shows the API's most recent measurement with its date and
  * says so ("Last recorded"): it is not today's weight. Nothing is calculated
- * here.
+ * here. "No weight recorded yet" and "could not load" are different states and
+ * never share text.
  */
 
 import { Ionicons } from "@expo/vector-icons";
@@ -27,17 +30,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fullName, initials } from "../../../src/api/auth";
 import * as bodyApi from "../../../src/api/body";
 import { useAuth } from "../../../src/auth/AuthContext";
+import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
+import { light } from "../../../src/lightTheme";
 import {
   createBodySummaryLoader,
   initialBodySummaryState,
 } from "../../../src/profile/bodySummaryLoader";
 import { describeLatestWeight } from "../../../src/profile/profilePresentation";
 import { createSignOutAction } from "../../../src/profile/signOutAction";
-import { roman, useRomanFonts } from "../../../src/romanTheme";
 
 const MIN_TOUCH = 44;
 
-type Fonts = ReturnType<typeof useRomanFonts>;
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
 function MenuRow({
@@ -46,34 +49,28 @@ function MenuRow({
   hint,
   onPress,
   last,
-  font,
 }: {
   icon: IconName;
   label: string;
   hint: string;
   onPress: () => void;
   last?: boolean;
-  font: Fonts;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${label}. ${hint}`}
-      style={({ pressed }) => [
-        styles.row,
-        !last && styles.rowDivider,
-        pressed && styles.pressed,
-      ]}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       onPress={onPress}
     >
-      <View style={styles.iconBox}>
-        <Ionicons name={icon} size={20} color={roman.gold} />
+      <Ionicons name={icon} size={22} color={light.textSecondary} />
+      <View style={[styles.rowBody, !last && styles.rowDivider]}>
+        <View style={styles.rowText}>
+          <Text style={styles.rowTitle}>{label}</Text>
+          <Text style={styles.rowHint}>{hint}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
       </View>
-      <View style={styles.rowText}>
-        <Text style={[styles.rowTitle, font.semibold]}>{label}</Text>
-        <Text style={[styles.rowHint, font.regular]}>{hint}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={roman.textMuted} />
     </Pressable>
   );
 }
@@ -82,7 +79,6 @@ export default function ProfileScreen() {
   const { user, signOut, refreshProfile } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const font = useRomanFonts();
 
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -138,7 +134,7 @@ export default function ProfileScreen() {
   const topBar = (
     <View style={[styles.topBar, { paddingTop: insets.top }]}>
       <View style={styles.topBarRow}>
-        <Text accessibilityRole="header" style={[styles.topBarTitle, font.title]}>
+        <Text accessibilityRole="header" style={styles.topBarTitle}>
           Profile
         </Text>
       </View>
@@ -148,9 +144,10 @@ export default function ProfileScreen() {
   if (!user) {
     return (
       <View style={styles.screen}>
+        <FocusedDarkStatusBar />
         {topBar}
         <View style={styles.centered}>
-          <ActivityIndicator color={roman.gold} />
+          <ActivityIndicator color={light.textSecondary} />
         </View>
       </View>
     );
@@ -167,17 +164,18 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.screen}>
+      <FocusedDarkStatusBar />
       {topBar}
       <ScrollView
         style={styles.flex}
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, { paddingBottom: 32 }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => void handleRefresh()}
-            tintColor={roman.gold}
-            colors={[roman.gold]}
-            progressBackgroundColor={roman.surface}
+            tintColor={light.textSecondary}
+            colors={[light.textSecondary]}
+            progressBackgroundColor={light.surface}
           />
         }
       >
@@ -185,7 +183,7 @@ export default function ProfileScreen() {
           <Text
             accessibilityRole="alert"
             accessibilityLiveRegion="polite"
-            style={[styles.errorText, styles.refreshError, font.medium]}
+            style={[styles.errorText, styles.refreshError]}
           >
             {`Could not refresh your profile: ${refreshError}`}
           </Text>
@@ -194,29 +192,31 @@ export default function ProfileScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Edit profile. ${name ?? user.username}, username ${user.username}`}
-          style={({ pressed }) => [styles.headerCard, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.group, styles.identity, pressed && styles.pressed]}
           onPress={() => router.push("/profile/edit")}
         >
           <View style={styles.avatar}>
-            <Text style={[styles.avatarText, font.title]}>{initials(user)}</Text>
+            <Text style={styles.avatarText}>{initials(user)}</Text>
           </View>
-          <View style={styles.headerText}>
-            <Text style={[styles.name, font.semibold]}>{name ?? user.username}</Text>
+          <View style={styles.identityText}>
+            <Text numberOfLines={2} style={styles.name}>
+              {name ?? user.username}
+            </Text>
             {/* Without a name the username is already the title; repeating it would just stutter. */}
             {name ? (
-              <Text style={[styles.username, font.regular]}>@{user.username}</Text>
+              <Text numberOfLines={1} style={styles.username}>
+                @{user.username}
+              </Text>
             ) : null}
           </View>
-          <View style={styles.editPill}>
-            <Ionicons name="pencil" size={14} color={roman.goldLight} />
-            <Text style={[styles.editText, font.semibold]}>Edit</Text>
-          </View>
+          <Text style={styles.editText}>Edit</Text>
+          <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
         </Pressable>
 
-        <Text accessibilityRole="header" style={[styles.sectionLabel, font.semibold]}>
+        <Text accessibilityRole="header" style={styles.sectionLabel}>
           Body
         </Text>
-        <View style={styles.card}>
+        <View style={styles.group}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
@@ -230,32 +230,32 @@ export default function ProfileScreen() {
             style={({ pressed }) => [styles.row, pressed && styles.pressed]}
             onPress={() => router.push("/profile/weight-history")}
           >
-            <View style={styles.iconBox}>
-              <Ionicons name="trending-up" size={20} color={roman.gold} />
-            </View>
-            <View style={styles.rowText}>
-              <Text style={[styles.rowTitle, font.semibold]}>Weight history</Text>
-              {latest?.kind === "recorded" ? (
-                <>
-                  <Text style={[styles.weightValue, font.semibold]}>{latest.value}</Text>
-                  {/* "Last recorded", with its date: the newest entry, not necessarily today's weight. */}
-                  <Text style={[styles.rowHint, font.regular]}>
-                    {latest.date ? `Last recorded ${latest.date}` : "Last recorded"}
-                  </Text>
-                </>
-              ) : latest?.kind === "none" ? (
-                <Text style={[styles.rowHint, font.regular]}>No weight recorded yet</Text>
-              ) : bodyLoading && !bodyError ? (
-                <Text style={[styles.rowHint, font.regular]}>Loading latest weigh-in…</Text>
+            <Ionicons name="trending-up" size={22} color={light.textSecondary} />
+            <View style={[styles.rowBody, bodyError ? styles.rowDivider : null]}>
+              <View style={styles.rowText}>
+                <Text style={styles.rowTitle}>Weight history</Text>
+                {latest?.kind === "recorded" ? (
+                  <>
+                    <Text style={styles.weightValue}>{latest.value}</Text>
+                    {/* "Last recorded", with its date: the newest entry, not necessarily today's weight. */}
+                    <Text style={styles.rowHint}>
+                      {latest.date ? `Last recorded ${latest.date}` : "Last recorded"}
+                    </Text>
+                  </>
+                ) : latest?.kind === "none" ? (
+                  <Text style={styles.rowHint}>No weight recorded yet</Text>
+                ) : bodyLoading && !bodyError ? (
+                  <Text style={styles.rowHint}>Loading latest weigh-in…</Text>
+                ) : (
+                  <Text style={styles.rowHint}>View your weigh-ins</Text>
+                )}
+              </View>
+              {bodyLoading && !bodyError && latest === null ? (
+                <ActivityIndicator size="small" color={light.textSecondary} />
               ) : (
-                <Text style={[styles.rowHint, font.regular]}>View your weigh-ins</Text>
+                <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
               )}
             </View>
-            {bodyLoading && !bodyError && latest === null ? (
-              <ActivityIndicator size="small" color={roman.textMuted} />
-            ) : (
-              <Ionicons name="chevron-forward" size={18} color={roman.textMuted} />
-            )}
           </Pressable>
 
           {/* Not recorded and could not load are different things, so they get different text. */}
@@ -264,7 +264,7 @@ export default function ProfileScreen() {
               <Text
                 accessibilityRole="alert"
                 accessibilityLiveRegion="polite"
-                style={[styles.errorText, font.medium]}
+                style={styles.errorText}
               >
                 {latest
                   ? `Could not refresh. Showing the last loaded weight. ${bodyError}`
@@ -278,25 +278,24 @@ export default function ProfileScreen() {
                 onPress={retryBody}
               >
                 {bodyState.refreshing || bodyState.loading ? (
-                  <ActivityIndicator color={roman.goldLight} size="small" />
+                  <ActivityIndicator color={light.text} size="small" />
                 ) : (
-                  <Text style={[styles.retryText, font.semibold]}>Try again</Text>
+                  <Text style={styles.retryText}>Try again</Text>
                 )}
               </Pressable>
             </View>
           ) : null}
         </View>
 
-        <Text accessibilityRole="header" style={[styles.sectionLabel, styles.sectionSpaced, font.semibold]}>
+        <Text accessibilityRole="header" style={styles.sectionLabel}>
           Account
         </Text>
-        <View style={styles.card}>
+        <View style={styles.group}>
           <MenuRow
             icon="id-card-outline"
             label="Personal Details"
             hint="Manage your profile details"
             onPress={() => router.push("/profile/personal-details")}
-            font={font}
           />
           <MenuRow
             icon="options-outline"
@@ -304,34 +303,31 @@ export default function ProfileScreen() {
             hint="Weight unit, rest timer, time zone"
             onPress={() => router.push("/profile/preferences")}
             last
-            font={font}
           />
         </View>
 
-        <Text accessibilityRole="header" style={[styles.sectionLabel, styles.sectionSpaced, font.semibold]}>
+        <Text accessibilityRole="header" style={styles.sectionLabel}>
           Goals & Tracking
         </Text>
-        <View style={styles.card}>
+        <View style={styles.group}>
           <MenuRow
             icon="nutrition-outline"
             label="Nutrition Goals"
             hint="View and update your targets"
             onPress={() => router.push("/profile/nutrition-goals")}
             last
-            font={font}
           />
         </View>
 
-        <Text accessibilityRole="header" style={[styles.sectionLabel, styles.sectionSpaced, font.semibold]}>
+        <Text accessibilityRole="header" style={styles.sectionLabel}>
           Coaching
         </Text>
-        <View style={styles.card}>
+        <View style={styles.group}>
           <MenuRow
             icon="people-outline"
             label="My Coaches"
             hint="Connect with a coach using an invite code"
             onPress={() => router.push("/coaching/coaches")}
-            font={font}
           />
           <MenuRow
             icon="clipboard-outline"
@@ -343,7 +339,6 @@ export default function ProfileScreen() {
             }
             onPress={() => router.push("/coaching/athletes")}
             last
-            font={font}
           />
         </View>
 
@@ -351,7 +346,7 @@ export default function ProfileScreen() {
           <Text
             accessibilityRole="alert"
             accessibilityLiveRegion="polite"
-            style={[styles.errorText, styles.signOutError, font.medium]}
+            style={[styles.errorText, styles.signOutError]}
           >
             {signOutError}
           </Text>
@@ -362,18 +357,19 @@ export default function ProfileScreen() {
           accessibilityState={{ busy: signingOut, disabled: signingOut }}
           disabled={signingOut}
           style={({ pressed }) => [
+            styles.group,
             styles.signOut,
-            pressed && styles.signOutPressed,
+            pressed && styles.pressed,
             signingOut && styles.busy,
           ]}
           onPress={() => void handleSignOut()}
         >
           {signingOut ? (
-            <ActivityIndicator color={roman.danger} size="small" />
+            <ActivityIndicator color={light.danger} size="small" />
           ) : (
             <>
-              <Ionicons name="log-out-outline" size={20} color={roman.danger} />
-              <Text style={[styles.signOutText, font.semibold]}>Sign out</Text>
+              <Ionicons name="log-out-outline" size={20} color={light.danger} />
+              <Text style={styles.signOutText}>Sign out</Text>
             </>
           )}
         </Pressable>
@@ -383,115 +379,80 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: roman.background },
+  screen: { flex: 1, backgroundColor: light.background },
   flex: { flex: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
-  container: { paddingHorizontal: 16, paddingBottom: 32 },
-  pressed: { backgroundColor: roman.surfaceRaised },
+  container: { paddingHorizontal: 16 },
+  pressed: { backgroundColor: light.pressed },
   busy: { opacity: 0.6 },
 
-  topBar: { backgroundColor: roman.background, paddingHorizontal: 16 },
+  topBar: { backgroundColor: light.background, paddingHorizontal: 16 },
   topBarRow: { minHeight: 56, flexDirection: "row", alignItems: "center" },
-  topBarTitle: {
-    flexShrink: 1,
-    color: roman.gold,
-    fontSize: 22,
-    fontWeight: "600",
-    letterSpacing: 2,
-    textTransform: "uppercase",
-  },
+  topBarTitle: { flexShrink: 1, color: light.text, fontSize: 28, fontWeight: "700" },
 
-  errorText: { color: roman.danger, fontSize: 14, lineHeight: 20 },
-  refreshError: { marginTop: 8 },
+  errorText: { color: light.danger, fontSize: 14, lineHeight: 20 },
+  refreshError: { marginBottom: 12 },
 
-  headerCard: {
-    minHeight: 88,
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 14,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderColor: roman.gold,
-    borderWidth: 1.5,
-    backgroundColor: roman.background,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { color: roman.gold, fontSize: 22, fontWeight: "600" },
-  headerText: { flex: 1, rowGap: 2 },
-  name: { color: roman.text, fontSize: 18, lineHeight: 24 },
-  username: { color: roman.textMuted, fontSize: 14, lineHeight: 20 },
-  editPill: {
-    minHeight: MIN_TOUCH,
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 6,
-    paddingHorizontal: 12,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderRadius: 10,
-    backgroundColor: roman.surfaceRaised,
-  },
-  editText: {
-    color: roman.goldLight,
-    fontSize: 12,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-
-  sectionLabel: {
-    color: roman.gold,
-    fontSize: 12,
-    letterSpacing: 1.4,
-    textTransform: "uppercase",
-    marginBottom: 12,
-  },
-  sectionSpaced: { marginTop: 24 },
-  card: {
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
+  group: {
+    backgroundColor: light.surface,
     borderRadius: 12,
     overflow: "hidden",
   },
-  row: {
-    minHeight: 64,
+  identity: {
+    minHeight: 76,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 14,
+    columnGap: 12,
     paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
   },
-  rowDivider: { borderBottomColor: roman.border, borderBottomWidth: StyleSheet.hairlineWidth },
-  iconBox: {
-    width: MIN_TOUCH,
-    height: MIN_TOUCH,
-    borderRadius: 10,
-    backgroundColor: roman.background,
-    borderColor: roman.border,
-    borderWidth: 1,
+  avatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: light.background,
     alignItems: "center",
     justifyContent: "center",
   },
+  avatarText: { color: light.text, fontSize: 18, fontWeight: "600" },
+  identityText: { flex: 1, rowGap: 2 },
+  name: { color: light.text, fontSize: 18, lineHeight: 24, fontWeight: "600" },
+  username: { color: light.textSecondary, fontSize: 14, lineHeight: 20 },
+  editText: { color: light.textSecondary, fontSize: 15 },
+
+  sectionLabel: {
+    color: light.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 24,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  row: {
+    minHeight: 60,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 14,
+    paddingLeft: 16,
+  },
+  // The hairline starts at the text, not at the card edge, like iOS grouped lists.
+  rowBody: {
+    flex: 1,
+    minHeight: 60,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    paddingVertical: 10,
+    paddingRight: 16,
+  },
+  rowDivider: { borderBottomColor: light.separator, borderBottomWidth: StyleSheet.hairlineWidth },
   rowText: { flex: 1, rowGap: 2 },
-  rowTitle: { color: roman.text, fontSize: 16, lineHeight: 22 },
-  rowHint: { color: roman.textMuted, fontSize: 13, lineHeight: 18 },
-  weightValue: { color: roman.goldLight, fontSize: 20, lineHeight: 26 },
+  rowTitle: { color: light.text, fontSize: 16, lineHeight: 22 },
+  rowHint: { color: light.textSecondary, fontSize: 13, lineHeight: 18 },
+  weightValue: { color: light.text, fontSize: 20, lineHeight: 26, fontWeight: "600" },
 
   bodyError: {
-    borderTopColor: roman.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 4,
     rowGap: 2,
@@ -502,22 +463,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingRight: 12,
   },
-  retryText: { color: roman.goldLight, fontSize: 14 },
+  retryText: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
 
-  // Set apart from the settings above: more space and its own outlined shape.
+  // Set apart from the settings above: more space, red text plus an icon and
+  // the label, so the meaning never rests on the colour.
   signOutError: { marginTop: 32 },
   signOut: {
     minHeight: 52,
     flexDirection: "row",
     columnGap: 8,
-    marginTop: 40,
-    borderColor: roman.danger,
-    borderWidth: 1,
-    borderRadius: 12,
+    marginTop: 32,
     paddingHorizontal: 16,
     alignItems: "center",
     justifyContent: "center",
   },
-  signOutPressed: { backgroundColor: roman.surface },
-  signOutText: { color: roman.danger, fontSize: 15, letterSpacing: 0.5 },
+  signOutText: { color: light.danger, fontSize: 16, fontWeight: "600" },
 });

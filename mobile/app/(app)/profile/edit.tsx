@@ -1,13 +1,12 @@
 /**
  * Profile edit screen.
  *
- * Only the fields the header card shows are editable here — first name,
+ * Only the fields the identity row shows are editable here — first name,
  * last name, username. Everything else (bio, units, timezone, ...) belongs
  * to the Personal Details / Preferences sections from a later task.
  */
 
-import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -18,12 +17,15 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  View,
 } from "react-native";
 
 import { initials, updateMe } from "../../../src/api/auth";
 import { ApiError } from "../../../src/api/client";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { colors, radius, spacing } from "../../../src/theme";
+import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
+import { lightHeaderOptions } from "../../../src/lightHeaderOptions";
+import { light } from "../../../src/lightTheme";
 
 export default function EditProfileScreen() {
   const { user, refreshProfile } = useAuth();
@@ -61,7 +63,7 @@ export default function EditProfileScreen() {
         last_name: lastName.trim() || null,
         username: username.trim(),
       });
-      // Syncs AuthContext.user so the header card reflects the change the
+      // Syncs AuthContext.user so the identity row reflects the change the
       // moment we go back, rather than showing stale data until the next
       // pull-to-refresh.
       await refreshProfile();
@@ -82,25 +84,31 @@ export default function EditProfileScreen() {
       style={styles.flex}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
+      <Stack.Screen options={lightHeaderOptions} />
+      <FocusedDarkStatusBar />
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <LinearGradient colors={[colors.accent, colors.accentDark]} style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials({ first_name: firstName, last_name: lastName, username })}</Text>
-        </LinearGradient>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>
+            {initials({ first_name: firstName, last_name: lastName, username })}
+          </Text>
+        </View>
 
-        <Text style={styles.label}>First Name</Text>
+        <Text style={styles.label}>First name (optional)</Text>
         <TextInput
           style={styles.input}
           placeholder="First name"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={light.textSecondary}
+          accessibilityLabel="First name, optional"
           value={firstName}
           onChangeText={setFirstName}
         />
 
-        <Text style={styles.label}>Last Name</Text>
+        <Text style={styles.label}>Last name (optional)</Text>
         <TextInput
           style={styles.input}
           placeholder="Last name"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={light.textSecondary}
+          accessibilityLabel="Last name, optional"
           value={lastName}
           onChangeText={setLastName}
         />
@@ -109,22 +117,35 @@ export default function EditProfileScreen() {
         <TextInput
           style={styles.input}
           placeholder="Username"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={light.textSecondary}
+          accessibilityLabel="Username"
           value={username}
           onChangeText={setUsername}
           autoCapitalize="none"
           autoCorrect={false}
         />
+        <Text style={styles.hint}>At least 3 characters: letters, numbers and underscores.</Text>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? (
+          <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
+            {error}
+          </Text>
+        ) : null}
 
         <Pressable
-          style={[styles.button, busy && styles.buttonDisabled]}
+          accessibilityRole="button"
+          accessibilityLabel="Save profile"
+          accessibilityState={{ busy, disabled: busy }}
+          style={({ pressed }) => [
+            styles.button,
+            pressed && styles.buttonPressed,
+            busy && styles.buttonDisabled,
+          ]}
           onPress={() => void handleSave()}
           disabled={busy}
         >
           {busy ? (
-            <ActivityIndicator color={colors.accentText} />
+            <ActivityIndicator color={light.onPrimary} />
           ) : (
             <Text style={styles.buttonText}>Save</Text>
           )}
@@ -135,37 +156,56 @@ export default function EditProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
-  container: { flexGrow: 1, padding: spacing.lg },
+  flex: { flex: 1, backgroundColor: light.background },
+  container: { flexGrow: 1, padding: 16, paddingBottom: 32 },
   avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: light.surface,
     alignItems: "center",
     justifyContent: "center",
     alignSelf: "center",
-    marginBottom: spacing.xl,
+    marginTop: 8,
+    marginBottom: 24,
   },
-  avatarText: { color: colors.accentText, fontSize: 32, fontWeight: "700" },
-  label: { color: colors.textMuted, fontSize: 13, marginBottom: spacing.xs },
+  avatarText: { color: light.text, fontSize: 24, fontWeight: "600" },
+  label: {
+    color: light.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 6,
+    marginLeft: 4,
+  },
   input: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
+    minHeight: 48,
+    backgroundColor: light.surface,
+    borderRadius: 10,
+    color: light.text,
     fontSize: 16,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
   },
-  error: { color: colors.danger, marginBottom: spacing.md },
+  hint: {
+    color: light.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: -8,
+    marginBottom: 16,
+    marginLeft: 4,
+  },
+  error: { color: light.danger, fontSize: 14, lineHeight: 20, marginBottom: 16 },
   button: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.sm,
-    padding: spacing.md,
+    minHeight: 52,
+    backgroundColor: light.primary,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     alignItems: "center",
-    marginTop: spacing.sm,
+    justifyContent: "center",
+    marginTop: 8,
   },
+  buttonPressed: { backgroundColor: light.primaryPressed },
   buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: colors.accentText, fontSize: 16, fontWeight: "600" },
+  buttonText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
 });

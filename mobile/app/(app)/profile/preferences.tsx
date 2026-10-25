@@ -24,13 +24,16 @@
  *   following their home timezone is never overridden without asking.
  */
 
+import { Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import * as Localization from "expo-localization";
 
 import { updateMe } from "../../../src/api/auth";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { colors, radius, spacing } from "../../../src/theme";
+import { FocusedDarkStatusBar } from "../../../src/FocusedDarkStatusBar";
+import { lightHeaderOptions } from "../../../src/lightHeaderOptions";
+import { light } from "../../../src/lightTheme";
 import {
   isReadinessCheckinEnabled,
   setReadinessCheckinEnabled,
@@ -43,7 +46,11 @@ const WEIGHT_UNITS = [
 ] as const;
 
 function SectionLabel({ children }: { children: string }) {
-  return <Text style={styles.sectionLabel}>{children}</Text>;
+  return (
+    <Text accessibilityRole="header" style={styles.sectionLabel}>
+      {children}
+    </Text>
+  );
 }
 
 export default function PreferencesScreen() {
@@ -120,13 +127,17 @@ export default function PreferencesScreen() {
   if (!user) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator color={colors.accent} />
+        <Stack.Screen options={lightHeaderOptions} />
+        <FocusedDarkStatusBar />
+        <ActivityIndicator color={light.textSecondary} />
       </View>
     );
   }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <Stack.Screen options={lightHeaderOptions} />
+      <FocusedDarkStatusBar />
       <SectionLabel>Weight unit</SectionLabel>
       <View style={[styles.card, styles.row]}>
         <View style={styles.rowText}>
@@ -137,6 +148,9 @@ export default function PreferencesScreen() {
           {WEIGHT_UNITS.map((option) => (
             <Pressable
               key={option.value}
+              accessibilityRole="button"
+              accessibilityLabel={`Weight unit ${option.label}`}
+              accessibilityState={{ selected: user.weight_unit === option.value, disabled: savingUnit }}
               style={[styles.chip, user.weight_unit === option.value && styles.chipActive]}
               onPress={() => void handleSelectUnit(option.value)}
               disabled={savingUnit}
@@ -157,12 +171,15 @@ export default function PreferencesScreen() {
       <SectionLabel>Default rest</SectionLabel>
       <View style={[styles.card, styles.presetCard]}>
         {restSeconds === null ? (
-          <ActivityIndicator color={colors.accent} />
+          <ActivityIndicator color={light.textSecondary} />
         ) : (
           <View style={styles.chipGroup}>
             {REST_PRESETS.map((seconds) => (
               <Pressable
                 key={seconds}
+                accessibilityRole="button"
+                accessibilityLabel={`Default rest ${formatRest(seconds)}`}
+                accessibilityState={{ selected: restSeconds === seconds }}
                 style={[styles.chip, restSeconds === seconds && styles.chipActive]}
                 onPress={() => handleSelectRest(seconds)}
               >
@@ -182,10 +199,10 @@ export default function PreferencesScreen() {
           <Text style={styles.rowHint}>Ask about sleep and soreness before each workout</Text>
         </View>
         <Switch
+          accessibilityLabel="Readiness check-in"
           value={checkinEnabled}
           onValueChange={handleToggleCheckin}
-          trackColor={{ false: colors.border, true: colors.accent }}
-          thumbColor={colors.text}
+          trackColor={{ false: light.separator, true: light.primary }}
         />
       </View>
 
@@ -195,16 +212,19 @@ export default function PreferencesScreen() {
           <Text style={styles.rowLabel}>{user.timezone}</Text>
           <Text style={styles.rowHint}>Used to group your workout history and slice weekly volume</Text>
           {timezoneError ? (
-            <Text style={styles.rowError}>Couldn&apos;t update — try again</Text>
+            <Text accessibilityRole="alert" style={styles.rowError}>Couldn&apos;t update — try again</Text>
           ) : null}
         </View>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={timezoneUpToDate ? "Time zone is up to date" : "Use device timezone"}
+          accessibilityState={{ disabled: savingTimezone || timezoneUpToDate, busy: savingTimezone }}
           style={[styles.chip, timezoneUpToDate && styles.chipDisabled]}
           onPress={() => void handleUpdateTimezone()}
           disabled={savingTimezone || timezoneUpToDate}
         >
           {savingTimezone ? (
-            <ActivityIndicator color={colors.textMuted} size="small" />
+            <ActivityIndicator color={light.textSecondary} size="small" />
           ) : (
             <Text style={styles.chipText}>{timezoneUpToDate ? "Up to date" : "Use device timezone"}</Text>
           )}
@@ -215,52 +235,56 @@ export default function PreferencesScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: spacing.xl },
+  screen: { flex: 1, backgroundColor: light.background },
+  content: { padding: 16, paddingBottom: 32 },
   loading: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
+    backgroundColor: light.background,
   },
   sectionLabel: {
-    color: colors.textMuted,
+    color: light.textSecondary,
     fontSize: 13,
     fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: spacing.sm,
-    marginTop: spacing.lg,
+    marginBottom: 8,
+    marginTop: 24,
+    marginLeft: 4,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    paddingHorizontal: 16,
   },
-  presetCard: { paddingVertical: spacing.md },
+  presetCard: { paddingVertical: 12 },
   row: {
+    minHeight: 60,
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: spacing.md,
+    columnGap: 12,
+    rowGap: 10,
+    paddingVertical: 12,
   },
   rowNoBorder: { borderBottomWidth: 0 },
-  rowText: { flex: 1, marginRight: spacing.md },
-  rowLabel: { color: colors.text, fontSize: 15, fontWeight: "500" },
-  rowHint: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
-  rowError: { color: colors.danger, fontSize: 12, marginTop: 2 },
-  chipGroup: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
+  // flexBasis lets the control wrap under the text on narrow screens and at larger text sizes.
+  rowText: { flex: 1, flexBasis: 160 },
+  rowLabel: { color: light.text, fontSize: 16, lineHeight: 22 },
+  rowHint: { color: light.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 2 },
+  rowError: { color: light.danger, fontSize: 13, lineHeight: 18, marginTop: 2 },
+  chipGroup: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: light.background,
+    borderRadius: 10,
+    paddingHorizontal: 14,
   },
-  chipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipActive: { backgroundColor: light.primary },
   chipDisabled: { opacity: 0.5 },
-  chipText: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
-  chipTextActive: { color: colors.accentText },
+  chipText: { color: light.text, fontSize: 14, fontWeight: "600" },
+  chipTextActive: { color: light.onPrimary },
 });
