@@ -1,7 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFonts } from "expo-font";
-import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
 import { Link } from "expo-router";
 import { useMemo, useRef, useState } from "react";
 import {
@@ -10,54 +7,21 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../src/auth/AuthContext";
+import { authStyles as styles } from "../../src/auth/authStyles";
 import { createLoginSubmitter } from "../../src/auth/loginSubmit";
-import { colors } from "../../src/theme";
-
-// Scoped to this screen on purpose: the rest of the app still uses the global
-// theme, and switching it is a separate decision.
-const palette = {
-  background: "#09090B",
-  surface: "#171719",
-  border: "#2E2E34",
-  gold: "#C5A46D",
-  goldPressed: "#B3925B",
-  goldLight: "#E4CD95",
-  text: "#E7E7EB",
-  textMuted: "#A0A0A8",
-  placeholder: "#6B6B73",
-  // Same colour as the transparent end of each gradient: fading to the
-  // literal "transparent" can leave a grey fringe on iOS.
-  backgroundClear: "rgba(9, 9, 11, 0)",
-} as const;
-
-const heroImage = require("../../assets/images/login/hercules-bronze.jpg");
-
-const fontFiles = {
-  "Cinzel-Medium": require("../../assets/fonts/cinzel/Cinzel-Medium.ttf"),
-  "PlusJakartaSans-Regular": require("../../assets/fonts/plus-jakarta-sans/PlusJakartaSans-Regular.ttf"),
-  "PlusJakartaSans-Medium": require("../../assets/fonts/plus-jakarta-sans/PlusJakartaSans-Medium.ttf"),
-  "PlusJakartaSans-SemiBold": require("../../assets/fonts/plus-jakarta-sans/PlusJakartaSans-SemiBold.ttf"),
-};
-
-// The statue fills roughly the top 60% of the screen and fades out beneath
-// the form. Height follows the window so short screens are not stretched.
-const HERO_HEIGHT_RATIO = 0.6;
-const MIN_TOUCH = 44;
+import { FocusedDarkStatusBar } from "../../src/FocusedDarkStatusBar";
+import { light } from "../../src/lightTheme";
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
-  const [fontsLoaded] = useFonts(fontFiles);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -84,48 +48,9 @@ export default function LoginScreen() {
     setBusy(false);
   };
 
-  // Until the bundled fonts register, the screen renders with system fonts and
-  // stays fully usable; a failed load simply leaves it that way.
-  const font = fontsLoaded
-    ? {
-        title: { fontFamily: "Cinzel-Medium", fontWeight: "normal" as const },
-        regular: { fontFamily: "PlusJakartaSans-Regular", fontWeight: "normal" as const },
-        medium: { fontFamily: "PlusJakartaSans-Medium", fontWeight: "normal" as const },
-        semibold: { fontFamily: "PlusJakartaSans-SemiBold", fontWeight: "normal" as const },
-      }
-    : { title: null, regular: null, medium: null, semibold: null };
-
-  const heroHeight = Math.round(windowHeight * HERO_HEIGHT_RATIO);
-
   return (
     <View style={styles.root}>
-      {/* Decorative background: never receives touches, hidden from screen readers. */}
-      <View
-        pointerEvents="none"
-        accessible={false}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={[styles.hero, { height: heroHeight }]}
-      >
-        <Image
-          source={heroImage}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          contentPosition="top"
-          accessible={false}
-        />
-        <LinearGradient
-          colors={["rgba(9, 9, 11, 0.55)", palette.backgroundClear]}
-          locations={[0, 0.3]}
-          style={StyleSheet.absoluteFill}
-        />
-        <LinearGradient
-          colors={[palette.backgroundClear, "rgba(9, 9, 11, 0.6)", palette.background]}
-          locations={[0.35, 0.7, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
-
+      <FocusedDarkStatusBar />
       <KeyboardAvoidingView
         style={styles.flex}
         // iOS pushes content up; Android already resizes the window.
@@ -134,25 +59,24 @@ export default function LoginScreen() {
         <ScrollView
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          // The form sits at the bottom when it is short, and the whole
-          // content scrolls when text is large, the screen is small or the
-          // keyboard is open.
+          // The whole content scrolls when text is large, the screen is small
+          // or the keyboard is open, so the button is always reachable.
           contentContainerStyle={[
             styles.content,
-            { paddingTop: insets.top + 24, paddingBottom: Math.max(insets.bottom, 24) },
+            { paddingTop: insets.top + 32, paddingBottom: Math.max(insets.bottom, 24) + 16 },
           ]}
         >
-          <Text accessibilityRole="header" style={[styles.title, font.title]}>
+          <Text accessibilityRole="header" style={styles.title}>
             Find your strength.
           </Text>
 
           <View style={styles.field}>
-            <Text style={[styles.label, font.medium]}>Email</Text>
+            <Text style={styles.label}>Email</Text>
             <TextInput
-              style={[styles.input, font.regular]}
+              style={styles.input}
               accessibilityLabel="Email"
               placeholder="name@example.com"
-              placeholderTextColor={palette.placeholder}
+              placeholderTextColor={light.textSecondary}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -162,17 +86,18 @@ export default function LoginScreen() {
               autoComplete="email"
               returnKeyType="next"
               onSubmitEditing={() => passwordRef.current?.focus()}
-              selectionColor={palette.gold}
+              selectionColor={light.text}
             />
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, font.medium]}>Password</Text>
+            <Text style={styles.label}>Password</Text>
             <View>
               <TextInput
                 ref={passwordRef}
-                style={[styles.input, styles.passwordInput, font.regular]}
+                style={[styles.input, styles.passwordInput]}
                 accessibilityLabel="Password"
+                placeholderTextColor={light.textSecondary}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
@@ -182,7 +107,7 @@ export default function LoginScreen() {
                 autoComplete="current-password"
                 returnKeyType="go"
                 onSubmitEditing={handleSubmit}
-                selectionColor={palette.gold}
+                selectionColor={light.text}
               />
               <Pressable
                 accessibilityRole="button"
@@ -192,17 +117,20 @@ export default function LoginScreen() {
               >
                 <Ionicons
                   name={showPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color={palette.textMuted}
+                  size={22}
+                  color={light.textSecondary}
                 />
               </Pressable>
             </View>
           </View>
 
           {error ? (
-            <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.error, font.medium]}>
-              {error}
-            </Text>
+            <View style={styles.errorRow}>
+              <Ionicons name="alert-circle-outline" size={18} color={light.danger} accessible={false} />
+              <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.errorText}>
+                {error}
+              </Text>
+            </View>
           ) : null}
 
           <Pressable
@@ -218,17 +146,17 @@ export default function LoginScreen() {
             disabled={busy}
           >
             {busy ? (
-              <ActivityIndicator color={palette.background} />
+              <ActivityIndicator color={light.onPrimary} />
             ) : (
-              <Text style={[styles.buttonText, font.semibold]}>Sign in</Text>
+              <Text style={styles.buttonText}>Sign in</Text>
             )}
           </Pressable>
 
           <View style={styles.footer}>
-            <Text style={[styles.footerText, font.regular]}>Don’t have an account?</Text>
+            <Text style={styles.footerText}>Don’t have an account?</Text>
             <Link href="/register" asChild>
               <Pressable accessibilityRole="link" style={styles.linkButton}>
-                <Text style={[styles.link, font.medium]}>Create account</Text>
+                <Text style={styles.link}>Create account</Text>
               </Pressable>
             </Link>
           </View>
@@ -237,90 +165,3 @@ export default function LoginScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: palette.background },
-  flex: { flex: 1 },
-  hero: { position: "absolute", top: 0, left: 0, right: 0 },
-  content: {
-    flexGrow: 1,
-    justifyContent: "flex-end",
-    paddingHorizontal: 24,
-  },
-  title: {
-    color: palette.text,
-    fontSize: 30,
-    fontWeight: "600",
-    letterSpacing: 0.6,
-    marginBottom: 28,
-  },
-  field: { marginBottom: 16 },
-  label: {
-    color: palette.textMuted,
-    fontSize: 12,
-    fontWeight: "500",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    marginBottom: 6,
-  },
-  input: {
-    minHeight: 52,
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    color: palette.text,
-    fontSize: 15,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  passwordInput: { paddingRight: 52 },
-  eyeButton: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    width: 52,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  error: {
-    color: colors.danger,
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  button: {
-    minHeight: 52,
-    backgroundColor: palette.gold,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-  },
-  buttonPressed: { backgroundColor: palette.goldPressed },
-  buttonBusy: { opacity: 0.6 },
-  buttonText: {
-    color: palette.background,
-    fontSize: 14,
-    fontWeight: "600",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  footer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    justifyContent: "center",
-    columnGap: 4,
-    marginTop: 16,
-  },
-  footerText: { color: palette.textMuted, fontSize: 14 },
-  linkButton: {
-    minHeight: MIN_TOUCH,
-    justifyContent: "center",
-    paddingHorizontal: 4,
-  },
-  link: { color: palette.goldLight, fontSize: 14, fontWeight: "500" },
-});

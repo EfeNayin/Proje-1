@@ -1,7 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import * as Localization from "expo-localization";
-import { LinearGradient } from "expo-linear-gradient";
 import { Link } from "expo-router";
 import { useMemo, useRef, useState } from "react";
 import {
@@ -10,33 +8,21 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../src/auth/AuthContext";
+import { authStyles as styles } from "../../src/auth/authStyles";
 import { createRegisterSubmitter } from "../../src/auth/registerSubmit";
-import { roman, useRomanFonts } from "../../src/romanTheme";
-
-// Same bundled photo as the login screen; not copied.
-const heroImage = require("../../assets/images/login/hercules-bronze.jpg");
-
-// The form is longer than login's, so the statue is a short, dimmed backdrop
-// instead of filling most of the screen.
-const HERO_HEIGHT_RATIO = 0.3;
-const HERO_MAX_HEIGHT = 260;
-const HERO_OPACITY = 0.5;
-const MIN_TOUCH = 44;
+import { FocusedDarkStatusBar } from "../../src/FocusedDarkStatusBar";
+import { light } from "../../src/lightTheme";
 
 export default function RegisterScreen() {
   const { signUp } = useAuth();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
-  const font = useRomanFonts();
 
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
@@ -80,32 +66,9 @@ export default function RegisterScreen() {
     setBusy(false);
   };
 
-  const heroHeight = Math.min(HERO_MAX_HEIGHT, Math.round(windowHeight * HERO_HEIGHT_RATIO));
-
   return (
     <View style={styles.root}>
-      {/* Decorative background: never receives touches, hidden from screen readers. */}
-      <View
-        pointerEvents="none"
-        accessible={false}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={[styles.hero, { height: heroHeight }]}
-      >
-        <Image
-          source={heroImage}
-          style={[StyleSheet.absoluteFill, { opacity: HERO_OPACITY }]}
-          contentFit="cover"
-          contentPosition="top"
-          accessible={false}
-        />
-        <LinearGradient
-          colors={[roman.backgroundClear, "rgba(9, 9, 11, 0.7)", roman.background]}
-          locations={[0.1, 0.65, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
-
+      <FocusedDarkStatusBar />
       <KeyboardAvoidingView
         style={styles.flex}
         // iOS pushes content up; Android already resizes the window.
@@ -117,20 +80,20 @@ export default function RegisterScreen() {
           keyboardDismissMode="on-drag"
           contentContainerStyle={[
             styles.content,
-            { paddingTop: insets.top + 24, paddingBottom: Math.max(insets.bottom, 24) },
+            { paddingTop: insets.top + 32, paddingBottom: Math.max(insets.bottom, 24) + 16 },
           ]}
         >
-          <Text accessibilityRole="header" style={[styles.title, font.title]}>
+          <Text accessibilityRole="header" style={styles.title}>
             Create account
           </Text>
 
           <View style={styles.field}>
-            <Text style={[styles.label, font.medium]}>Email</Text>
+            <Text style={styles.label}>Email</Text>
             <TextInput
-              style={[styles.input, font.regular]}
+              style={styles.input}
               accessibilityLabel="Email"
               placeholder="name@example.com"
-              placeholderTextColor={roman.placeholder}
+              placeholderTextColor={light.textSecondary}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -140,18 +103,18 @@ export default function RegisterScreen() {
               autoComplete="email"
               returnKeyType="next"
               onSubmitEditing={() => usernameRef.current?.focus()}
-              selectionColor={roman.gold}
+              selectionColor={light.text}
             />
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, font.medium]}>Username</Text>
+            <Text style={styles.label}>Username</Text>
             <TextInput
               ref={usernameRef}
-              style={[styles.input, font.regular]}
+              style={styles.input}
               accessibilityLabel="Username"
               placeholder="Letters, numbers, _"
-              placeholderTextColor={roman.placeholder}
+              placeholderTextColor={light.textSecondary}
               value={username}
               onChangeText={setUsername}
               autoCapitalize="none"
@@ -160,17 +123,17 @@ export default function RegisterScreen() {
               autoComplete="username-new"
               returnKeyType="next"
               onSubmitEditing={() => firstNameRef.current?.focus()}
-              selectionColor={roman.gold}
+              selectionColor={light.text}
             />
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, font.medium]}>
-              First name <Text style={[styles.optional, font.regular]}>(optional)</Text>
+            <Text style={styles.label}>
+              First name <Text style={styles.optional}>(optional)</Text>
             </Text>
             <TextInput
               ref={firstNameRef}
-              style={[styles.input, font.regular]}
+              style={styles.input}
               accessibilityLabel="First name, optional"
               value={firstName}
               onChangeText={setFirstName}
@@ -178,19 +141,19 @@ export default function RegisterScreen() {
               autoComplete="given-name"
               returnKeyType="next"
               onSubmitEditing={() => passwordRef.current?.focus()}
-              selectionColor={roman.gold}
+              selectionColor={light.text}
             />
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, font.medium]}>Password</Text>
+            <Text style={styles.label}>Password</Text>
             <View>
               <TextInput
                 ref={passwordRef}
-                style={[styles.input, styles.passwordInput, font.regular]}
+                style={[styles.input, styles.passwordInput]}
                 accessibilityLabel="Password"
                 placeholder="At least 8 characters"
-                placeholderTextColor={roman.placeholder}
+                placeholderTextColor={light.textSecondary}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
@@ -200,7 +163,7 @@ export default function RegisterScreen() {
                 autoComplete="new-password"
                 returnKeyType="go"
                 onSubmitEditing={handleSubmit}
-                selectionColor={roman.gold}
+                selectionColor={light.text}
               />
               <Pressable
                 accessibilityRole="button"
@@ -210,21 +173,20 @@ export default function RegisterScreen() {
               >
                 <Ionicons
                   name={showPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color={roman.textMuted}
+                  size={22}
+                  color={light.textSecondary}
                 />
               </Pressable>
             </View>
           </View>
 
           {error ? (
-            <Text
-              accessibilityRole="alert"
-              accessibilityLiveRegion="polite"
-              style={[styles.error, font.medium]}
-            >
-              {error}
-            </Text>
+            <View style={styles.errorRow}>
+              <Ionicons name="alert-circle-outline" size={18} color={light.danger} accessible={false} />
+              <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.errorText}>
+                {error}
+              </Text>
+            </View>
           ) : null}
 
           <Pressable
@@ -240,17 +202,17 @@ export default function RegisterScreen() {
             disabled={busy}
           >
             {busy ? (
-              <ActivityIndicator color={roman.background} />
+              <ActivityIndicator color={light.onPrimary} />
             ) : (
-              <Text style={[styles.buttonText, font.semibold]}>Create account</Text>
+              <Text style={styles.buttonText}>Create account</Text>
             )}
           </Pressable>
 
           <View style={styles.footer}>
-            <Text style={[styles.footerText, font.regular]}>Already have an account?</Text>
+            <Text style={styles.footerText}>Already have an account?</Text>
             <Link href="/login" asChild>
               <Pressable accessibilityRole="link" style={styles.linkButton}>
-                <Text style={[styles.link, font.medium]}>Sign in</Text>
+                <Text style={styles.link}>Sign in</Text>
               </Pressable>
             </Link>
           </View>
@@ -259,94 +221,3 @@ export default function RegisterScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: roman.background },
-  flex: { flex: 1 },
-  hero: { position: "absolute", top: 0, left: 0, right: 0 },
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-  },
-  title: {
-    color: roman.text,
-    fontSize: 28,
-    fontWeight: "600",
-    letterSpacing: 0.6,
-    marginBottom: 24,
-  },
-  field: { marginBottom: 14 },
-  label: {
-    color: roman.textMuted,
-    fontSize: 12,
-    fontWeight: "500",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    marginBottom: 6,
-  },
-  optional: {
-    fontWeight: "400",
-    textTransform: "none",
-    letterSpacing: 0,
-  },
-  input: {
-    minHeight: 52,
-    backgroundColor: roman.surface,
-    borderColor: roman.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    color: roman.text,
-    fontSize: 15,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  passwordInput: { paddingRight: 52 },
-  eyeButton: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    width: 52,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  error: {
-    color: roman.danger,
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  button: {
-    minHeight: 52,
-    backgroundColor: roman.gold,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-  },
-  buttonPressed: { backgroundColor: roman.goldPressed },
-  buttonBusy: { opacity: 0.6 },
-  buttonText: {
-    color: roman.background,
-    fontSize: 14,
-    fontWeight: "600",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  footer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    justifyContent: "center",
-    columnGap: 4,
-    marginTop: 16,
-  },
-  footerText: { color: roman.textMuted, fontSize: 14 },
-  linkButton: {
-    minHeight: MIN_TOUCH,
-    justifyContent: "center",
-    paddingHorizontal: 4,
-  },
-  link: { color: roman.goldLight, fontSize: 14, fontWeight: "500" },
-});
