@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 class InviteCodeRequest(BaseModel):
@@ -101,6 +101,32 @@ class AthleteExercise(BaseModel):
 
 class AthleteWorkoutDetail(AthleteWorkoutSummary):
     exercises: list[AthleteExercise]
+
+
+class AthleteExerciseSession(BaseModel):
+    """One earlier completed session of an exercise: recorded working sets only."""
+
+    workout_id: UUID
+    title: str | None
+    performed_at: datetime
+    # Working sets of this exercise (never warm-ups, reps > 0), in set order.
+    sets: list[AthleteSet]
+
+
+class AthleteExerciseHistoryPage(BaseModel):
+    items: list[AthleteExerciseSession]
+    # Opaque; only valid for the connection, workout and exercise it came from.
+    next_cursor: str | None
+
+
+class AthleteExerciseHistoryCursor(BaseModel):
+    """What a continuation token carries: the position and the context it was cut in."""
+
+    performed_at: AwareDatetime
+    session_id: UUID
+    link_id: UUID
+    anchor_workout_id: UUID
+    exercise_id: UUID
 
 
 # ── Roster activity overview ─────────────────────────────────────────────

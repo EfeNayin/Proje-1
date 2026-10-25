@@ -198,6 +198,64 @@ async def get_previous_exercise_session(
     return page.items[0] if page.items else None
 
 
+async def earlier_exercise_sessions(
+    db: AsyncSession,
+    athlete_id: UUID,
+    exercise_id: UUID,
+    *,
+    before: datetime,
+    after: tuple[datetime, UUID] | None,
+    limit: int,
+    load_exercise: bool = False,
+) -> tuple[list[tuple[Workout, list[Set]]], bool]:
+    """One page of an athlete's earlier closed sessions of an exercise.
+
+    The single definition of "history" shared by the athlete's own panel and
+    the coach's read-only one. It performs NO authorisation: the caller must
+    already have established that it may read `athlete_id`'s workouts.
+
+    A session is included when it belongs to the athlete, started strictly
+    before `before`, is closed, and has at least one working set (not a warm-up,
+    reps > 0) of exactly this exercise id. Only those working sets are returned.
+    Order is performed_at DESC, id DESC; `after` is the (performed_at, id) of
+    the last session already shown and only narrows the result. Returns the
+    page and whether older sessions remain. Two queries however many sessions
+    or sets there are.
+    """
+    eligible_sets = (
+        Set.exercise_id == exercise_id,
+        Set.is_warmup.is_(False),
+        Set.reps > 0,
+    )
+    stmt = select(Workout).where(
+        Workout.user_id == athlete_id,
+        Workout.performed_at < before,
+        Workout.finished_at.is_not(None),
+        select(Set.id).where(Set.workout_id == Workout.id, *eligible_sets).exists(),
+    )
+    if after is not None:
+        stmt = stmt.where(tuple_(Workout.performed_at, Workout.id) < after)
+    workouts = (
+        await db.scalars(
+            stmt.order_by(Workout.performed_at.desc(), Workout.id.desc()).limit(limit + 1)
+        )
+    ).all()
+    page = workouts[:limit]
+    if not page:
+        return [], False
+    set_stmt = (
+        select(Set)
+        .where(Set.workout_id.in_([workout.id for workout in page]), *eligible_sets)
+        .order_by(Set.set_number, Set.id)
+    )
+    if load_exercise:
+        set_stmt = set_stmt.options(selectinload(Set.exercise))
+    grouped: dict[UUID, list[Set]] = {workout.id: [] for workout in page}
+    for row in (await db.scalars(set_stmt)).all():
+        grouped[row.workout_id].append(row)
+    return [(workout, grouped[workout.id]) for workout in page], len(workouts) > limit
+
+
 async def get_exercise_history(
     db: AsyncSession,
     user_id: UUID,
@@ -213,17 +271,7 @@ async def get_exercise_history(
     current = await _load_owned_workout(db, workout_id, user_id)
     if await db.get(Exercise, exercise_id) is None:
         raise NotFoundError("Exercise not found")
-    eligible_sets = (
-        Set.exercise_id == exercise_id,
-        Set.is_warmup.is_(False),
-        Set.reps > 0,
-    )
-    stmt = select(Workout).where(
-        Workout.user_id == user_id,
-        Workout.performed_at < current.performed_at,
-        Workout.finished_at.is_not(None),
-        select(Set.id).where(Set.workout_id == Workout.id, *eligible_sets).exists(),
-    )
+    after: tuple[datetime, UUID] | None = None
     if query.cursor is not None:
         try:
             cursor = ExerciseHistoryCursor.model_validate_json(
@@ -231,31 +279,19 @@ async def get_exercise_history(
             )
         except (ValueError, binascii.Error) as exc:
             raise ValidationAppError("Invalid exercise history cursor") from exc
-        stmt = stmt.where(
-            tuple_(Workout.performed_at, Workout.id) < (cursor.performed_at, cursor.workout_id)
-        )
-    workouts = (
-        await db.scalars(
-            stmt.order_by(Workout.performed_at.desc(), Workout.id.desc()).limit(query.limit + 1)
-        )
-    ).all()
-    page = workouts[: query.limit]
-    if not page:
-        return ExerciseHistoryResponse(items=[], next_cursor=None)
-    rows = (
-        await db.scalars(
-            select(Set)
-            .where(Set.workout_id.in_([workout.id for workout in page]), *eligible_sets)
-            .options(selectinload(Set.exercise))
-            .order_by(Set.set_number, Set.id)
-        )
-    ).all()
-    grouped: dict[UUID, list[SetRead]] = {workout.id: [] for workout in page}
-    for row in rows:
-        grouped[row.workout_id].append(_to_set_read(row))
+        after = (cursor.performed_at, cursor.workout_id)
+    sessions, has_more = await earlier_exercise_sessions(
+        db,
+        user_id,
+        exercise_id,
+        before=current.performed_at,
+        after=after,
+        limit=query.limit,
+        load_exercise=True,
+    )
     next_cursor = None
-    if len(workouts) > query.limit:
-        last = page[-1]
+    if has_more:
+        last = sessions[-1][0]
         next_cursor = base64.urlsafe_b64encode(
             ExerciseHistoryCursor(performed_at=last.performed_at, workout_id=last.id)
             .model_dump_json()
@@ -268,9 +304,9 @@ async def get_exercise_history(
                 title=workout.title,
                 performed_at=workout.performed_at,
                 finished_automatically=workout.finished_automatically,
-                sets=grouped[workout.id],
+                sets=[_to_set_read(row) for row in rows],
             )
-            for workout in page
+            for workout, rows in sessions
         ],
         next_cursor=next_cursor,
     )

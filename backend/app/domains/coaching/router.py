@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.domains.auth.dependencies import CurrentUser
 from app.domains.coaching import offers, overview, service, workout_access
 from app.domains.coaching.schemas import (
+    AthleteExerciseHistoryPage,
     AthleteOverviewPage,
     AthleteWorkoutDetail,
     AthleteWorkoutList,
@@ -32,6 +33,7 @@ from app.domains.coaching.schemas import (
     WorkoutSharingRequest,
 )
 from app.domains.users.schemas import UserProfile
+from app.domains.workouts.schemas import ExerciseHistoryQuery
 from app.models import CoachAthleteLink, User
 
 router = APIRouter(prefix="/coaching", tags=["coaching"])
@@ -178,6 +180,34 @@ async def get_athlete_workout(
     link_id: UUID, workout_id: UUID, current_user: CurrentUser, db: DbSession
 ) -> AthleteWorkoutDetail:
     return await workout_access.get_workout(db, current_user, link_id, workout_id)
+
+
+@router.get(
+    "/athletes/{link_id}/workouts/{workout_id}/exercises/{exercise_id}/history",
+    response_model=AthleteExerciseHistoryPage,
+    summary="Coach: a sharing athlete's earlier sessions of an exercise, read-only",
+    description=(
+        "Completed sessions of the linked athlete that started strictly before "
+        "the given completed workout and contain working sets (not warm-ups, "
+        "reps > 0) of exactly this exercise id, newest first, ties broken by "
+        "workout id. The workout must belong to the athlete and contain the "
+        "exercise. `next_cursor` only works for the same connection, workout "
+        "and exercise."
+    ),
+)
+async def get_athlete_exercise_history(
+    link_id: UUID,
+    workout_id: UUID,
+    exercise_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    response: Response,
+    query: Annotated[ExerciseHistoryQuery, Query()],
+) -> AthleteExerciseHistoryPage:
+    response.headers["Cache-Control"] = "no-store"
+    return await workout_access.get_exercise_history(
+        db, current_user, link_id, workout_id, exercise_id, query
+    )
 
 
 @router.get(
