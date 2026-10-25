@@ -3,6 +3,7 @@
 The caller is always the signed-in account; no endpoint accepts a user id.
 """
 
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -11,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.domains.auth.dependencies import CurrentUser
-from app.domains.coaching import offers, service, workout_access
+from app.domains.coaching import offers, overview, service, workout_access
 from app.domains.coaching.schemas import (
+    AthleteOverviewPage,
     AthleteWorkoutDetail,
     AthleteWorkoutList,
     Connection,
@@ -99,6 +101,30 @@ def _connections(rows: list[tuple[CoachAthleteLink, User]]) -> ConnectionList:
 @router.get("/athletes", response_model=ConnectionList, summary="Your connected athletes")
 async def list_athletes(current_user: CurrentUser, db: DbSession) -> ConnectionList:
     return _connections(await service.list_athletes(db, current_user))
+
+
+@router.get(
+    "/athletes/overview",
+    response_model=AthleteOverviewPage,
+    summary="Coach: recorded training activity of each athlete on the roster",
+    description=(
+        "A page of the roster with, for athletes who share workouts, the latest "
+        "completed workout and the completed workouts and working sets recorded "
+        "in one 28-day window shared by every item (start <= performed_at < end). "
+        "`activity` is null for an athlete who is not sharing. Pass the first "
+        "page's `window.end` as `as_of` when requesting later pages."
+    ),
+)
+async def athletes_overview(
+    current_user: CurrentUser,
+    db: DbSession,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    as_of: datetime | None = None,
+) -> AthleteOverviewPage:
+    response.headers["Cache-Control"] = "no-store"
+    return await overview.athlete_overview(db, current_user, limit, offset, as_of)
 
 
 @router.get("/coaches", response_model=ConnectionList, summary="Your connected coaches")

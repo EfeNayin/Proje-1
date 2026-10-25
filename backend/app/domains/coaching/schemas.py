@@ -103,6 +103,51 @@ class AthleteWorkoutDetail(AthleteWorkoutSummary):
     exercises: list[AthleteExercise]
 
 
+# ── Roster activity overview ─────────────────────────────────────────────
+
+
+class ActivityWindow(BaseModel):
+    """The one reporting window every card in a response is counted over.
+
+    Half-open: a workout counts when start <= performed_at < end. `end` is the
+    request time (or the `as_of` a later page was asked to reuse) and
+    `start = end - days`. The client displays these; it never computes its own.
+    """
+
+    start: datetime
+    end: datetime
+    days: int
+
+
+class LatestWorkout(BaseModel):
+    title: str | None
+    performed_at: datetime
+
+
+class AthleteActivity(BaseModel):
+    """Recorded activity of a sharing athlete. Facts only; no judgement."""
+
+    # The most recent completed workout, all time, independent of the window.
+    latest_workout: LatestWorkout | None
+    # Completed workouts with performed_at inside the window.
+    workouts_in_window: int
+    # Working sets (not warm-ups, reps > 0) in those workouts.
+    working_sets_in_window: int
+
+
+class AthleteOverviewItem(Connection):
+    # None when the athlete is not sharing: unavailable, which is not zero.
+    activity: AthleteActivity | None
+
+
+class AthleteOverviewPage(BaseModel):
+    items: list[AthleteOverviewItem]
+    total: int
+    limit: int
+    offset: int
+    window: ActivityWindow
+
+
 # ── Program offers ───────────────────────────────────────────────────────
 
 OfferStatus = Literal["pending", "accepted", "declined"]
