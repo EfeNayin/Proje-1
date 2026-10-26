@@ -100,10 +100,13 @@ Bilinen sınırlar ve ilk-çalıştırma tuzakları (akış bunları ele alır):
   düğmeyi kapatır.
 - iOS'un "Save Password?" sayfası Maestro'ya görünmez ve uygulamayı kapatır;
   `sim.sh` özel simülatörde parola otomatik doldurmayı kapatır.
-- Yazılım klavyesi açıkken "Log set" klavyenin arkasında kalır ve sayı
-  tuş takımının "Done" tuşu da seti kaydeder (Reps alanının
-  `onSubmitEditing` davranışı); akış tek set oluştuğunu `1 working sets` ile
-  doğrular.
+- Akış **yazılım klavyesini** gerektirir (simülatörün donanım klavyesi bağlı
+  değilken varsayılanı): klavyenin "Done" tuşunun set kaydetmediğini ve
+  "Log set"/"Save"in klavye açıkken erişilebilir olduğunu doğrular. Donanım
+  klavyesi bağlıysa akış `Dictate` tuşunu bulamayıp açık bir hatayla düşer.
+  Ondalık tuş takımında (ağırlık) iOS "Done" göstermez; sayı tuş takımlarında
+  (Reps, RIR) gösterir. Klavye animasyonu sürerken form kaydırıldığı için
+  akış, ilgili dokunuşlardan önce `waitForAnimationToEnd` kullanır.
 - `CI=1` ile Metro dosya izlemez: uygulama kaynağını değiştirirseniz
   `e2e/scripts/metro-restart.sh` çalıştırın.
 - Metro, `NODE_OPTIONS=--dns-result-order=ipv4first` ile başlatılır; aksi
