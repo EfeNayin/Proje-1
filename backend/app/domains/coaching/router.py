@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.domains.auth.dependencies import CurrentUser
 from app.domains.coaching import feedback, offers, overview, service, workout_access
+from app.domains.coaching.ratelimit import Throttle
 from app.domains.coaching.schemas import (
     AthleteExerciseHistoryPage,
     AthleteOverviewPage,
@@ -72,9 +73,9 @@ async def create_invite(
     summary="See which coach an invite code belongs to, without accepting it",
 )
 async def preview_invite(
-    payload: InviteCodeRequest, current_user: CurrentUser, db: DbSession
+    payload: InviteCodeRequest, current_user: CurrentUser, db: DbSession, throttle: Throttle
 ) -> InvitePreview:
-    coach, expires_at = await service.preview_invite(db, current_user, payload.code)
+    coach, expires_at = await service.preview_invite(db, current_user, payload.code, throttle)
     return InvitePreview(coach=PersonSummary.model_validate(coach), expires_at=expires_at)
 
 
@@ -85,9 +86,13 @@ async def preview_invite(
     description="201 for a new connection; 200 when the same athlete repeats an accept.",
 )
 async def accept_invite(
-    payload: InviteCodeRequest, current_user: CurrentUser, db: DbSession, response: Response
+    payload: InviteCodeRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+    response: Response,
+    throttle: Throttle,
 ) -> Connection:
-    link, coach, created = await service.accept_invite(db, current_user, payload.code)
+    link, coach, created = await service.accept_invite(db, current_user, payload.code, throttle)
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     return _connection(link, coach)
 

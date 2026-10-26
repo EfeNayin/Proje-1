@@ -22,7 +22,7 @@ from app.core.exceptions import (
     ValidationAppError,
 )
 from app.core.security import hash_token
-from app.domains.coaching.ratelimit import invite_code_limiter
+from app.domains.coaching.ratelimit import InviteThrottle
 from app.models import CoachAthleteLink, CoachInvite, User
 
 INVITE_TTL = timedelta(hours=48)
@@ -100,9 +100,11 @@ async def create_invite(db: AsyncSession, coach: User) -> tuple[CoachInvite, str
     return invite, format_code(code)
 
 
-async def _find_invite(db: AsyncSession, caller: User, raw_code: str) -> CoachInvite:
+async def _find_invite(
+    db: AsyncSession, caller: User, raw_code: str, throttle: InviteThrottle
+) -> CoachInvite:
     """Look a typed code up. Wrong guesses are counted against the caller."""
-    invite_code_limiter.begin(caller.id)
+    attempt = await throttle.begin(caller)
     code = normalize_code(raw_code)
     invite = None
     if code is not None:
@@ -113,7 +115,7 @@ async def _find_invite(db: AsyncSession, caller: User, raw_code: str) -> CoachIn
         )
     if invite is None:
         raise NotFoundError(INVALID_CODE)
-    invite_code_limiter.forgive(caller.id)
+    await attempt.refund()
     return invite
 
 
@@ -130,8 +132,10 @@ async def _active_link(
     return link
 
 
-async def preview_invite(db: AsyncSession, athlete: User, raw_code: str) -> tuple[User, datetime]:
-    invite = await _find_invite(db, athlete, raw_code)
+async def preview_invite(
+    db: AsyncSession, athlete: User, raw_code: str, throttle: InviteThrottle
+) -> tuple[User, datetime]:
+    invite = await _find_invite(db, athlete, raw_code, throttle)
     if invite.coach_id == athlete.id:
         raise ValidationAppError("You cannot connect to yourself.")
     if invite.accepted_at is not None:
@@ -163,13 +167,13 @@ async def _repeat_accept(
 
 
 async def accept_invite(
-    db: AsyncSession, athlete: User, raw_code: str
+    db: AsyncSession, athlete: User, raw_code: str, throttle: InviteThrottle
 ) -> tuple[CoachAthleteLink, User, bool]:
     """Returns (link, coach, created). `created` is False for an idempotent repeat."""
     # Plain values, read before any rollback: a rollback expires every loaded
     # object, and touching an expired attribute in async code would fail.
     athlete_id = athlete.id
-    invite = await _find_invite(db, athlete, raw_code)
+    invite = await _find_invite(db, athlete, raw_code, throttle)
     invite_id, coach_id = invite.id, invite.coach_id
     if coach_id == athlete_id:
         raise ValidationAppError("You cannot connect to yourself.")

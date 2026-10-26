@@ -16,14 +16,8 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.coaching import offers
-from app.domains.coaching.ratelimit import invite_code_limiter
 from app.models import Exercise, Program, ProgramOffer
 from tests.test_coaching import Headers, _connect, _register
-
-
-@pytest.fixture(autouse=True)
-def _fresh_limiter() -> None:
-    invite_code_limiter.reset()
 
 
 @pytest.fixture

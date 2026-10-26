@@ -14,16 +14,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_token
-from app.domains.coaching.ratelimit import invite_code_limiter
 from app.models import CoachAthleteLink, CoachInvite
 
 Headers = dict[str, str]
-
-
-@pytest.fixture(autouse=True)
-def _fresh_limiter() -> None:
-    """The limiter lives in process memory; keep tests independent."""
-    invite_code_limiter.reset()
 
 
 async def _register(client: AsyncClient, username: str) -> Headers:
