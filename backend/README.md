@@ -8,7 +8,7 @@ FastAPI (async) tabanlı API. PostgreSQL (veri), Redis (cache/kuyruk).
 - **Alembic** — şema migration
 - **Pydantic v2** + **pydantic-settings** — doğrulama ve ayarlar
 - **python-jose** + **passlib[bcrypt]** — JWT ve şifre hash'leme
-- **Redis** — cache / kuyruk
+- **Redis** — kayıt/giriş/yenileme/davet kodu hız sınırlarının paylaşılan sayaçları (bkz. kök README, "Hız sınırları"); cache/kuyruk için henüz kullanılmıyor
 
 ## Kurulum (Docker — önerilen)
 Kök dizinden:
