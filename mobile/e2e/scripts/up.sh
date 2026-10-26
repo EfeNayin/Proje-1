@@ -33,7 +33,18 @@ echo "$RUN_ID" > "$RUN_DIR/run-id"
 mkdir -p "$RUN_DIR/artifacts"
 
 echo "e2e: starting stack $RUN_ID (backend on 127.0.0.1:$API_PORT)"
-compose up -d --build >"$RUN_DIR/compose-up.log" 2>&1 || { tail -20 "$RUN_DIR/compose-up.log"; die "compose up failed (log: $RUN_DIR/compose-up.log)"; }
+if ! compose up -d --build >"$RUN_DIR/compose-up.log" 2>&1; then
+  # Building needs the registry for the base image. Offline, an already built backend
+  # image is still usable (it is only stale if backend/ changed since it was built).
+  if grep -q "failed to resolve source metadata" "$RUN_DIR/compose-up.log" \
+     && docker image inspect "$PROJECT-backend" >/dev/null 2>&1; then
+    echo "e2e: WARNING: cannot reach the registry; using the existing $PROJECT-backend image built $(docker image inspect -f '{{.Created}}' "$PROJECT-backend")"
+    compose up -d >"$RUN_DIR/compose-up.log" 2>&1 \
+      || { tail -20 "$RUN_DIR/compose-up.log"; die "compose up failed (log: $RUN_DIR/compose-up.log)"; }
+  else
+    tail -20 "$RUN_DIR/compose-up.log"; die "compose up failed (log: $RUN_DIR/compose-up.log)"
+  fi
+fi
 
 for _ in $(seq 1 60); do
   curl -fsS "http://127.0.0.1:$API_PORT/health" >/dev/null 2>&1 && break

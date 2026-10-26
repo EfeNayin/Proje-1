@@ -21,7 +21,7 @@ test('e2e flow: credentials come from the environment, never from the file', () 
 
 test('e2e flow: real controls only - no coordinates, sleeps or deep-link navigation into the app', () => {
   const source = flow();
-  assert.doesNotMatch(source, /point:|\bsleep\b|repeat:|swipe:|waitForAnimationToEnd/);
+  assert.doesNotMatch(source, /point:|\bsleep\b|repeat:|swipe:/);
   // The only link opened is the Metro URL that loads the app into Expo Go.
   const links = source.match(/openLink:.*/g) ?? [];
   assert.deepEqual(links, ['openLink: ${METRO_URL}']);

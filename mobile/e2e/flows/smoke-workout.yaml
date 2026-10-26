@@ -97,31 +97,112 @@ appId: host.exp.Exponent
     id: "set-reps-input"
 - inputText: "8"
 # RIR is left blank on purpose.
-- takeScreenshot: 07-set-entered
-# The set is saved by whichever control the keyboard setup leaves reachable:
-# - software keyboard (simulator default without a hardware keyboard): the number pad
-#   covers "Log set", and its own "Done" key submits the Reps field, which logs the set;
-# - hardware keyboard: nothing covers "Log set", so tap it.
-# Exactly one set must result either way (checked below), so a double save would fail.
-- runFlow:
-    when:
-      visible: "Dictate"
-    commands:
-      - tapOn: "Done"
-      - extendedWaitUntil:
-          visible: "Set 1, 80.* for 8 reps.*"
-          timeout: 15000
-- runFlow:
-    when:
-      visible: "Log set"
-      notVisible: "Set 1, 80.* for 8 reps.*"
-    commands:
-      - tapOn: "Log set"
+# This flow needs the software keyboard (the simulator default without a hardware
+# keyboard): it is what covers the form, and its Done key is what is under test.
+- assertVisible: "Dictate"
+# The keyboard slides up and the form is scrolled above it once it has arrived; wait for
+# the screen to be still before looking at it or tapping (the form moves meanwhile).
+- waitForAnimationToEnd
+- takeScreenshot: 07-keyboard-open-form-visible
+
+# The keyboard's Done only closes the keyboard: nothing is recorded, the draft stays.
+- tapOn: "Done"
+- extendedWaitUntil:
+    notVisible: "Dictate"
+    timeout: 10000
+- assertVisible: "0 working sets"
+- assertNotVisible: "Set 1, .*"
+- assertVisible:
+    id: "set-weight-input"
+    text: "80"
+- assertVisible:
+    id: "set-reps-input"
+    text: "8"
+- takeScreenshot: 08-after-done-nothing-recorded
+
+# Log set is reachable with the keyboard open: bring the keyboard back and tap it.
+# (An earlier Done-then-Log-set would have made two sets here; exactly one is expected.)
+- tapOn:
+    id: "set-reps-input"
+- assertVisible: "Dictate"
+- waitForAnimationToEnd
+- tapOn: "Log set"
 - extendedWaitUntil:
     visible: "Set 1, 80.* for 8 reps.*"
     timeout: 15000
 - assertVisible: "1 working sets"
-- takeScreenshot: 08-set-recorded
+- assertNotVisible: "Set 2, .*"
+- takeScreenshot: 09-one-set-recorded
+
+# A second explicit save of identical values is a second set. The keyboard stays open
+# after a save, so Log set is tapped with it open again.
+- tapOn:
+    id: "set-weight-input"
+- inputText: "80"
+- tapOn:
+    id: "set-reps-input"
+- inputText: "8"
+- assertVisible: "Dictate"
+- waitForAnimationToEnd
+- takeScreenshot: 09b-second-set-keyboard-open
+- tapOn: "Log set"
+- extendedWaitUntil:
+    visible: "Set 2, 80.* for 8 reps.*"
+    timeout: 15000
+- assertVisible: "2 working sets"
+- takeScreenshot: 10-two-identical-sets
+
+# ── edit: keyboard Done changes nothing until Save ──
+# Saving a set replaces the form, which also closes the keyboard.
+- extendedWaitUntil:
+    notVisible: "Dictate"
+    timeout: 10000
+- tapOn: "Set 2, 80.* for 8 reps.*"
+- extendedWaitUntil:
+    visible: "Editing set 2"
+    timeout: 10000
+# The weight field is focused and selected when the editor opens.
+- eraseText: 5
+- inputText: "85"
+# The number pad of the Reps field is the one with a Done key.
+- tapOn:
+    id: "edit-reps-input"
+- extendedWaitUntil:
+    visible: "Done"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: 11-edit-keyboard-open-save-visible
+- tapOn: "Done"
+- extendedWaitUntil:
+    notVisible: "Dictate"
+    timeout: 10000
+# Still editing, draft kept, nothing saved: Cancel shows the original values.
+- assertVisible: "Editing set 2"
+- assertVisible:
+    id: "edit-weight-input"
+    text: "85"
+- takeScreenshot: 12-edit-after-done
+- tapOn: "Cancel editing"
+- extendedWaitUntil:
+    visible: "Set 2, 80.* for 8 reps.*"
+    timeout: 10000
+- assertNotVisible: "Set 2, 85.*"
+
+# Edit again and save with the keyboard still open.
+- tapOn: "Set 2, 80.* for 8 reps.*"
+- extendedWaitUntil:
+    visible: "Editing set 2"
+    timeout: 10000
+- eraseText: 5
+- inputText: "85"
+- waitForAnimationToEnd
+- tapOn: "Save set"
+- extendedWaitUntil:
+    visible: "Set 2, 85.* for 8 reps.*"
+    timeout: 15000
+- assertVisible: "Set 1, 80.* for 8 reps.*"
+- assertVisible: "2 working sets"
+- takeScreenshot: 13-edit-saved
 
 # ── finish through the confirmation ──
 - tapOn: "Finish workout"
@@ -129,7 +210,7 @@ appId: host.exp.Exponent
 - extendedWaitUntil:
     visible: "Finish workout\\?"
     timeout: 10000
-- takeScreenshot: 09-finish-confirmation
+- takeScreenshot: 14-finish-confirmation
 - tapOn: "Finish"
 
 # ── reopen the completed workout from history ──
@@ -137,15 +218,17 @@ appId: host.exp.Exponent
     visible: "Recent workouts"
     timeout: 20000
 - extendedWaitUntil:
-    visible: ".*, 1 sets"
+    visible: ".*, 2 sets"
     timeout: 20000
-- takeScreenshot: 10-history
-- tapOn: ".*, 1 sets"
-# The finished workout is read-only: the set is shown as table cells, not as an editable row.
+- takeScreenshot: 15-history
+- tapOn: ".*, 2 sets"
+# The finished workout is read-only: the sets are shown as table cells, not as editable rows.
 - extendedWaitUntil:
     visible: "Edit workout"
     timeout: 20000
 - assertVisible: "Barbell Bench Press"
+- assertVisible: "2 working sets"
 - assertVisible: "80 kg"
+- assertVisible: "85 kg"
 - assertVisible: "× 8"
-- takeScreenshot: 11-completed-workout
+- takeScreenshot: 16-completed-workout
