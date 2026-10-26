@@ -47,7 +47,8 @@ function fixture(handler, initial = { access_token: 'old-access', refresh_token:
   const client = load(path.join(mobileRoot, 'src/api/client.ts'));
   client.setOnSessionExpired(() => { expired += 1; });
   const { restoreSession } = load(path.join(mobileRoot, 'src/auth/restoreSession.ts'));
-  return { client, restoreSession, tokens: () => tokens, clears: () => clears, expired: () => expired };
+  const authApi = load(path.join(mobileRoot, 'src/api/auth.ts'));
+  return { client, authApi, restoreSession, tokens: () => tokens, clears: () => clears, expired: () => expired };
 }
 
 const response = (status, body = {}) => new Response(JSON.stringify(body), {
@@ -193,4 +194,48 @@ test('startup recovers when only the refresh token is available', async () => {
   }, { refresh_token: 'old-refresh' });
   assert.equal((await f.restoreSession()).status, 'signedIn');
   assert.equal(f.clears(), 0);
+});
+
+test('logout posts the refresh token anonymously and leaves local state alone', async () => {
+  const seen = [];
+  const f = fixture(async (url, options) => {
+    seen.push({ url, method: options.method, headers: options.headers, body: options.body });
+    return new Response(null, { status: 204 });
+  });
+  await f.authApi.logout('old-refresh');
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].url, 'https://bodytrack.test/api/v1/auth/logout');
+  assert.equal(seen[0].method, 'POST');
+  assert.deepEqual(JSON.parse(seen[0].body), { refresh_token: 'old-refresh' });
+  // No access token goes with it, so an expired one cannot divert a sign-out into a refresh.
+  assert.equal(seen[0].headers.Authorization, undefined);
+  assert.equal(f.clears(), 0);
+  assert.equal(f.expired(), 0);
+});
+
+test('a rejected or failed logout never refreshes, clears tokens or expires the session', async () => {
+  const urls = [];
+  const rejected = fixture(async (url) => { urls.push(url); return response(401); });
+  await assert.rejects(rejected.authApi.logout('old-refresh'), isStatus(401));
+  assert.deepEqual(urls, ['https://bodytrack.test/api/v1/auth/logout']);
+  assert.equal(rejected.tokens().refresh_token, 'old-refresh');
+  assert.equal(rejected.expired(), 0);
+
+  const offline = fixture(async () => { throw new TypeError('offline'); });
+  await assert.rejects(offline.authApi.logout('old-refresh'), isStatus(0));
+  assert.equal(offline.clears(), 0);
+});
+
+test('signing out reads the refresh token first, then ends the server session without waiting for it', () => {
+  const source = readFileSync(path.join(mobileRoot, 'src/auth/AuthContext.tsx'), 'utf8')
+    .replace(/\r\n/g, '\n');
+  const signOut = source.slice(source.indexOf('const signOut = useCallback'), source.indexOf('// The HTTP client cannot import'));
+  const read = signOut.indexOf('await getRefreshToken()');
+  const clear = signOut.indexOf('await clearTokens()');
+  const call = signOut.indexOf('void authApi.logout(refreshToken)');
+  const done = signOut.indexOf('setStatus("signedOut")');
+  assert.ok(read > -1 && read < clear, 'the token is read before it is cleared');
+  assert.ok(clear < call && call < done, 'the request is sent after clearing and before the screen changes');
+  assert.match(signOut, /void authApi\.logout\(refreshToken\)\.catch\(/, 'fire and forget, failure ignored');
+  assert.doesNotMatch(signOut, /await authApi\.logout/, 'signing out must not wait for the network');
 });

@@ -89,6 +89,22 @@ export function login(email: string, password: string): Promise<AuthResponse> {
   });
 }
 
+/**
+ * Ends this device's session on the server by revoking its refresh token.
+ *
+ * Anonymous on purpose: the refresh token is the credential here, and an
+ * expired access token must not send a sign-out through the refresh flow.
+ * The server answers 204 even for a token it does not know. Callers treat this
+ * as best effort; access tokens already issued stay valid until they expire.
+ */
+export function logout(refreshToken: string): Promise<void> {
+  return apiRequest<void>("/auth/logout", {
+    method: "POST",
+    body: { refresh_token: refreshToken },
+    anonymous: true,
+  });
+}
+
 export function fetchMe(): Promise<UserProfile> {
   return apiRequest<UserProfile>("/users/me");
 }

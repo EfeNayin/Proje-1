@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 import * as authApi from "../api/auth";
 import type { RegisterInput, UserProfile } from "../api/auth";
 import { setOnSessionExpired } from "../api/client";
-import { clearTokens, saveTokens } from "../api/tokens";
+import { clearTokens, getRefreshToken, saveTokens } from "../api/tokens";
 import { athleteExerciseHistoryStore } from "../coaching/athleteExerciseHistorySession";
 import { athleteOverviewStore } from "../coaching/athleteOverviewSession";
 import { athleteWorkoutsStore } from "../coaching/athleteWorkoutsSession";
@@ -57,7 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     athleteWorkoutsStore.reset();
     athleteOverviewStore.reset();
     programOffersStore.reset();
+    // Read before clearing: the token is what lets the server end this session.
+    const refreshToken = await getRefreshToken().catch(() => null);
     await clearTokens();
+    // Best effort and deliberately not awaited: signing out on this device must
+    // not depend on the network. If the request fails the refresh token stays
+    // valid on the server until it expires (14 days), the same as before this
+    // call existed; if it succeeds the token can no longer mint access tokens.
+    if (refreshToken) void authApi.logout(refreshToken).catch(() => undefined);
     // The active-workout pointer is a device key (see src/workout/activeWorkout.ts),
     // not scoped to an account. Left in place, it would resume — or, worse,
     // silently point at — this account's in-progress session for whoever
