@@ -1,11 +1,16 @@
 """Startup safety checks in app.core.config and the database engine's logging."""
 
+from pathlib import Path
+from uuid import uuid4
+
 import pytest
+from jose import jwt
 from pydantic import ValidationError
 
 from app.core.config import MIN_JWT_SECRET_BYTES, Settings
 from app.core.config import settings as app_settings
 from app.core.database import engine
+from app.core.security import JWTError, create_access_token, decode_token
 
 SHORT_KEY = "k" * (MIN_JWT_SECRET_BYTES - 1)
 LONG_KEY = "k" * MIN_JWT_SECRET_BYTES
@@ -75,3 +80,36 @@ class TestSqlLogging:
             ("production", False),
         ):
             assert make_settings(ENVIRONMENT=environment).is_development is expected
+
+
+def example_jwt_key() -> str:
+    """The placeholder key shipped (publicly) in backend/.env.example."""
+    example = Path(__file__).resolve().parents[1] / ".env.example"
+    for line in example.read_text().splitlines():
+        if line.startswith("JWT_SECRET_KEY="):
+            return line.split("=", 1)[1]
+    raise AssertionError("backend/.env.example has no JWT_SECRET_KEY")
+
+
+class TestShippedExampleKey:
+    @pytest.mark.parametrize("environment", ["staging", "production"])
+    def test_the_example_key_can_never_start_a_non_development_environment(
+        self, environment: str
+    ) -> None:
+        """A copied .env.example must not be usable outside development."""
+        settings = make_settings(ENVIRONMENT=environment, JWT_SECRET_KEY=example_jwt_key())
+
+        with pytest.raises(RuntimeError):
+            settings.check_deployment_safety()
+
+
+class TestTokenSignature:
+    def test_a_token_signed_with_another_key_is_rejected(self) -> None:
+        claims = {"sub": str(uuid4()), "type": "access", "exp": 4_102_444_800, "jti": "x"}
+        forged = jwt.encode(claims, example_jwt_key(), algorithm="HS256")
+
+        with pytest.raises(JWTError):
+            decode_token(forged)
+
+    def test_a_token_signed_with_the_running_key_is_accepted(self) -> None:
+        assert decode_token(create_access_token(uuid4()))["type"] == "access"
