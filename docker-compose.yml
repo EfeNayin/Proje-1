@@ -44,8 +44,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Deliberately NOT published on the host: nothing outside the compose network
+    # needs it (the backend reaches it as redis:6379) and it has no password, so a
+    # published port would be open to the whole LAN. For a one-off look use
+    # `docker compose exec redis redis-cli`; if host access is ever needed, publish
+    # it on loopback only ("127.0.0.1:6379:6379").
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -60,8 +63,12 @@ services:
       target: dev
     env_file:
       - ./backend/.env
+    # Loopback only: this is a development server (--reload, /docs, a development
+    # JWT key), so it must not be reachable from the LAN. The iOS Simulator and the
+    # browser on this machine still use http://localhost:8000. A physical phone
+    # cannot reach it; see README.md ("Yerel geliştirme: ağ erişimi").
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       # Kod değişikliklerini canlı yansıt (Dockerfile'daki --reload ile birlikte)
       - ./backend:/app
