@@ -1,4 +1,8 @@
-"""Auth endpoints: register, login, refresh, logout."""
+"""Auth endpoints: register, login, refresh, logout.
+
+Register, login and refresh are rate limited (app/domains/auth/throttle.py). Logout
+is not: it only deletes a refresh token the caller already holds.
+"""
 
 from typing import Annotated
 
@@ -15,6 +19,12 @@ from app.domains.auth.schemas import (
     TokenPair,
     UserProfile,
 )
+from app.domains.auth.throttle import (
+    Throttle,
+    limit_login_requester,
+    limit_refresh_requester,
+    limit_register_requester,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -26,6 +36,7 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
     response_model=AuthResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create an account",
+    dependencies=[Depends(limit_register_requester)],
 )
 async def register(payload: RegisterRequest, db: DbSession) -> AuthResponse:
     user, tokens = await service.register(db, payload)
@@ -36,9 +47,10 @@ async def register(payload: RegisterRequest, db: DbSession) -> AuthResponse:
     "/login",
     response_model=AuthResponse,
     summary="Sign in with email and password",
+    dependencies=[Depends(limit_login_requester)],
 )
-async def login(payload: LoginRequest, db: DbSession) -> AuthResponse:
-    user, tokens = await service.login(db, payload)
+async def login(payload: LoginRequest, db: DbSession, throttle: Throttle) -> AuthResponse:
+    user, tokens = await service.login(db, payload, throttle)
     return AuthResponse(user=UserProfile.model_validate(user), tokens=tokens)
 
 
@@ -51,9 +63,10 @@ async def login(payload: LoginRequest, db: DbSession) -> AuthResponse:
         "returned. Replaying an already-used token revokes every session for "
         "that account."
     ),
+    dependencies=[Depends(limit_refresh_requester)],
 )
-async def refresh(payload: RefreshRequest, db: DbSession) -> TokenPair:
-    return await service.refresh(db, payload.refresh_token)
+async def refresh(payload: RefreshRequest, db: DbSession, throttle: Throttle) -> TokenPair:
+    return await service.refresh(db, payload.refresh_token, throttle)
 
 
 @router.post(

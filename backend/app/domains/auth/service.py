@@ -30,6 +30,7 @@ from app.domains.auth.schemas import (
     RegisterRequest,
     TokenPair,
 )
+from app.domains.auth.throttle import AuthThrottle
 from app.models import RefreshToken, User
 
 # Login and register deliberately return the same message for "no such email"
@@ -68,8 +69,15 @@ async def register(db: AsyncSession, payload: RegisterRequest) -> tuple[User, To
     return user, tokens
 
 
-async def login(db: AsyncSession, payload: LoginRequest) -> tuple[User, TokenPair]:
+async def login(
+    db: AsyncSession, payload: LoginRequest, throttle: AuthThrottle
+) -> tuple[User, TokenPair]:
     """Verify credentials and issue a token pair."""
+    # Counted before anything is looked up or hashed, for known and unknown emails
+    # alike: an attempt that is refused here learns nothing, and one that is not
+    # refused cannot be told apart by how it is limited.
+    attempt = await throttle.login_account(payload.email)
+
     user = await db.scalar(select(User).where(User.email == payload.email))
 
     # Always run one bcrypt verification, against a throwaway hash when the email
@@ -86,12 +94,15 @@ async def login(db: AsyncSession, payload: LoginRequest) -> tuple[User, TokenPai
     if user is None or not password_ok:
         raise UnauthorizedError(_INVALID_CREDENTIALS)
 
+    # A right password is not a failed attempt; only failures stay counted.
+    await attempt.refund()
+
     tokens = await _issue_token_pair(db, user.id)
     await db.commit()
     return user, tokens
 
 
-async def refresh(db: AsyncSession, raw_token: str) -> TokenPair:
+async def refresh(db: AsyncSession, raw_token: str, throttle: AuthThrottle) -> TokenPair:
     """Exchange a refresh token for a new pair, rotating the old one.
 
     Rotation means the presented token is revoked and replaced. A revoked
@@ -130,6 +141,11 @@ async def refresh(db: AsyncSession, raw_token: str) -> TokenPair:
         user_id = UUID(str(claims.get("sub")))
     except ValueError:
         raise UnauthorizedError("Invalid or expired refresh token") from None
+
+    # `user_id` comes from a token whose signature, expiry and type were just
+    # verified, so it is an identity this server vouched for. Anything that failed
+    # above never gets here and never spends this account's allowance.
+    await throttle.refresh_user(user_id)
 
     stored = await db.scalar(
         select(RefreshToken)
