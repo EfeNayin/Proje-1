@@ -8,7 +8,7 @@ which keeps it directly unit-testable.
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -157,6 +157,31 @@ async def refresh(db: AsyncSession, raw_token: str) -> TokenPair:
     tokens = await _issue_token_pair(db, user.id)
     await db.commit()
     return tokens
+
+
+async def logout(db: AsyncSession, raw_token: str) -> None:
+    """End the session this refresh token belongs to. Idempotent; never errors.
+
+    The row is deleted rather than marked revoked on purpose. A revoked token
+    that is presented again is treated by `refresh()` as a theft signal and
+    takes down every session of the account; a request still in flight from the
+    device that just signed out must not do that to the user's other devices.
+    A deleted token simply is not found, which is a plain 401.
+
+    Anything that is not a currently signed refresh token (garbage, an access
+    token, an expired one) is ignored and answered the same way, so the endpoint
+    says nothing about which tokens were real. Access tokens are stateless and
+    stay valid until they expire (ACCESS_TOKEN_EXPIRE_MINUTES); only the ability
+    to mint new ones ends here.
+    """
+    try:
+        claims = decode_token(raw_token)
+    except JWTError:
+        return
+    if not is_refresh_token(claims):
+        return
+    await db.execute(delete(RefreshToken).where(RefreshToken.token_hash == hash_token(raw_token)))
+    await db.commit()
 
 
 async def _issue_token_pair(db: AsyncSession, user_id: UUID) -> TokenPair:

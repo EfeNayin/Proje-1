@@ -364,6 +364,109 @@ class TestRefresh:
         assert len(stored.token_hash) == 64  # sha256 hex
 
 
+class TestLogout:
+    async def _second_session(
+        self, client: AsyncClient, register_payload: dict[str, str]
+    ) -> dict[str, str]:
+        response = await client.post(
+            "/auth/login",
+            json={"email": register_payload["email"], "password": register_payload["password"]},
+        )
+        assert response.status_code == 200, response.text
+        tokens: dict[str, str] = response.json()["tokens"]
+        return tokens
+
+    async def test_the_refresh_token_stops_working(
+        self, client: AsyncClient, register_payload: dict[str, str]
+    ) -> None:
+        tokens = (await client.post("/auth/register", json=register_payload)).json()["tokens"]
+
+        response = await client.post(
+            "/auth/logout", json={"refresh_token": tokens["refresh_token"]}
+        )
+        assert response.status_code == 204
+        assert response.content == b""
+
+        refreshed = await client.post(
+            "/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+        )
+        assert refreshed.status_code == 401
+
+    async def test_other_sessions_of_the_account_survive(
+        self, client: AsyncClient, register_payload: dict[str, str]
+    ) -> None:
+        """Logging out one device is not "log out everywhere", and a late
+        refresh from the device that just left must not look like token theft."""
+        phone = (await client.post("/auth/register", json=register_payload)).json()["tokens"]
+        tablet = await self._second_session(client, register_payload)
+
+        await client.post("/auth/logout", json={"refresh_token": phone["refresh_token"]})
+        # A refresh already in flight from the signed-out device arrives afterwards.
+        late = await client.post("/auth/refresh", json={"refresh_token": phone["refresh_token"]})
+        assert late.status_code == 401
+        assert "already used" not in late.json()["detail"]
+
+        still_alive = await client.post(
+            "/auth/refresh", json={"refresh_token": tablet["refresh_token"]}
+        )
+        assert still_alive.status_code == 200, still_alive.text
+
+    async def test_it_only_removes_the_presented_token(
+        self, client: AsyncClient, db: AsyncSession, register_payload: dict[str, str]
+    ) -> None:
+        phone = (await client.post("/auth/register", json=register_payload)).json()["tokens"]
+        await self._second_session(client, register_payload)
+        assert await db.scalar(select(func.count()).select_from(RefreshToken)) == 2
+
+        await client.post("/auth/logout", json={"refresh_token": phone["refresh_token"]})
+
+        db.expire_all()
+        assert await db.scalar(select(func.count()).select_from(RefreshToken)) == 1
+
+    async def test_it_is_idempotent_and_does_not_reveal_whether_a_token_was_real(
+        self, client: AsyncClient, register_payload: dict[str, str]
+    ) -> None:
+        tokens = (await client.post("/auth/register", json=register_payload)).json()["tokens"]
+
+        for presented in (
+            tokens["refresh_token"],
+            tokens["refresh_token"],  # again, now already gone
+            "not.a.token",
+            "",
+        ):
+            response = await client.post("/auth/logout", json={"refresh_token": presented})
+            assert response.status_code == 204, presented
+
+    async def test_an_access_token_cannot_be_used_to_log_a_session_out(
+        self, client: AsyncClient, register_payload: dict[str, str]
+    ) -> None:
+        tokens = (await client.post("/auth/register", json=register_payload)).json()["tokens"]
+
+        response = await client.post("/auth/logout", json={"refresh_token": tokens["access_token"]})
+        assert response.status_code == 204
+
+        refreshed = await client.post(
+            "/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+        )
+        assert refreshed.status_code == 200
+
+    async def test_an_issued_access_token_stays_valid_until_it_expires(
+        self, client: AsyncClient, register_payload: dict[str, str]
+    ) -> None:
+        """Documents the revocation window: access tokens are stateless, so logout
+        ends the ability to renew, not the token already in hand."""
+        tokens = (await client.post("/auth/register", json=register_payload)).json()["tokens"]
+        await client.post("/auth/logout", json={"refresh_token": tokens["refresh_token"]})
+
+        response = await client.get(
+            "/users/me", headers={"Authorization": f"Bearer {tokens['access_token']}"}
+        )
+        assert response.status_code == 200
+
+    async def test_a_body_is_required(self, client: AsyncClient) -> None:
+        assert (await client.post("/auth/logout", json={})).status_code == 422
+
+
 class TestConcurrentRefresh:
     """Regression tests for the race fixed in Adım 19 (PROJE_1_CODEX_INCELEME.md):
     `refresh()` now takes a row lock (`SELECT ... FOR UPDATE`) on the presented

@@ -1,8 +1,8 @@
-"""Auth endpoints: register, login, refresh."""
+"""Auth endpoints: register, login, refresh, logout."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -54,3 +54,19 @@ async def login(payload: LoginRequest, db: DbSession) -> AuthResponse:
 )
 async def refresh(payload: RefreshRequest, db: DbSession) -> TokenPair:
     return await service.refresh(db, payload.refresh_token)
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="End this device's session",
+    description=(
+        "Revokes the refresh token presented, so it can no longer mint access "
+        "tokens. Always answers 204, including for a token that is unknown or "
+        "already expired. Access tokens already issued stay valid until they "
+        "expire."
+    ),
+)
+async def logout(payload: RefreshRequest, db: DbSession) -> Response:
+    await service.logout(db, payload.refresh_token)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
