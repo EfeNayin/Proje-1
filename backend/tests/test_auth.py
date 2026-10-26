@@ -8,7 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domains.auth import service
+from app.core.security import verify_password
 from app.domains.auth.schemas import TokenPair
 from app.models import RefreshToken, User
 
@@ -235,14 +235,13 @@ class TestLogin:
         through response time even though the messages match. Wall-clock time is
         too noisy to assert, so this counts the bcrypt verifications instead."""
         await client.post("/auth/register", json=register_payload)
-        real_verify = service.verify_password
         seen: list[str] = []
 
         def spy(plain: str, password_hash: str) -> bool:
             seen.append(password_hash)
-            return real_verify(plain, password_hash)
+            return verify_password(plain, password_hash)
 
-        monkeypatch.setattr(service, "verify_password", spy)
+        monkeypatch.setattr("app.domains.auth.service.verify_password", spy)
 
         unknown = await client.post(
             "/auth/login", json={"email": "nobody@example.com", "password": "wrong-password"}
