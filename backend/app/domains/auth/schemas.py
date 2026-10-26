@@ -92,7 +92,11 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    # Bounded only so absurd input is refused before it reaches bcrypt (passlib
+    # raises on very long secrets, which used to surface as a 500). Deliberately
+    # far above the 72-byte registration limit; the exact rule is in
+    # service.login.
+    password: str = Field(max_length=1024)
 
 
 class RefreshRequest(BaseModel):

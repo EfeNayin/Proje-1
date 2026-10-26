@@ -9,7 +9,9 @@
 """
 
 import hashlib
+import secrets
 from datetime import UTC, datetime, timedelta
+from functools import cache
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -32,6 +34,18 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, password_hash: str) -> bool:
     """Girilen şifre ile DB'deki hash eşleşiyor mu kontrol eder."""
     return pwd_context.verify(plain_password, password_hash)
+
+
+@cache
+def dummy_password_hash() -> str:
+    """A bcrypt hash nobody knows the password of, computed once per process.
+
+    Login verifies against it when the email is unknown, so that case costs the
+    same ~100+ ms bcrypt run as a wrong password. Without it, answering
+    instantly for unknown emails would tell a caller which addresses are
+    registered even though both answers carry the same message.
+    """
+    return hash_password(secrets.token_urlsafe(32))
 
 
 def hash_token(raw_token: str) -> str:
@@ -107,6 +121,7 @@ __all__ = [
     "create_access_token",
     "create_refresh_token",
     "decode_token",
+    "dummy_password_hash",
     "hash_password",
     "hash_token",
     "is_access_token",

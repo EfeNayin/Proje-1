@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domains.auth import service
 from app.domains.auth.schemas import TokenPair
 from app.models import RefreshToken, User
 
@@ -222,6 +223,75 @@ class TestLogin:
 
         assert wrong_password.status_code == unknown_email.status_code == 401
         assert wrong_password.json()["detail"] == unknown_email.json()["detail"]
+
+
+    async def test_unknown_email_costs_the_same_password_verification(
+        self,
+        client: AsyncClient,
+        register_payload: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Answering at once for an unknown email would reveal it is unregistered
+        through response time even though the messages match. Wall-clock time is
+        too noisy to assert, so this counts the bcrypt verifications instead."""
+        await client.post("/auth/register", json=register_payload)
+        real_verify = service.verify_password
+        seen: list[str] = []
+
+        def spy(plain: str, password_hash: str) -> bool:
+            seen.append(password_hash)
+            return real_verify(plain, password_hash)
+
+        monkeypatch.setattr(service, "verify_password", spy)
+
+        unknown = await client.post(
+            "/auth/login", json={"email": "nobody@example.com", "password": "wrong-password"}
+        )
+        known = await client.post(
+            "/auth/login",
+            json={"email": register_payload["email"], "password": "wrong-password"},
+        )
+
+        assert unknown.status_code == known.status_code == 401
+        assert len(seen) == 2
+        assert seen[0] != seen[1]  # a throwaway hash, not the real account's
+        assert seen[0].startswith("$2")  # a real bcrypt hash, so the work is the same
+
+    async def test_overlong_password_is_a_client_error_not_a_server_error(
+        self, client: AsyncClient, register_payload: dict[str, str]
+    ) -> None:
+        """passlib refuses secrets over 4096 characters; that used to be a 500."""
+        await client.post("/auth/register", json=register_payload)
+
+        response = await client.post(
+            "/auth/login",
+            json={"email": register_payload["email"], "password": "A" * 100_000},
+        )
+
+        assert response.status_code == 422
+
+    async def test_password_longer_than_the_bcrypt_limit_cannot_match_by_prefix(
+        self, client: AsyncClient, register_payload: dict[str, str]
+    ) -> None:
+        """bcrypt compares only the first 72 bytes, so the right password plus
+        any suffix used to log in."""
+        register_payload["password"] = "Aa1-" + "x" * 68  # exactly 72 bytes
+        assert (await client.post("/auth/register", json=register_payload)).status_code == 201
+
+        exact = await client.post(
+            "/auth/login",
+            json={"email": register_payload["email"], "password": register_payload["password"]},
+        )
+        with_suffix = await client.post(
+            "/auth/login",
+            json={
+                "email": register_payload["email"],
+                "password": register_payload["password"] + "extra",
+            },
+        )
+
+        assert exact.status_code == 200
+        assert with_suffix.status_code == 401
 
 
 class TestRefresh:

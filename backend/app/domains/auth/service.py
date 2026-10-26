@@ -18,12 +18,18 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    dummy_password_hash,
     hash_password,
     hash_token,
     is_refresh_token,
     verify_password,
 )
-from app.domains.auth.schemas import LoginRequest, RegisterRequest, TokenPair
+from app.domains.auth.schemas import (
+    BCRYPT_MAX_BYTES,
+    LoginRequest,
+    RegisterRequest,
+    TokenPair,
+)
 from app.models import RefreshToken, User
 
 # Login and register deliberately return the same message for "no such email"
@@ -66,7 +72,18 @@ async def login(db: AsyncSession, payload: LoginRequest) -> tuple[User, TokenPai
     """Verify credentials and issue a token pair."""
     user = await db.scalar(select(User).where(User.email == payload.email))
 
-    if user is None or not verify_password(payload.password, user.password_hash):
+    # Always run one bcrypt verification, against a throwaway hash when the email
+    # is unknown, so the response time does not reveal whether it is registered.
+    password_hash = user.password_hash if user is not None else dummy_password_hash()
+    # Registration refuses passwords over 72 bytes, so none exists; bcrypt would
+    # only compare the first 72 bytes and accept a longer string with the right
+    # prefix. Compare an empty string instead, which no account can match.
+    candidate = payload.password
+    if len(candidate.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        candidate = ""
+    password_ok = verify_password(candidate, password_hash)
+
+    if user is None or not password_ok:
         raise UnauthorizedError(_INVALID_CREDENTIALS)
 
     tokens = await _issue_token_pair(db, user.id)
