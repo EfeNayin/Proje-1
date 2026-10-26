@@ -10,10 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings
 
-# echo=True → geliştirmede çalışan her SQL'i logla (üretimde kapalı, gürültü yapar).
+# echo=True → geliştirmede çalışan her SQL'i logla (yalnızca development'ta; staging
+# dahil diğer ortamlarda kapalı). hide_parameters her ortamda açık: bağlı
+# parametreler e-posta, bcrypt şifre hash'i, refresh token hash'i ve sağlık
+# verisi taşır ve log'a düşmemeli (SQL metni yine görünür).
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=not settings.is_production,
+    echo=settings.is_development,
+    hide_parameters=True,
     pool_pre_ping=True,  # bağlantı havuzundaki ölü bağlantıları kullanmadan önce yakala
 )
 
