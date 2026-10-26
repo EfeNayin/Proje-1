@@ -148,6 +148,7 @@ function screen(helpers, initial = log([]), overrides = {}) {
       if (effects[index]?.deps.every((value, i) => value === deps[i])) return;
       pending.push(() => { effects[index]?.cleanup?.(); effects[index] = { deps, cleanup: fn() }; }); },
     useRouter: () => ({}), useLocalSearchParams: () => ({ id: 'workout' }),
+    useEntryReveal: () => ({ scrollRef: { current: null }, scrollProps: {}, revealEntry() {}, releaseEntry() {} }),
     useAuth: () => ({ user: { id: 'user', weight_unit: 'kg' } }),
     usePickedExercise: () => ({ openPicker() {} }), getStartingPlan: () => ({ targets: [], description: null }),
     compareWorkoutToPlan: () => null, compareExerciseTargets: () => null, describeTargetComparison: () => [],

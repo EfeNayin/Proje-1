@@ -54,6 +54,7 @@ import { buildTemplateExercisesFromWorkout } from "../../../src/workout/template
 import { getStartingPlan } from "../../../src/workout/startingPlan";
 import { formatRecordedRir, parseRirInput } from "../../../src/workout/rir";
 import { PreviousExercise } from "../../../src/workout/PreviousExercise";
+import { useEntryReveal } from "../../../src/workout/useEntryReveal";
 import { getSetSaveRequest, prepareSetSaveRequest, sendSetSaveRequest, type SetSaveRequest } from "../../../src/workout/setSaveRequest";
 import {
   clearTemplateSaveRequest,
@@ -297,10 +298,12 @@ function TitleField({
 }
 
 /** Recorded effort is optional and never prefilled from a planned target. */
-function RirField({ value, onChangeText, disabled }: {
+function RirField({ value, onChangeText, disabled, onFocus, onBlur }: {
   value: string;
   onChangeText: (value: string) => void;
   disabled: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
   return (
     <View style={styles.entryField}>
@@ -310,8 +313,12 @@ function RirField({ value, onChangeText, disabled }: {
         style={styles.fieldInput}
         value={value}
         onChangeText={onChangeText}
+        onFocus={onFocus}
+        onBlur={onBlur}
         editable={!disabled}
         keyboardType="number-pad"
+        returnKeyType="done"
+        submitBehavior="blurAndSubmit"
         placeholder="—"
         placeholderTextColor={light.textSecondary}
         selectionColor={light.text}
@@ -326,12 +333,20 @@ function SetRow({
   unit,
   onSave,
   onDelete,
+  onEntryFocus,
+  onEntryBlur,
 }: {
   set: LoggedSet;
   unit: WeightUnit;
   onSave: (setId: number, weightKg: number, reps: number, rir: number | null) => Promise<void>;
   onDelete: (setId: number) => void;
+  /** Tell the screen which panel to keep above the keyboard, and when its fields lose focus. */
+  onEntryFocus?: (panel: View | null) => void;
+  onEntryBlur?: () => void;
 }) {
+  const editorRef = useRef<View>(null);
+  const focusEditor = () => onEntryFocus?.(editorRef.current);
+  const blurEditor = () => onEntryBlur?.();
   const [editing, setEditing] = useState(false);
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
@@ -387,7 +402,7 @@ function SetRow({
 
   if (editing) {
     return (
-      <View style={styles.setRowEditing}>
+      <View ref={editorRef} style={styles.setRowEditing}>
         {/* Spelled out as well as tinted, so the editing row is not marked by colour alone. */}
         <View style={styles.editingHeader}>
           <Ionicons name="create-outline" size={15} color={light.text} />
@@ -401,11 +416,15 @@ function SetRow({
             <Text style={styles.fieldLabel}>Weight ({unit})</Text>
             <TextInput
               accessibilityLabel={`Weight in ${unit}`}
+              testID="edit-weight-input"
               style={styles.fieldInput}
               value={weight}
               onChangeText={setWeight}
+              onFocus={focusEditor}
+              onBlur={blurEditor}
               editable={!saving}
               keyboardType="decimal-pad"
+              submitBehavior="blurAndSubmit"
               selectionColor={light.text}
               autoFocus
               selectTextOnFocus
@@ -415,17 +434,22 @@ function SetRow({
             <Text style={styles.fieldLabel}>Reps</Text>
             <TextInput
               accessibilityLabel="Reps"
+              testID="edit-reps-input"
               style={styles.fieldInput}
               value={reps}
               onChangeText={setReps}
+              onFocus={focusEditor}
+              onBlur={blurEditor}
               editable={!saving}
               keyboardType="number-pad"
+              // The keyboard's Done only dismisses it; the set changes on Save.
+              returnKeyType="done"
+              submitBehavior="blurAndSubmit"
               selectionColor={light.text}
               selectTextOnFocus
-              onSubmitEditing={() => void save()}
             />
           </View>
-          <RirField value={rir} onChangeText={setRir} disabled={saving} />
+          <RirField value={rir} onChangeText={setRir} disabled={saving} onFocus={focusEditor} onBlur={blurEditor} />
         </View>
 
         {/* Delete lives here, not only behind a long-press: holding for half a
@@ -529,13 +553,21 @@ function SetForm({
   busy,
   blocked = false,
   lastSet,
+  onEntryFocus,
+  onEntryBlur,
 }: {
   unit: WeightUnit;
   onSubmit: (weightKg: number, reps: number, isWarmup: boolean, rir: number | null) => Promise<void>;
   busy: boolean;
   blocked?: boolean;
   lastSet: LoggedSet | undefined;
+  /** Tell the screen which panel to keep above the keyboard, and when its fields lose focus. */
+  onEntryFocus?: (panel: View | null) => void;
+  onEntryBlur?: () => void;
 }) {
+  const panelRef = useRef<View>(null);
+  const focusPanel = () => onEntryFocus?.(panelRef.current);
+  const blurPanel = () => onEntryBlur?.();
   // Prefilled from the previous set: on a working set you usually repeat the
   // weight, and retyping it every time is the main friction in logging.
   const [weight, setWeight] = useState("");
@@ -591,7 +623,7 @@ function SetForm({
   };
 
   return (
-    <View style={styles.entryPanel}>
+    <View ref={panelRef} style={styles.entryPanel}>
       <View style={styles.entryRow}>
         <View style={styles.entryField}>
           <Text style={styles.fieldLabel}>Weight ({unit})</Text>
@@ -601,12 +633,15 @@ function SetForm({
             style={styles.fieldInput}
             value={weight}
             onChangeText={setWeight}
+            onFocus={focusPanel}
+            onBlur={blurPanel}
             editable={!disabled}
             placeholder={weightHint}
             placeholderTextColor={light.textSecondary}
             selectionColor={light.text}
             keyboardType="decimal-pad"
-            returnKeyType="next"
+            returnKeyType="done"
+            submitBehavior="blurAndSubmit"
           />
         </View>
 
@@ -618,17 +653,21 @@ function SetForm({
             style={styles.fieldInput}
             value={reps}
             onChangeText={setReps}
+            onFocus={focusPanel}
+            onBlur={blurPanel}
             editable={!disabled}
             placeholder={repsHint}
             placeholderTextColor={light.textSecondary}
             selectionColor={light.text}
             keyboardType="number-pad"
+            // Done dismisses the keyboard and keeps the draft; a set is only
+            // recorded by the explicit Log set button below.
             returnKeyType="done"
-            onSubmitEditing={() => void submit()}
+            submitBehavior="blurAndSubmit"
           />
         </View>
 
-        <RirField value={rir} onChangeText={setRir} disabled={disabled} />
+        <RirField value={rir} onChangeText={setRir} disabled={disabled} onFocus={focusPanel} onBlur={blurPanel} />
       </View>
 
       <View style={styles.entryActions}>
@@ -909,6 +948,7 @@ export default function ActiveWorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const unit: WeightUnit = user?.weight_unit ?? "kg";
+  const { scrollRef, scrollProps, revealEntry, releaseEntry } = useEntryReveal();
 
   const [workout, setWorkout] = useState<WorkoutDetail | null>(null);
   const [pending, setPending] = useState<{ id: string; name: string }[]>([]);
@@ -1246,6 +1286,8 @@ export default function ActiveWorkoutScreen() {
         </View>
 
         <ScrollView
+          ref={scrollRef}
+          {...scrollProps}
           contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 32 }]}
           keyboardShouldPersistTaps="handled"
         >
@@ -1323,6 +1365,8 @@ export default function ActiveWorkoutScreen() {
                         unit={unit}
                         onSave={handleEditSet}
                         onDelete={(setId) => void handleDeleteSet(setId)}
+                        onEntryFocus={revealEntry}
+                        onEntryBlur={releaseEntry}
                       />
                     ))}
 
@@ -1333,6 +1377,8 @@ export default function ActiveWorkoutScreen() {
                     busy={busyExercise !== null || finishing}
                     blocked={pendingSetRequest !== null}
                     lastSet={block.sets[block.sets.length - 1]}
+                    onEntryFocus={revealEntry}
+                    onEntryBlur={releaseEntry}
                     onSubmit={(weightKg, reps, isWarmup, rir) =>
                       handleSetSave({ exerciseId: block.exerciseId, exerciseName: block.name, weight: weightKg, reps, isWarmup, rir })
                     }
