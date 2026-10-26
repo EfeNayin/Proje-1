@@ -2,9 +2,9 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Re-exported so callers have a single obvious place to import the profile
 # shape from, even though it is defined alongside the auth responses.
@@ -19,6 +19,11 @@ from app.domains.auth.schemas import (
 )
 
 __all__ = ["UserProfile", "UserUpdate"]
+
+# Columns that are NOT NULL. Omitting one means "leave it", but sending an
+# explicit null cannot mean "clear it" and used to reach the database, which
+# refused it as a 500.
+_NOT_CLEARABLE = ("username", "is_private", "weight_unit", "timezone", "locale")
 
 
 class UserUpdate(BaseModel):
@@ -58,6 +63,13 @@ class UserUpdate(BaseModel):
     # the missing-data diagnostics this endpoint has no room for.
     activity_level: ActivityLevel | None = None
     nutrition_goal: NutritionGoalKind | None = None
+
+    @model_validator(mode="after")
+    def required_fields_cannot_be_cleared(self) -> Self:
+        for name in _NOT_CLEARABLE:
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null; omit it to leave it unchanged")
+        return self
 
     @field_validator("timezone")
     @classmethod

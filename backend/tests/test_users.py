@@ -1,5 +1,6 @@
 """Tests for /users/me."""
 
+import pytest
 from httpx import AsyncClient
 
 
@@ -60,6 +61,20 @@ class TestUpdateMe:
         response = await client.patch("/users/me", headers=auth_headers, json={"bio": None})
 
         assert response.json()["bio"] is None
+
+    @pytest.mark.parametrize(
+        "field", ["username", "is_private", "weight_unit", "timezone", "locale"]
+    )
+    async def test_required_fields_cannot_be_nulled(
+        self, client: AsyncClient, auth_headers: dict[str, str], field: str
+    ) -> None:
+        """These columns are NOT NULL; an explicit null used to be a 500."""
+        before = (await client.get("/users/me", headers=auth_headers)).json()
+
+        response = await client.patch("/users/me", headers=auth_headers, json={field: None})
+
+        assert response.status_code == 422
+        assert (await client.get("/users/me", headers=auth_headers)).json() == before
 
     async def test_changes_persist(
         self, client: AsyncClient, auth_headers: dict[str, str]
