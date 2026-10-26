@@ -15,8 +15,10 @@ Run them with:
 """
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 import asyncpg  # type: ignore[import-untyped]
 import pytest
@@ -34,6 +36,7 @@ from alembic import command
 from alembic.config import Config
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.ratelimit import RateLimiter, get_rate_limiter
 from app.main import app
 
 TEST_DB_NAME = "bodytrack_test"
@@ -129,8 +132,39 @@ async def db(db_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+# Rate-limit counters from tests must never mix with the development ones: a
+# separate Redis database AND a key prefix unique to the test run.
+RATE_LIMIT_TEST_DB = 15
+
+
+def rate_limit_test_url() -> str:
+    return urlsplit(settings.REDIS_URL)._replace(path=f"/{RATE_LIMIT_TEST_DB}").geturl()
+
+
+async def delete_keys_with_prefix(limiter: RateLimiter, prefix: str) -> None:
+    """Remove only this run's counters. Never FLUSHDB/FLUSHALL."""
+    redis = limiter.connection()
+    async for key in redis.scan_iter(match=f"{prefix}:*", count=500):
+        await redis.delete(key)
+
+
 @pytest.fixture
-async def client(db_engine: AsyncEngine) -> AsyncGenerator[AsyncClient, None]:
+async def rate_limiter() -> AsyncGenerator[RateLimiter, None]:
+    """A real Redis-backed limiter with its own namespace, swapped in for the app's."""
+    prefix = f"bt:rl:test:{uuid4().hex}"
+    limiter = RateLimiter.from_settings(rate_limit_test_url(), prefix)
+    app.dependency_overrides[get_rate_limiter] = lambda: limiter
+    yield limiter
+    try:
+        await delete_keys_with_prefix(limiter, prefix)
+    finally:
+        await limiter.aclose()
+
+
+@pytest.fixture
+async def client(
+    db_engine: AsyncEngine, rate_limiter: RateLimiter
+) -> AsyncGenerator[AsyncClient, None]:
     """HTTP client wired to the app, with get_db pointed at the test database."""
     factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -145,6 +179,30 @@ async def client(db_engine: AsyncEngine) -> AsyncGenerator[AsyncClient, None]:
     ) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def client_at(
+    client: AsyncClient,
+) -> AsyncGenerator[Callable[[str], AsyncClient], None]:
+    """Clients that reach the same app from other network addresses.
+
+    `client` itself connects from httpx's default address; each address here is a
+    different requester as far as per-address limits are concerned.
+    """
+    opened: list[AsyncClient] = []
+
+    def make(address: str) -> AsyncClient:
+        extra = AsyncClient(
+            transport=ASGITransport(app=app, client=(address, 4321)),
+            base_url="http://test/api/v1",
+        )
+        opened.append(extra)
+        return extra
+
+    yield make
+    for extra in opened:
+        await extra.aclose()
 
 
 @pytest.fixture

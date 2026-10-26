@@ -6,11 +6,15 @@ Or through Docker Compose:
     docker compose up
 """
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.exceptions import AppError
+from app.core.ratelimit import close_rate_limiter
 from app.domains.analytics.router import router as analytics_router
 from app.domains.auth.router import router as auth_router
 from app.domains.body.router import router as body_router
@@ -25,7 +29,14 @@ from app.domains.workouts.router import router as workouts_router
 
 API_PREFIX = "/api/v1"
 
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    yield
+    await close_rate_limiter()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="BodyTrack API",
     description="Hypertrophy-focused training platform",
     version="0.1.0",
@@ -42,7 +53,9 @@ async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
     Lets the service layer raise NotFoundError / UnauthorizedError / ... and
     stay free of any HTTP concepts.
     """
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return JSONResponse(
+        status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers
+    )
 
 
 app.include_router(analytics_router, prefix=API_PREFIX)

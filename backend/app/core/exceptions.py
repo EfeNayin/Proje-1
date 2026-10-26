@@ -16,6 +16,11 @@ class AppError(Exception):
     status_code: int = 500
     default_detail: str = "Beklenmeyen bir hata oluştu"
 
+    @property
+    def headers(self) -> dict[str, str] | None:
+        """Extra response headers (e.g. Retry-After); most errors have none."""
+        return None
+
     def __init__(self, detail: str | None = None) -> None:
         self.detail = detail or self.default_detail
         super().__init__(self.detail)
@@ -62,8 +67,33 @@ class GoneError(AppError):
 
 
 class RateLimitedError(AppError):
+    """Too many attempts. `retry_after` (whole seconds) becomes the Retry-After header."""
+
     status_code = 429
     default_detail = "Too many attempts. Try again later."
+
+    def __init__(self, detail: str | None = None, retry_after: int | None = None) -> None:
+        super().__init__(detail)
+        self.retry_after = retry_after
+
+    @property
+    def headers(self) -> dict[str, str] | None:
+        return None if self.retry_after is None else {"Retry-After": str(self.retry_after)}
+
+
+class ServiceUnavailableError(AppError):
+    """A dependency the request needs is temporarily unusable; the caller may retry later."""
+
+    status_code = 503
+    default_detail = "The service is temporarily unavailable. Try again in a moment."
+
+    def __init__(self, detail: str | None = None, retry_after: int | None = None) -> None:
+        super().__init__(detail)
+        self.retry_after = retry_after
+
+    @property
+    def headers(self) -> dict[str, str] | None:
+        return None if self.retry_after is None else {"Retry-After": str(self.retry_after)}
 
 
 class PreconditionFailedError(AppError):

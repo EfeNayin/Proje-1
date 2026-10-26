@@ -9,6 +9,7 @@ göz ardı edilir (pydantic-settings tanımadığı alanı yok sayar).
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 256 bits, the size of an HS256 key.
@@ -43,6 +44,35 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: Literal["HS256", "HS384", "HS512"] = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+
+    # ── Rate limiting (shared through Redis; see app/core/ratelimit.py) ──
+    # Each limit is "this many admitted requests per window"; the window starts at
+    # the first request and the counter disappears when it ends. Defaults and the
+    # reasoning behind them are in README.md ("Hız sınırları").
+    RATE_LIMIT_KEY_PREFIX: str = "bt:rl"
+    # Both timeouts bound how long a request can wait on Redis before it is
+    # answered with 503; a limiter that cannot decide never lets the request through.
+    RATE_LIMIT_REDIS_TIMEOUT_SECONDS: float = Field(default=0.5, gt=0, le=5)
+    # Requester (client address) limits, checked before any password hashing.
+    RATE_LIMIT_LOGIN_IP_LIMIT: int = Field(default=40, ge=1)
+    RATE_LIMIT_LOGIN_IP_WINDOW_SECONDS: int = Field(default=600, ge=1)
+    RATE_LIMIT_REGISTER_IP_LIMIT: int = Field(default=20, ge=1)
+    RATE_LIMIT_REGISTER_IP_WINDOW_SECONDS: int = Field(default=3600, ge=1)
+    RATE_LIMIT_REFRESH_IP_LIMIT: int = Field(default=60, ge=1)
+    RATE_LIMIT_REFRESH_IP_WINDOW_SECONDS: int = Field(default=600, ge=1)
+    # Login attempts that fail, per (account, requester) and per account overall.
+    RATE_LIMIT_LOGIN_ACCOUNT_IP_LIMIT: int = Field(default=5, ge=1)
+    RATE_LIMIT_LOGIN_ACCOUNT_IP_WINDOW_SECONDS: int = Field(default=900, ge=1)
+    RATE_LIMIT_LOGIN_ACCOUNT_LIMIT: int = Field(default=50, ge=1)
+    RATE_LIMIT_LOGIN_ACCOUNT_WINDOW_SECONDS: int = Field(default=3600, ge=1)
+    # Refreshes per account, counted only once the refresh token's signature checked out.
+    RATE_LIMIT_REFRESH_USER_LIMIT: int = Field(default=30, ge=1)
+    RATE_LIMIT_REFRESH_USER_WINDOW_SECONDS: int = Field(default=600, ge=1)
+    # Invite-code lookups that match no code, per signed-in account and per requester.
+    RATE_LIMIT_INVITE_USER_LIMIT: int = Field(default=10, ge=1)
+    RATE_LIMIT_INVITE_USER_WINDOW_SECONDS: int = Field(default=600, ge=1)
+    RATE_LIMIT_INVITE_IP_LIMIT: int = Field(default=30, ge=1)
+    RATE_LIMIT_INVITE_IP_WINDOW_SECONDS: int = Field(default=600, ge=1)
 
     # ── NCBI E-utilities (PubMed) ──
     # Both optional. An API key raises NCBI's per-IP limit from 3 to 10
