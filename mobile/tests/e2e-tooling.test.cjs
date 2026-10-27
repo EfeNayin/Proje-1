@@ -71,3 +71,37 @@ test('e2e run: the API endpoint is process-scoped, the committed env files are u
     assert.doesNotMatch(source, />\s*\S*\.env\b/, file);
   }
 });
+
+// The account-switching flow (e2e/flows/session-switch.yaml, e2e/scripts/session.sh).
+
+const sessionFlow = () => read('e2e/flows/session-switch.yaml');
+
+test('e2e session flow: the relaunch keeps app storage and the keychain, and no request is rewritten', () => {
+  const source = sessionFlow();
+  assert.match(source, /- stopApp/);
+  assert.match(source, /clearState: false/);
+  assert.match(source, /clearKeychain: false/);
+  assert.doesNotMatch(source, /clearState: true|clearKeychain: true|\bclearState\b\s*$/m);
+  assert.doesNotMatch(source, /point:|\bsleep\b|repeat:|swipe:/);
+  assert.deepEqual(source.match(/openLink:.*/g), ['openLink: ${METRO_URL}', 'openLink: ${METRO_URL}']);
+});
+
+test('e2e session flow: both accounts come from the environment and A\'s data is asserted gone for B', () => {
+  const source = sessionFlow();
+  for (const name of ['E2E_EMAIL_A', 'E2E_PASSWORD_A', 'E2E_EMAIL_B', 'E2E_PASSWORD_B']) {
+    assert.ok(source.includes(`\${${name}}`), name);
+  }
+  assert.doesNotMatch(source, /@example\.com|Aa1-/);
+  const afterRelaunch = source.slice(source.indexOf('- stopApp'));
+  assert.match(afterRelaunch, /assertNotVisible: "Resume workout"/);
+  assert.match(afterRelaunch, /assertNotVisible: "\.\*Alpha finished session\.\*"/);
+  assert.match(afterRelaunch, /assertNotVisible: "\.\*Alpha open session\.\*"/);
+});
+
+test('e2e session script: the signed-out state is checked before B signs in, and the device is reset only once', () => {
+  const source = read('e2e/scripts/session.sh');
+  assert.equal((source.match(/keychain reset/g) ?? []).length, 1);
+  assert.equal((source.match(/simctl uninstall/g) ?? []).length, 1);
+  assert.ok(source.indexOf('keychain reset') < source.indexOf('maestro --udid'));
+  assert.match(source, /sed -e "s\/\$E2E_PASSWORD_A\/<password-a>\/g"/);
+});
