@@ -74,10 +74,11 @@ async def refresh(payload: RefreshRequest, db: DbSession, throttle: Throttle) ->
     status_code=status.HTTP_204_NO_CONTENT,
     summary="End this device's session",
     description=(
-        "Revokes the refresh token presented, so it can no longer mint access "
-        "tokens. Always answers 204, including for a token that is unknown or "
-        "already expired. Access tokens already issued stay valid until they "
-        "expire."
+        "Ends the session the refresh token presented belongs to: that token and "
+        "any successor its rotations produced can no longer mint access tokens. "
+        "Other sessions of the account are not affected. Always answers 204, "
+        "including for a token that is unknown or already expired. Access tokens "
+        "already issued stay valid until they expire."
     ),
 )
 async def logout(payload: RefreshRequest, db: DbSession) -> Response:

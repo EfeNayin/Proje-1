@@ -505,8 +505,10 @@ class TestConcurrentRefresh:
 
         original_issue_token_pair = auth_service._issue_token_pair
 
-        async def slow_issue_token_pair(db: AsyncSession, user_id: UUID) -> TokenPair:
-            pair = await original_issue_token_pair(db, user_id)
+        async def slow_issue_token_pair(
+            db: AsyncSession, user_id: UUID, family_id: UUID | None = None
+        ) -> TokenPair:
+            pair = await original_issue_token_pair(db, user_id, family_id)
             await asyncio.sleep(0.3)
             return pair
 

@@ -188,6 +188,15 @@ class RefreshToken(Base):
 
     token_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
 
+    # The session this token belongs to: one sign-in starts a family and every
+    # rotation hands it on to the successor. Logout ends a family, not one row.
+    family_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        nullable=False,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     # NULL means the token is still valid.
@@ -201,7 +210,10 @@ class RefreshToken(Base):
     # schema_v1.sql. Using index=True on the column instead would make
     # SQLAlchemy invent its own name (ix_refresh_tokens_user_id) and Alembic
     # would then try to drop the real index and create a duplicate.
-    __table_args__ = (Index("idx_refresh_tokens_user_id", "user_id"),)
+    __table_args__ = (
+        Index("idx_refresh_tokens_user_id", "user_id"),
+        Index("idx_refresh_tokens_family_id", "family_id"),
+    )
 
     def __repr__(self) -> str:
         state = "revoked" if self.revoked_at else "active"

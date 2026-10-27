@@ -6,9 +6,9 @@ which keeps it directly unit-testable.
 """
 
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -147,6 +147,15 @@ async def refresh(db: AsyncSession, raw_token: str, throttle: AuthThrottle) -> T
     # above never gets here and never spends this account's allowance.
     await throttle.refresh_user(user_id)
 
+    # Rotation and logout of one session take turns (see _lock_family). Which
+    # session this is has to be read first; the row is read again under the lock.
+    family_id = await db.scalar(
+        select(RefreshToken.family_id).where(RefreshToken.token_hash == hash_token(raw_token))
+    )
+    if family_id is None:
+        raise UnauthorizedError("Invalid or expired refresh token")
+    await _lock_family(db, family_id)
+
     stored = await db.scalar(
         select(RefreshToken)
         .where(RefreshToken.token_hash == hash_token(raw_token))
@@ -170,7 +179,7 @@ async def refresh(db: AsyncSession, raw_token: str, throttle: AuthThrottle) -> T
         raise UnauthorizedError("Invalid or expired refresh token")
 
     stored.revoked_at = now
-    tokens = await _issue_token_pair(db, user.id)
+    tokens = await _issue_token_pair(db, user.id, stored.family_id)
     await db.commit()
     return tokens
 
@@ -178,11 +187,24 @@ async def refresh(db: AsyncSession, raw_token: str, throttle: AuthThrottle) -> T
 async def logout(db: AsyncSession, raw_token: str) -> None:
     """End the session this refresh token belongs to. Idempotent; never errors.
 
-    The row is deleted rather than marked revoked on purpose. A revoked token
-    that is presented again is treated by `refresh()` as a theft signal and
-    takes down every session of the account; a request still in flight from the
-    device that just signed out must not do that to the user's other devices.
-    A deleted token simply is not found, which is a plain 401.
+    A session is the chain of tokens its rotations produced, so ending it means
+    removing every token of the family that can still mint access tokens, not
+    just the one presented: a refresh that rotated the presented token a moment
+    earlier (or is rotating it right now) has a successor, and leaving it would
+    keep the signed-out session alive. Other sessions of the account (other
+    families) are untouched.
+
+    Rows are deleted rather than marked revoked on purpose. A revoked token that
+    is presented again is treated by `refresh()` as a theft signal and takes down
+    every session of the account; a request still in flight from the device that
+    just signed out must not do that to the user's other devices. A deleted token
+    simply is not found, which is a plain 401. What is deleted is the presented
+    token and the family's live tokens; tokens rotated away earlier stay, so
+    `refresh()` still recognises their replay.
+
+    Rotation and this function take the same per-family lock (`_lock_family`), so
+    they run one after the other: whichever comes second sees everything the first
+    committed, including a successor that did not exist when this request began.
 
     Anything that is not a currently signed refresh token (garbage, an access
     token, an expired one) is ignored and answered the same way, so the endpoint
@@ -196,14 +218,43 @@ async def logout(db: AsyncSession, raw_token: str) -> None:
         return
     if not is_refresh_token(claims):
         return
-    await db.execute(delete(RefreshToken).where(RefreshToken.token_hash == hash_token(raw_token)))
+    token_hash = hash_token(raw_token)
+    family_id = await db.scalar(
+        select(RefreshToken.family_id).where(RefreshToken.token_hash == token_hash)
+    )
+    if family_id is None:
+        return  # unknown, or already signed out
+    await _lock_family(db, family_id)
+    await db.execute(
+        delete(RefreshToken).where(
+            RefreshToken.family_id == family_id,
+            or_(RefreshToken.revoked_at.is_(None), RefreshToken.token_hash == token_hash),
+        )
+    )
     await db.commit()
 
 
-async def _issue_token_pair(db: AsyncSession, user_id: UUID) -> TokenPair:
+async def _lock_family(db: AsyncSession, family_id: UUID) -> None:
+    """Serialise rotation and logout of one session until this transaction ends.
+
+    A row lock cannot do this: logout has to see a successor row that a rotation
+    inserted but has not committed, and a statement's snapshot cannot see rows
+    that are not committed yet. After waiting here, the next statement starts
+    with a fresh snapshot and sees them. The lock is advisory and keyed by the
+    family, so it never blocks another session; a hash collision only means two
+    unrelated sessions occasionally wait for each other.
+    """
+    await db.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(str(family_id), 0))))
+
+
+async def _issue_token_pair(
+    db: AsyncSession, user_id: UUID, family_id: UUID | None = None
+) -> TokenPair:
     """Create an access + refresh token and persist the refresh token's hash.
 
-    Does not commit; the caller decides the transaction boundary.
+    `family_id` is the session being rotated; without it the token starts a new
+    session (register, login). Does not commit; the caller decides the
+    transaction boundary.
     """
     access = create_access_token(user_id)
     raw_refresh, expires_at = create_refresh_token(user_id)
@@ -212,6 +263,7 @@ async def _issue_token_pair(db: AsyncSession, user_id: UUID) -> TokenPair:
         RefreshToken(
             user_id=user_id,
             token_hash=hash_token(raw_refresh),
+            family_id=family_id or uuid4(),
             expires_at=expires_at,
         )
     )
