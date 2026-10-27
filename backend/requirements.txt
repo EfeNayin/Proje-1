@@ -19,7 +19,10 @@ pydantic-settings~=2.6.0
 email-validator~=2.2.0   # Pydantic EmailStr için gerekli
 
 # Kimlik doğrulama: JWT üretimi/doğrulaması + bcrypt ile şifre hash'leme
-python-jose[cryptography]~=3.3.0
+# 3.4.0+ kapatır: JWE sıkıştırma bombası (CVE-2024-33664) ve OpenSSH ECDSA anahtarıyla
+# algoritma karışıklığı (CVE-2024-33663). Uygulama yalnızca HS256 + açık algoritma listesi
+# kullandığından ikisi de erişilemezdi; yine de güncel sürümde kalmak ucuz.
+python-jose[cryptography]~=3.5.0
 passlib[bcrypt]~=1.7.4
 bcrypt~=4.0.1            # passlib 1.7.4 ile uyumlu sürüm (4.1+ gereksiz uyarı basar)
 
@@ -29,3 +32,7 @@ redis~=5.2.0
 # Giden HTTP istekleri: PubMed (NCBI E-utilities) çağrıları için. Daha önce
 # yalnızca dev'deydi (testlerde ASGI client); artık çalışma zamanında da gerekli.
 httpx~=0.27.0
+# httpx'in TLS güven deposu. 2026.10.18 öncesi emSign köklerini içerir (GHSA-6q48-6c7w-9gw2);
+# PubMed çağrıları bu depoya güvendiği için alt sınır açıkça konuldu. Alt sınır ayrıca
+# requirements.txt'i değiştirerek Docker'ın eski pip katmanını geçersiz kılar.
+certifi>=2026.10.18

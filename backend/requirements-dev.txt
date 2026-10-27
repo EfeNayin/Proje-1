@@ -13,5 +13,5 @@ ruff~=0.8.0    # hem linter hem formatter (flake8+black+isort yerine tek araç)
 mypy~=1.13.0   # statik tip kontrolü
 
 
-types-python-jose~=3.3.0
+types-python-jose~=3.5.0
 types-passlib~=1.7.0
