@@ -134,6 +134,32 @@ Yerel sayaçlara bakmak için `docker compose exec redis redis-cli --scan --patt
 tek bir anahtarı `DEL` ile silebilirsin, `FLUSHALL`/`FLUSHDB` kullanma (testler `bt:rl:test:…`
 önekini ve Redis veritabanı 15'i kullanır; E2E yığınının kendi Redis'i var).
 
+### Oturum yaşam döngüsü: çıkış, yenileme, hesap değiştirme
+
+Bir **oturum**, bir girişin ürettiği refresh token zinciridir: her `refresh` token'ı iptal eder
+(`revoked_at`) ve bir halef üretir; halef aynı `refresh_tokens.family_id`'yi taşır.
+
+- **`POST /auth/logout`** sunulan token'ın **ailesinin** hâlâ geçerli tüm token'larını ve sunulan
+  token'ın kendisini **siler**; hesabın diğer cihazlarının oturumları (başka aileler) etkilenmez.
+  Daha önce rotasyonla iptal edilmiş eski token kayıtları **kalır** (yeniden kullanım tespiti
+  onlara dayanır); silinen token'ın geç gelen yenilemesi düz `401`'dir ve çalıntı sinyali sayılmaz.
+  Her zaman `204`, token'ın gerçek olup olmadığını söylemez.
+- **Yarış:** logout ile aynı anda sürmekte olan bir yenileme, logout'un göremediği (henüz
+  commit edilmemiş) bir halef token ekleyebilirdi; önceden de yenileme logout'tan önce commit
+  olduysa halef geçerli kalıyordu (Adım 63'te kanıtlandı). Yenileme ve logout artık aynı oturumun
+  `pg_advisory_xact_lock`'unu sırayla alır (aile kilidi; başka oturumu bloklamaz), böylece hangisi
+  ikinci gelirse ilkinin commit ettiği her şeyi görür.
+- **Access token'lar** durumsuzdur: çıkıştan sonra **süresi dolana kadar** (`ACCESS_TOKEN_EXPIRE_MINUTES`,
+  30 dk) geçerli kalır; anında sunucu tarafı access iptali **yoktur**. Çıkış yenileme yeteneğini bitirir.
+- **Mobil:** her kimlik doğrulamalı istek ve yenileme, başladığı oturumun "dönemine" (`authEpoch`)
+  bağlıdır. Çıkış, oturum süresinin dolması ve yeni bir giriş denemesi dönemi ilerletir; önceki
+  dönemden havada kalan istek token yazamaz/silemez, oturum sonu bildiremez ve cevabını çağırana
+  vermez (`SessionChangedError`). Token yazma/silme işlemleri tek sırada (kuyrukta) çalışır;
+  çıkışta yerel durum ve özel store'lar **hemen** sıfırlanır, sunucuya çıkış isteği yalnız bir kez
+  ve beklenmeden gönderilir. Yerel temizlik (`localClear`) ile sunucu iptalinin onayı (`revocation`:
+  `confirmed`/`unconfirmed`/`none`) ayrı şeylerdir: istek başarısız olursa token cihazdan silinmiş
+  olur ama sunucuda süresi dolana kadar (14 gün) geçerli kalır; arka planda yeniden deneme yoktur.
+
 ## Faz planı (özet)
 
 1. **Faz 1 (Ay 1-3, MVP):** manuel loglama + kas grubu hacim analizi

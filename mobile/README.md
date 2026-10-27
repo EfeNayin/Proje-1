@@ -29,6 +29,7 @@ npm run typecheck              # tsc --noEmit, sıfır hata olmalı
 npm run lint                   # expo lint
 
 npm run test:session           # oturum/refresh davranışı
+node --test tests/session-concurrency.test.cjs # çıkış/yenileme/hesap değiştirme sıralaması (gecikmeli Keychain + ağ)
 npm run test:history           # antrenman geçmişi sayfalama
 npm run test:research-feed      # araştırma ekranı sayfalama / geç yanıt / PubMed bağlantısı
 npm run test:research-navigation # Research geri davranışı (push + anchor + native ok)
@@ -111,6 +112,15 @@ Bilinen sınırlar ve ilk-çalıştırma tuzakları (akış bunları ele alır):
   `e2e/scripts/metro-restart.sh` çalıştırın.
 - Metro, `NODE_OPTIONS=--dns-result-order=ipv4first` ile başlatılır; aksi
   halde yalnızca `::1`'e bağlanıp bildirimdeki 127.0.0.1 ile uyuşmaz.
+
+### Hesap değiştirme akışı (native)
+
+`e2e/scripts/session.sh` (önce `up.sh`) aynı izole yığında iki geçici hesapla
+`e2e/flows/session-switch.yaml`'ı çalıştırır: A girer (bitmiş + açık bir antrenmanı var),
+çıkar, uygulama **depolama/Keychain temizlenmeden** kapatılıp yeniden açılır ve çıkış yapılmış
+kaldığı doğrulanır, sonra B girer ve A'nın verisinin görünmediği doğrulanır. Gecikmeli
+yanıt/depolama yarışları native'de denenmez (üretim koduna test kancası eklenmez); onlar
+`tests/session-concurrency.test.cjs`'tedir.
 
 ## Daha fazla bilgi
 
