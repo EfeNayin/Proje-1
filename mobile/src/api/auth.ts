@@ -39,7 +39,7 @@ export type UserProfile = {
   created_at: string;
 };
 
-type AuthResponse = {
+export type AuthResponse = {
   user: UserProfile;
   tokens: TokenPair;
 };
@@ -90,7 +90,8 @@ export function login(email: string, password: string): Promise<AuthResponse> {
 }
 
 /**
- * Ends this device's session on the server by revoking its refresh token.
+ * Ends this device's session on the server: the refresh token and any successor
+ * its rotations produced stop working (other devices' sessions are untouched).
  *
  * Anonymous on purpose: the refresh token is the credential here, and an
  * expired access token must not send a sign-out through the refresh flow.

@@ -19,7 +19,12 @@ function fixture(handler, initial = { access_token: 'old-access', refresh_token:
   const storage = {
     getAccessToken: async () => tokens?.access_token ?? null,
     getRefreshToken: async () => tokens?.refresh_token ?? null,
-    saveTokens: async (value) => { tokens = value; },
+    saveTokensIf: async (value, _owner, isCurrent) => {
+      if (!isCurrent()) return false;
+      tokens = value;
+      return true;
+    },
+    clearTokensIfOwner: async () => undefined,
     clearTokens: async () => { clears += 1; tokens = null; },
   };
   function load(file) {
@@ -226,16 +231,15 @@ test('a rejected or failed logout never refreshes, clears tokens or expires the 
   assert.equal(offline.clears(), 0);
 });
 
-test('signing out reads the refresh token first, then ends the server session without waiting for it', () => {
-  const source = readFileSync(path.join(mobileRoot, 'src/auth/AuthContext.tsx'), 'utf8')
+test('signing out takes the refresh token and ends the server session without waiting for it', () => {
+  const source = readFileSync(path.join(mobileRoot, 'src/auth/sessionController.ts'), 'utf8')
     .replace(/\r\n/g, '\n');
-  const signOut = source.slice(source.indexOf('const signOut = useCallback'), source.indexOf('// The HTTP client cannot import'));
-  const read = signOut.indexOf('await getRefreshToken()');
-  const clear = signOut.indexOf('await clearTokens()');
-  const call = signOut.indexOf('void authApi.logout(refreshToken)');
-  const done = signOut.indexOf('setStatus("signedOut")');
-  assert.ok(read > -1 && read < clear, 'the token is read before it is cleared');
-  assert.ok(clear < call && call < done, 'the request is sent after clearing and before the screen changes');
-  assert.match(signOut, /void authApi\.logout\(refreshToken\)\.catch\(/, 'fire and forget, failure ignored');
+  const signOut = source.slice(source.indexOf('async function signOut'), source.indexOf('/** The API client gave up'));
+  const left = signOut.indexOf('leaveAccount()');
+  const take = signOut.indexOf('await takeRefreshToken()');
+  const call = signOut.indexOf('authApi.logout(refreshToken)');
+  assert.ok(left > -1 && left < take, 'the account is left before any storage work');
+  assert.ok(take > -1 && take < call, 'the token is taken (read and cleared in one step) before the request is built');
   assert.doesNotMatch(signOut, /await authApi\.logout/, 'signing out must not wait for the network');
+  assert.match(signOut, /authApi\.logout\(refreshToken\)\.then\(/, 'failure is reported as unconfirmed, never thrown');
 });

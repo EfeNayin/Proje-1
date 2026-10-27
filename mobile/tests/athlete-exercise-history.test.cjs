@@ -521,9 +521,13 @@ test('the panel closes when the workout views are reset, revoked, or pointed at 
 });
 
 test('sign-out and session expiry both reset the history store', () => {
+  // The reset list is written once (resetAccountState) and the controller runs
+  // it on both ways out of an account.
   const source = read('src/auth/AuthContext.tsx');
   assert.match(source, /athleteExerciseHistoryStore\.reset\(\)/);
-  assert.equal(source.match(/athleteExerciseHistoryStore\.reset\(\)/g).length, 2);
+  assert.equal(source.match(/athleteExerciseHistoryStore\.reset\(\)/g).length, 1);
+  const controller = read('src/auth/sessionController.ts');
+  assert.equal(controller.match(/hooks\.resetAccountState\(\)/g).length, 2);
 });
 
 // ── Panel ───────────────────────────────────────────────────────────────

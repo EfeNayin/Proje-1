@@ -943,9 +943,13 @@ test('athlete view: a failed refresh keeps the entries and offers a retry', () =
 // ── Wiring (source scans: presence, not behaviour on a device) ──────────
 
 test('wiring: sign-out and session expiry reset both feedback stores', () => {
+  // Written once in AuthContext's resetAccountState; the controller runs it on
+  // both ways out of an account (sign-out and session expiry).
   const auth = read('src/auth/AuthContext.tsx');
-  assert.equal((auth.match(/workoutFeedbackStore\.reset\(\)/g) ?? []).length, 2);
-  assert.equal((auth.match(/receivedFeedbackStore\.reset\(\)/g) ?? []).length, 2);
+  assert.equal((auth.match(/workoutFeedbackStore\.reset\(\)/g) ?? []).length, 1);
+  assert.equal((auth.match(/receivedFeedbackStore\.reset\(\)/g) ?? []).length, 1);
+  const controller = read('src/auth/sessionController.ts');
+  assert.equal((controller.match(/hooks\.resetAccountState\(\)/g) ?? []).length, 2);
 });
 
 test('wiring: the coach screen mounts the section, keeps the workout read-only and handles the keyboard', () => {

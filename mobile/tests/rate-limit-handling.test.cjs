@@ -46,7 +46,13 @@ function clientWith(script) {
   const calls = [];
   let expired = 0;
   const tokens = {
-    saveTokens: async (pair) => { store.access = pair.access_token; store.refresh = pair.refresh_token; },
+    saveTokensIf: async (pair, _owner, isCurrent) => {
+      if (!isCurrent()) return false;
+      store.access = pair.access_token;
+      store.refresh = pair.refresh_token;
+      return true;
+    },
+    clearTokensIfOwner: async () => undefined,
     getAccessToken: async () => store.access,
     getRefreshToken: async () => store.refresh,
     clearTokens: async () => { store.access = null; store.refresh = null; },

@@ -12,7 +12,6 @@ import type { ReactNode } from "react";
 import * as authApi from "../api/auth";
 import type { RegisterInput, UserProfile } from "../api/auth";
 import { setOnSessionExpired } from "../api/client";
-import { clearTokens, getRefreshToken, saveTokens } from "../api/tokens";
 import { athleteExerciseHistoryStore } from "../coaching/athleteExerciseHistorySession";
 import { athleteOverviewStore } from "../coaching/athleteOverviewSession";
 import { athleteWorkoutsStore } from "../coaching/athleteWorkoutsSession";
@@ -20,8 +19,7 @@ import { coachingStore } from "../coaching/coachingSession";
 import { programOffersStore } from "../coaching/programOffersSession";
 import { receivedFeedbackStore } from "../coaching/receivedFeedbackSession";
 import { workoutFeedbackStore } from "../coaching/workoutFeedbackSession";
-import { clearActiveWorkout } from "../workout/activeWorkout";
-import { restoreSession } from "./restoreSession";
+import { createSessionController } from "./sessionController";
 
 type AuthStatus = "loading" | "signedIn" | "signedOut" | "unavailable";
 
@@ -46,68 +44,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRestoreAttempt((attempt) => attempt + 1);
   }, []);
 
+  // Coaching lists, a shown invite code, a connected athlete's workouts and
+  // pending results belong to one account only, and answers still in flight must
+  // not land on whoever signs in next.
+  const controller = useMemo(
+    () =>
+      createSessionController({
+        resetAccountState: () => {
+          coachingStore.reset();
+          athleteExerciseHistoryStore.reset();
+          workoutFeedbackStore.reset();
+          receivedFeedbackStore.reset();
+          athleteWorkoutsStore.reset();
+          athleteOverviewStore.reset();
+          programOffersStore.reset();
+        },
+        apply: (view) => {
+          setUser(view.user);
+          setStatus(view.status);
+        },
+      }),
+    [],
+  );
+
+  // What happens, in which order, and what is guaranteed is in sessionController.ts.
   const signOut = useCallback(async () => {
-    // First, before any await: coaching lists, a shown invite code, a connected
-    // athlete's workouts and pending results belong to this account only, and
-    // answers still in flight must not land on whoever signs in next.
-    coachingStore.reset();
-    athleteExerciseHistoryStore.reset();
-    workoutFeedbackStore.reset();
-    receivedFeedbackStore.reset();
-    athleteWorkoutsStore.reset();
-    athleteOverviewStore.reset();
-    programOffersStore.reset();
-    // Read before clearing: the token is what lets the server end this session.
-    const refreshToken = await getRefreshToken().catch(() => null);
-    await clearTokens();
-    // Best effort and deliberately not awaited: signing out on this device must
-    // not depend on the network. If the request fails the refresh token stays
-    // valid on the server until it expires (14 days), the same as before this
-    // call existed; if it succeeds the token can no longer mint access tokens.
-    if (refreshToken) void authApi.logout(refreshToken).catch(() => undefined);
-    // The active-workout pointer is a device key (see src/workout/activeWorkout.ts),
-    // not scoped to an account. Left in place, it would resume — or, worse,
-    // silently point at — this account's in-progress session for whoever
-    // signs in next on this device. Preferences such as rest length are
-    // deliberately per-device and are not cleared here; this is only about
-    // state that identifies a specific workout belonging to THIS account.
-    await clearActiveWorkout();
-    setUser(null);
-    setStatus("signedOut");
-  }, []);
+    await controller.signOut();
+  }, [controller]);
 
   // The HTTP client cannot import this provider without a cycle, so it calls
-  // back here when a refresh fails and the session is unrecoverable.
+  // back here when a refresh fails and the session is unrecoverable. It has
+  // already ended the account's epoch; this is a forced sign-out, treated like a
+  // voluntary one for everything the device remembers about the account.
   useEffect(() => {
-    setOnSessionExpired(() => {
-      // The client has already cleared tokens before notifying us. This is
-      // a forced sign-out, not a voluntary one, but the account-switch
-      // reasoning is identical to signOut() below — the active-workout
-      // pointer must not survive to whoever is signed in next on this
-      // device — so it is cleared the same way. Fire-and-forget: nothing
-      // useful can be done if this SecureStore write fails, and the
-      // sign-out itself must not wait on it.
-      void clearActiveWorkout();
-      coachingStore.reset();
-      athleteExerciseHistoryStore.reset();
-      workoutFeedbackStore.reset();
-      receivedFeedbackStore.reset();
-      athleteWorkoutsStore.reset();
-      athleteOverviewStore.reset();
-      programOffersStore.reset();
-      setUser(null);
-      setStatus("signedOut");
-    });
+    setOnSessionExpired(controller.sessionExpired);
     return () => setOnSessionExpired(null);
-  }, []);
+  }, [controller]);
 
   // Restore the session on launch.
   useEffect(() => {
     let cancelled = false;
 
     const restore = async () => {
-      const restored = await restoreSession();
-      if (!cancelled) {
+      // Null when the account changed while this ran: its answer is obsolete.
+      const restored = await controller.restore();
+      if (!cancelled && restored) {
         setUser(restored.user);
         setStatus(restored.status);
       }
@@ -117,21 +98,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [restoreAttempt]);
+  }, [controller, restoreAttempt]);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const result = await authApi.login(email, password);
-    await saveTokens(result.tokens);
-    setUser(result.user);
-    setStatus("signedIn");
-  }, []);
-
-  const signUp = useCallback(async (input: RegisterInput) => {
-    const result = await authApi.register(input);
-    await saveTokens(result.tokens);
-    setUser(result.user);
-    setStatus("signedIn");
-  }, []);
+  const signIn = controller.signIn;
+  const signUp = useCallback((input: RegisterInput) => controller.signUp(input), [controller]);
 
   const refreshProfile = useCallback(async () => {
     setUser(await authApi.fetchMe());
