@@ -111,6 +111,52 @@ class CoachAthleteLink(Base):
     )
 
 
+class ProgramLineage(Base):
+    """A program a coach prepares for ONE connection and publishes in numbered versions.
+
+    The coach edits `draft_program_id`, an ordinary program they own (inactive,
+    hidden from their own program list while the connection lasts). Publishing
+    freezes it into a ProgramOffer with the next version number; later edits of
+    the draft change nothing already published. A lineage belongs to one link,
+    so a reconnection starts with none.
+
+    (coach_id, create_request_id) is the create receipt and `create_hash` ties it
+    to what it created, so a repeat returns this row and a reused id with other
+    details is refused.
+    """
+
+    __tablename__ = "program_lineages"
+
+    id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    link_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("coach_athlete_links.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    coach_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # NULL only after the coach deleted the draft once the connection had ended
+    # (it cannot be deleted while the connection lasts); the lineage and its
+    # published versions stay as history.
+    draft_program_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("programs.id", ondelete="SET NULL"), unique=True
+    )
+    create_request_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    create_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[created_at]
+
+    __table_args__ = (
+        UniqueConstraint("coach_id", "create_request_id", name="program_lineages_create_receipt"),
+        Index("idx_program_lineages_link", "link_id", text("created_at DESC")),
+    )
+
+
 class ProgramOffer(Base):
     """A coach's program, frozen at the moment it was sent, waiting for the athlete.
 
@@ -124,6 +170,11 @@ class ProgramOffer(Base):
 
     (coach_id, request_id) is the send receipt: repeating the same send returns
     this row instead of creating a second one.
+
+    An offer is either a LEGACY standalone one (lineage_id and version are NULL;
+    behaves exactly as before) or one published version of a ProgramLineage
+    (both set). A lineage has at most one pending version; publishing a newer one
+    marks the waiting one `superseded`, which can never be accepted.
     """
 
     __tablename__ = "program_offers"
@@ -156,16 +207,50 @@ class ProgramOffer(Base):
     accepted_program_id: Mapped[UUID | None] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("programs.id", ondelete="SET NULL")
     )
+    # Whether accepting this version made the new copy the athlete's active
+    # program. Stored so a repeated accept reports what really happened then.
+    activated_on_accept: Mapped[bool | None] = mapped_column(Boolean)
+    # The coach's program lineage this offer is a published version of, and its
+    # number within it (1, 2, ...). NULL for a legacy standalone offer.
+    lineage_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("program_lineages.id", ondelete="CASCADE")
+    )
+    version: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[created_at]
     responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'accepted', 'declined')", name="program_offers_status_check"
+            "status IN ('pending', 'accepted', 'declined', 'superseded')",
+            name="program_offers_status_check",
         ),
         CheckConstraint(
             "accepted_program_id IS NULL OR status = 'accepted'",
             name="program_offers_accepted_program_check",
+        ),
+        CheckConstraint(
+            "(lineage_id IS NULL) = (version IS NULL) AND (version IS NULL OR version >= 1)",
+            name="program_offers_lineage_version_check",
+        ),
+        # Only a versioned offer can be replaced, and exactly then superseded_at is set.
+        CheckConstraint(
+            "(status = 'superseded') = (superseded_at IS NOT NULL) "
+            "AND (status <> 'superseded' OR lineage_id IS NOT NULL)",
+            name="program_offers_superseded_check",
+        ),
+        CheckConstraint(
+            "activated_on_accept IS NULL OR status = 'accepted'",
+            name="program_offers_activated_check",
+        ),
+        UniqueConstraint("lineage_id", "version", name="program_offers_lineage_version"),
+        # One actionable version per lineage: a second device or a double tap
+        # cannot leave two versions waiting.
+        Index(
+            "idx_program_offers_lineage_one_pending",
+            "lineage_id",
+            unique=True,
+            postgresql_where=text("status = 'pending' AND lineage_id IS NOT NULL"),
         ),
         UniqueConstraint("coach_id", "request_id", name="program_offers_send_receipt"),
         # One waiting offer per program per connection: a second device or a

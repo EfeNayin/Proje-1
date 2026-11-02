@@ -7,12 +7,12 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.domains.auth.dependencies import CurrentUser
-from app.domains.coaching import feedback, offers, overview, service, workout_access
+from app.domains.coaching import feedback, lineages, offers, overview, service, workout_access
 from app.domains.coaching.ratelimit import Throttle
 from app.domains.coaching.schemas import (
     AthleteExerciseHistoryPage,
@@ -28,6 +28,11 @@ from app.domains.coaching.schemas import (
     InviteCodeRequest,
     InviteCreated,
     InvitePreview,
+    LineageCreate,
+    LineageDetail,
+    LineageList,
+    LineagePreview,
+    LineagePublishRequest,
     PersonSummary,
     ProgramOfferRequest,
     ProgramPreview,
@@ -397,3 +402,125 @@ async def decline_program_offer(
     offer_id: UUID, current_user: CurrentUser, db: DbSession
 ) -> ReceivedOfferDetail:
     return await offers.decline_offer(db, current_user, offer_id)
+
+
+# ── Prepared programs: one athlete, published in numbered versions ───────
+
+_LINEAGES = "/athletes/{link_id}/program-lineages"
+
+
+@router.get(
+    _LINEAGES,
+    response_model=LineageList,
+    summary="Coach: the programs you are preparing for this athlete",
+)
+async def list_program_lineages(
+    link_id: UUID, current_user: CurrentUser, db: DbSession, response: Response
+) -> LineageList:
+    response.headers["Cache-Control"] = "no-store"
+    return await lineages.list_lineages(db, current_user, link_id)
+
+
+@router.put(
+    _LINEAGES + "/{request_id}",
+    response_model=LineageDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Coach: start a preparation for this athlete, new or copied (safe to repeat)",
+    description=(
+        "Creates an inactive draft program owned by the coach; their own active "
+        "program is not changed. With `from_program_id` the draft is an independent "
+        "copy of one of the coach's own programs."
+    ),
+)
+async def create_program_lineage(
+    link_id: UUID,
+    request_id: UUID,
+    payload: LineageCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+    response: Response,
+) -> LineageDetail:
+    response.headers["Cache-Control"] = "no-store"
+    detail, created = await lineages.create_lineage(db, current_user, link_id, request_id, payload)
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    return detail
+
+
+@router.get(
+    _LINEAGES + "/{lineage_id}",
+    response_model=LineageDetail,
+    summary="Coach: one preparation with its published versions",
+)
+async def get_program_lineage(
+    link_id: UUID, lineage_id: UUID, current_user: CurrentUser, db: DbSession, response: Response
+) -> LineageDetail:
+    response.headers["Cache-Control"] = "no-store"
+    return await lineages.get_lineage(db, current_user, link_id, lineage_id)
+
+
+@router.delete(
+    _LINEAGES + "/{lineage_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Coach: discard a preparation that was never published",
+)
+async def discard_program_lineage(
+    link_id: UUID, lineage_id: UUID, current_user: CurrentUser, db: DbSession
+) -> Response:
+    await lineages.discard_lineage(db, current_user, link_id, lineage_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    _LINEAGES + "/{lineage_id}/preview",
+    response_model=LineagePreview,
+    summary="Coach: exactly what publishing the next version would send to this athlete",
+)
+async def preview_program_version(
+    link_id: UUID, lineage_id: UUID, current_user: CurrentUser, db: DbSession, response: Response
+) -> LineagePreview:
+    response.headers["Cache-Control"] = "no-store"
+    return await lineages.preview_version(db, current_user, link_id, lineage_id)
+
+
+@router.put(
+    _LINEAGES + "/{lineage_id}/versions/{request_id}",
+    response_model=SentOfferDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Coach: publish the next version to the athlete (safe to repeat)",
+    description=(
+        "Sends the version confirmed by `fingerprint`. A version still waiting for "
+        "the athlete is superseded and can no longer be accepted."
+    ),
+)
+async def publish_program_version(
+    link_id: UUID,
+    lineage_id: UUID,
+    request_id: UUID,
+    payload: LineagePublishRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+    response: Response,
+) -> SentOfferDetail:
+    response.headers["Cache-Control"] = "no-store"
+    offer, created = await lineages.publish_version(
+        db, current_user, link_id, lineage_id, request_id, payload.fingerprint
+    )
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    return offer
+
+
+@router.get(
+    _LINEAGES + "/{lineage_id}/versions/{version}",
+    response_model=SentOfferDetail,
+    summary="Coach: one published version with its complete prescriptions",
+)
+async def get_program_version(
+    link_id: UUID,
+    lineage_id: UUID,
+    version: Annotated[int, Path(ge=1)],
+    current_user: CurrentUser,
+    db: DbSession,
+    response: Response,
+) -> SentOfferDetail:
+    response.headers["Cache-Control"] = "no-store"
+    return await lineages.get_version(db, current_user, link_id, lineage_id, version)

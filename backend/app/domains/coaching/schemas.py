@@ -237,7 +237,7 @@ class AthleteOverviewPage(BaseModel):
 
 # ── Program offers ───────────────────────────────────────────────────────
 
-OfferStatus = Literal["pending", "accepted", "declined"]
+OfferStatus = Literal["pending", "accepted", "declined", "superseded"]
 
 
 class OfferExercise(BaseModel):
@@ -302,10 +302,18 @@ class OfferSummary(BaseModel):
     exercise_count: int
     sent_at: datetime
     responded_at: datetime | None
+    # Which published version of a prepared program this is; None for a legacy
+    # standalone offer.
+    version: int | None = None
+    # Set when a newer version replaced this one before the athlete answered.
+    superseded_at: datetime | None = None
 
 
 class SentOffer(OfferSummary):
-    """The coach's view. Never says which program the athlete ended up with."""
+    """The coach's view. Never says which program the athlete ended up with, or
+    whether it is active: "accepted" only means the athlete added a copy."""
+
+    lineage_id: UUID | None = None
 
 
 class SentOfferDetail(SentOffer):
@@ -324,10 +332,87 @@ class ReceivedOffer(OfferSummary):
     # The athlete's own copy, once accepted (None while pending/declined, or
     # after they deleted the copy).
     program_id: UUID | None
+    # For an accepted offer: whether accepting made the new copy the athlete's
+    # active program (as recorded then). None until accepted.
+    activated: bool | None = None
+
+
+class AcceptanceEffect(BaseModel):
+    """What accepting would do to the athlete's programs, as of this read.
+
+    Informational: the decision is made again, under lock, when they accept.
+    - inactive_copy: a new inactive copy is added; whatever is active stays.
+    - replaces_active_copy: the copy of the previous accepted version is active
+      right now, so it becomes inactive (and is kept) and the new copy becomes
+      the active one.
+    """
+
+    kind: Literal["inactive_copy", "replaces_active_copy"]
+    # Version number of the earlier accepted version whose copy would be replaced.
+    replaces_version: int | None = None
+    replaces_program_name: str | None = None
+    # With inactive_copy: the program that stays active, if any.
+    keeps_active_program_name: str | None = None
 
 
 class ReceivedOfferDetail(ReceivedOffer):
     program: OfferProgram
+    # Only for an offer still waiting for the athlete's answer.
+    acceptance: AcceptanceEffect | None = None
+
+
+# ── Prepared programs (lineages) ─────────────────────────────────────────
+
+
+class LineageCreate(BaseModel):
+    """Start a preparation for one connection, from scratch or from a copy of
+    one of the coach's own programs. The copy is independent from then on."""
+
+    name: str | None = Field(default=None, max_length=200)
+    from_program_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def has_a_name_or_a_source(self) -> Self:
+        if self.name is not None:
+            self.name = self.name.strip() or None
+        if self.name is None and self.from_program_id is None:
+            raise ValueError("Give the preparation a name.")
+        return self
+
+
+class LineageSummary(BaseModel):
+    id: UUID
+    # The coach's editable draft; an ordinary program owned by the coach.
+    draft_program_id: UUID
+    name: str
+    athlete: PersonSummary
+    created_at: datetime
+    latest_version: int | None
+    latest_status: OfferStatus | None
+    pending_version: int | None
+
+
+class LineageList(BaseModel):
+    items: list[LineageSummary]
+
+
+class LineageDetail(LineageSummary):
+    # False only when the draft is identical to the newest published version.
+    has_unpublished_changes: bool
+    versions: list[SentOffer]
+
+
+class LineagePublishRequest(BaseModel):
+    # From the preview the coach confirmed; the server rebuilds the snapshot itself.
+    fingerprint: str = Field(min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+
+
+class LineagePreview(ProgramPreview):
+    lineage_id: UUID
+    athlete: PersonSummary
+    # The number this publication will get, and the waiting version it would replace.
+    version: int
+    replaces_version: int | None
 
 
 class ReceivedOfferList(BaseModel):

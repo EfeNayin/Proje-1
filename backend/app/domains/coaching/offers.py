@@ -2,18 +2,33 @@
 
 Nothing here lets a coach touch an athlete's programs. Sending stores a frozen
 snapshot as an *offer* tied to one connection. Accepting copies that snapshot
-into a new, inactive program the athlete owns; from then on the copy is the
-athlete's alone and nothing keeps it in sync with the coach's original.
+into a new program the athlete owns; from then on the copy is the athlete's
+alone and nothing keeps it in sync with the coach's original.
 
-Two rules hold the design together:
+Two kinds of offer share this machinery:
+
+- LEGACY standalone offers (lineage_id NULL): one of the coach's own programs,
+  sent once. Accepting adds an inactive copy. Unchanged.
+- VERSIONS of a prepared program (see `lineages.py`): numbered, immutable, one
+  waiting at a time; publishing a newer one marks the waiting one superseded.
+  The first accepted version adds an inactive copy like any other. A later one
+  adds a new independent copy and, only if the copy of the previously accepted
+  version is the athlete's active program at that moment, makes the new copy
+  active in its place (the old copy and its personal edits are kept untouched).
+
+Rules that hold the design together:
 
 - Every request re-reads the connection. An offer is only reachable through an
   active link, so ending the link makes pending offers unavailable at once, and
   a reconnection is a new link that cannot see the old link's offers.
-- Accept and decline lock the link row first (the same row `end_link` locks),
-  then the offer. A request that was already in flight when the connection
-  ended therefore waits, sees the end, and is refused; two accepts of one offer
-  take turns, and the second finds the first one's copy.
+- Accept and decline lock the link row first (the same row `end_link` locks and
+  publishing locks), then the offer. A request that was already in flight when
+  the connection ended, or when a newer version was published, waits, sees it,
+  and is refused; two accepts of one offer take turns, and the second finds the
+  first one's copy.
+- Changing which program is active takes the per-user lock of
+  `programs.service.lock_active_program` before touching any program row, as
+  every other activation, deletion and creation does.
 """
 
 import hashlib
@@ -34,6 +49,7 @@ from app.core.exceptions import (
 )
 from app.domains.coaching import service
 from app.domains.coaching.schemas import (
+    AcceptanceEffect,
     OfferExercise,
     OfferProgram,
     OfferTemplate,
@@ -46,6 +62,7 @@ from app.domains.coaching.schemas import (
     SentOfferDetail,
     SentOfferList,
 )
+from app.domains.programs import service as programs_service
 from app.models import (
     CoachAthleteLink,
     Exercise,
@@ -62,7 +79,7 @@ NOTHING_TO_SEND = "Add at least one exercise to the program before sending it."
 # ── Snapshot ─────────────────────────────────────────────────────────────
 
 
-async def _snapshot(db: AsyncSession, program: Program, *, lock: bool) -> OfferProgram:
+async def snapshot_program(db: AsyncSession, program: Program, *, lock: bool) -> OfferProgram:
     """Deep copy of the program with its templates and prescriptions.
 
     Only what the athlete needs to follow the program: names, order, targets and
@@ -110,11 +127,11 @@ async def _snapshot(db: AsyncSession, program: Program, *, lock: bool) -> OfferP
     )
 
 
-def _counts(program: OfferProgram) -> tuple[int, int]:
+def counts(program: OfferProgram) -> tuple[int, int]:
     return (len(program.templates), sum(len(t.exercises) for t in program.templates))
 
 
-async def _unusable_exercises(
+async def unusable_exercises(
     db: AsyncSession, athlete_id: UUID, program: OfferProgram
 ) -> list[str]:
     """Names of exercises the athlete cannot use: gone, or another user's custom one."""
@@ -139,30 +156,44 @@ async def _unusable_exercises(
 # ── Coach: send ──────────────────────────────────────────────────────────
 
 
-def _fingerprint(coach_id: UUID, link_id: UUID, program: OfferProgram, program_id: UUID) -> str:
+def fingerprint_for(
+    coach_id: UUID,
+    link_id: UUID,
+    program: OfferProgram,
+    program_id: UUID,
+    *,
+    lineage_id: UUID | None = None,
+    version: int | None = None,
+) -> str:
     """Identifies exactly this content, for this coach, this program and this connection.
 
     Deterministic, so the preview and the send agree. It is only ever compared with
-    what the server rebuilds itself; it is never a way to supply content.
+    what the server rebuilds itself; it is never a way to supply content. For a
+    prepared program it also names the lineage and the version number this
+    publication would get, so a preview goes stale when someone else publishes in
+    between. Legacy sends hash exactly what they always did.
     """
-    payload = {
+    payload: dict[str, object] = {
         "coach_id": str(coach_id),
         "link_id": str(link_id),
         "program_id": str(program_id),
         "program": program.model_dump(mode="json"),
     }
+    if lineage_id is not None:
+        payload["lineage_id"] = str(lineage_id)
+        payload["version"] = version
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
-def _request_hash(link_id: UUID, program_id: UUID, fingerprint: str) -> str:
+def request_hash(link_id: UUID, program_id: UUID, fingerprint: str) -> str:
     """The send receipt covers the confirmed content, so a new confirmation is a new request."""
     payload = {"link_id": str(link_id), "program_id": str(program_id), "fingerprint": fingerprint}
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
-def _sent_detail(offer: ProgramOffer) -> SentOfferDetail:
+def sent_detail(offer: ProgramOffer) -> SentOfferDetail:
     program = OfferProgram.model_validate(offer.snapshot)
-    templates, exercises = _counts(program)
+    templates, exercises = counts(program)
     return SentOfferDetail(
         id=offer.id,
         status=offer.status,
@@ -171,12 +202,15 @@ def _sent_detail(offer: ProgramOffer) -> SentOfferDetail:
         exercise_count=exercises,
         sent_at=offer.created_at,
         responded_at=offer.responded_at,
+        version=offer.version,
+        superseded_at=offer.superseded_at,
+        lineage_id=offer.lineage_id,
         program=program,
     )
 
 
-def _sent_summary(offer: ProgramOffer) -> SentOffer:
-    templates, exercises = _counts(OfferProgram.model_validate(offer.snapshot))
+def sent_summary(offer: ProgramOffer) -> SentOffer:
+    templates, exercises = counts(OfferProgram.model_validate(offer.snapshot))
     return SentOffer(
         id=offer.id,
         status=offer.status,
@@ -185,10 +219,13 @@ def _sent_summary(offer: ProgramOffer) -> SentOffer:
         exercise_count=exercises,
         sent_at=offer.created_at,
         responded_at=offer.responded_at,
+        version=offer.version,
+        superseded_at=offer.superseded_at,
+        lineage_id=offer.lineage_id,
     )
 
 
-async def _active_link_of_coach(
+async def active_link_of_coach(
     db: AsyncSession, coach: User, link_id: UUID, *, lock: bool = False
 ) -> CoachAthleteLink:
     statement = select(CoachAthleteLink).where(
@@ -205,20 +242,29 @@ async def _active_link_of_coach(
     return link
 
 
+async def _refuse_prepared_program(db: AsyncSession, program_id: UUID) -> None:
+    """A preparation is published as numbered versions, never through the standalone send."""
+    if await programs_service.prepared_for(db, program_id) is not None:
+        raise ConflictError(
+            "This program is being prepared for an athlete. Publish it from Program management."
+        )
+
+
 async def preview_program(
     db: AsyncSession, coach: User, link_id: UUID, program_id: UUID
 ) -> ProgramPreview:
     """The exact content a send would offer right now, and the fingerprint that confirms it."""
     service.require_coach(coach)
-    link = await _active_link_of_coach(db, coach, link_id)
+    link = await active_link_of_coach(db, coach, link_id)
     program = await db.scalar(
         select(Program).where(Program.id == program_id, Program.user_id == coach.id)
     )
     if program is None:
         raise NotFoundError("Program not found")
-    frozen = await _snapshot(db, program, lock=False)
+    await _refuse_prepared_program(db, program.id)
+    frozen = await snapshot_program(db, program, lock=False)
     return ProgramPreview(
-        program=frozen, fingerprint=_fingerprint(coach.id, link.id, frozen, program.id)
+        program=frozen, fingerprint=fingerprint_for(coach.id, link.id, frozen, program.id)
     )
 
 
@@ -243,8 +289,8 @@ async def send_offer(
     service.require_coach(coach)
     # Locking the link serialises sends on it and cannot interleave with the end
     # of the connection.
-    link = await _active_link_of_coach(db, coach, link_id, lock=True)
-    digest = _request_hash(link.id, program_id, fingerprint)
+    link = await active_link_of_coach(db, coach, link_id, lock=True)
+    digest = request_hash(link.id, program_id, fingerprint)
 
     existing = await db.scalar(
         select(ProgramOffer).where(
@@ -254,7 +300,7 @@ async def send_offer(
     if existing is not None:
         if existing.request_hash != digest:
             raise ConflictError("This send request was already used for different content.")
-        return _sent_detail(existing), False
+        return sent_detail(existing), False
 
     # Ownership is proven by (id, user_id), exactly as the programs endpoints do.
     # The shared lock keeps the program's name and notes (and its deletion) from
@@ -266,17 +312,18 @@ async def send_offer(
     )
     if program is None:
         raise NotFoundError("Program not found")
+    await _refuse_prepared_program(db, program.id)
 
-    frozen = await _snapshot(db, program, lock=True)
+    frozen = await snapshot_program(db, program, lock=True)
     # What is stored below is this very object, so what was compared is what is sent.
-    if not hmac.compare_digest(fingerprint, _fingerprint(coach.id, link.id, frozen, program.id)):
+    if not hmac.compare_digest(fingerprint, fingerprint_for(coach.id, link.id, frozen, program.id)):
         raise PreconditionFailedError(
             "This program changed after you reviewed it. Review the updated version and "
             "confirm again."
         )
-    if _counts(frozen)[1] == 0:
+    if counts(frozen)[1] == 0:
         raise ValidationAppError(NOTHING_TO_SEND)
-    missing = await _unusable_exercises(db, link.athlete_id, frozen)
+    missing = await unusable_exercises(db, link.athlete_id, frozen)
     if missing:
         raise ValidationAppError(
             "These exercises are not available to the athlete: " + ", ".join(missing)
@@ -305,14 +352,14 @@ async def send_offer(
     db.add(offer)
     await db.commit()
     await db.refresh(offer)
-    return _sent_detail(offer), True
+    return sent_detail(offer), True
 
 
 async def list_sent(
     db: AsyncSession, coach: User, link_id: UUID, limit: int, offset: int
 ) -> SentOfferList:
     service.require_coach(coach)
-    link = await _active_link_of_coach(db, coach, link_id)
+    link = await active_link_of_coach(db, coach, link_id)
     total = await db.scalar(
         select(func.count()).select_from(ProgramOffer).where(ProgramOffer.link_id == link.id)
     )
@@ -326,7 +373,7 @@ async def list_sent(
         )
     ).all()
     return SentOfferList(
-        items=[_sent_summary(row) for row in rows], total=total or 0, limit=limit, offset=offset
+        items=[sent_summary(row) for row in rows], total=total or 0, limit=limit, offset=offset
     )
 
 
@@ -334,7 +381,7 @@ async def list_sent(
 
 
 def _received(offer: ProgramOffer, coach: User) -> ReceivedOffer:
-    templates, exercises = _counts(OfferProgram.model_validate(offer.snapshot))
+    templates, exercises = counts(OfferProgram.model_validate(offer.snapshot))
     return ReceivedOffer(
         id=offer.id,
         status=offer.status,
@@ -343,15 +390,21 @@ def _received(offer: ProgramOffer, coach: User) -> ReceivedOffer:
         exercise_count=exercises,
         sent_at=offer.created_at,
         responded_at=offer.responded_at,
+        version=offer.version,
+        superseded_at=offer.superseded_at,
         coach=PersonSummary.model_validate(coach),
         program_id=offer.accepted_program_id,
+        activated=bool(offer.activated_on_accept) if offer.status == "accepted" else None,
     )
 
 
-def _received_detail(offer: ProgramOffer, coach: User) -> ReceivedOfferDetail:
+def _received_detail(
+    offer: ProgramOffer, coach: User, acceptance: AcceptanceEffect | None = None
+) -> ReceivedOfferDetail:
     return ReceivedOfferDetail(
         **_received(offer, coach).model_dump(),
         program=OfferProgram.model_validate(offer.snapshot),
+        acceptance=acceptance,
     )
 
 
@@ -410,9 +463,59 @@ async def list_received(
     )
 
 
+async def _preceding_copy(
+    db: AsyncSession, offer: ProgramOffer, athlete_id: UUID, *, lock: bool
+) -> tuple[ProgramOffer, Program] | None:
+    """The copy of the latest EARLIER accepted version of this lineage, if the athlete still has it.
+
+    None for a legacy offer, for the first version, when no earlier version was
+    accepted, or when the athlete deleted that copy (the offer then has no
+    accepted_program_id). Nothing is ever inferred from names or content.
+    """
+    if offer.lineage_id is None or offer.version is None:
+        return None
+    previous = await db.scalar(
+        select(ProgramOffer)
+        .where(
+            ProgramOffer.lineage_id == offer.lineage_id,
+            ProgramOffer.status == "accepted",
+            ProgramOffer.version < offer.version,
+        )
+        .order_by(ProgramOffer.version.desc())
+        .limit(1)
+        .execution_options(populate_existing=True)
+    )
+    if previous is None or previous.accepted_program_id is None:
+        return None
+    statement = select(Program).where(
+        Program.id == previous.accepted_program_id, Program.user_id == athlete_id
+    )
+    if lock:
+        statement = statement.with_for_update().execution_options(populate_existing=True)
+    copy = await db.scalar(statement)
+    return None if copy is None else (previous, copy)
+
+
+async def _acceptance_effect(
+    db: AsyncSession, athlete: User, offer: ProgramOffer
+) -> AcceptanceEffect:
+    preceding = await _preceding_copy(db, offer, athlete.id, lock=False)
+    if preceding is not None and preceding[1].is_active:
+        return AcceptanceEffect(
+            kind="replaces_active_copy",
+            replaces_version=preceding[0].version,
+            replaces_program_name=preceding[1].name,
+        )
+    active_name = await db.scalar(
+        select(Program.name).where(Program.user_id == athlete.id, Program.is_active.is_(True))
+    )
+    return AcceptanceEffect(kind="inactive_copy", keeps_active_program_name=active_name)
+
+
 async def get_received(db: AsyncSession, athlete: User, offer_id: UUID) -> ReceivedOfferDetail:
     offer, coach = await _offer_of_athlete(db, athlete, offer_id)
-    return _received_detail(offer, coach)
+    effect = await _acceptance_effect(db, athlete, offer) if offer.status == "pending" else None
+    return _received_detail(offer, coach, effect)
 
 
 async def _lock_offer(
@@ -449,27 +552,19 @@ def _copy_template(db: AsyncSession, program: Program, template: OfferTemplate) 
     return copy
 
 
-async def accept_offer(db: AsyncSession, athlete: User, offer_id: UUID) -> ReceivedOfferDetail:
-    """Create the athlete's own, inactive copy. Repeating it returns the same copy."""
-    offer, coach = await _lock_offer(db, athlete, offer_id)
-    if offer.status == "accepted":
-        return _received_detail(offer, coach)
-    if offer.status == "declined":
-        raise ConflictError("You declined this program. Ask your coach to send it again.")
+async def materialize_program(
+    db: AsyncSession, owner_id: UUID, frozen: OfferProgram, *, active: bool
+) -> Program:
+    """Create a brand-new program (days and prescriptions included) from a frozen one.
 
-    frozen = OfferProgram.model_validate(offer.snapshot)
-    missing = await _unusable_exercises(db, athlete.id, frozen)
-    if missing:
-        raise ConflictError(
-            "This program uses exercises that are no longer available: "
-            + ", ".join(missing)
-            + ". Nothing was added. Ask your coach to send an updated program."
-        )
-
-    # One transaction: the program, its days, their exercises and the offer's new
-    # state commit together or not at all. Inactive, so the athlete's current
-    # program stays exactly as it is until they activate this one themselves.
-    program = Program(user_id=athlete.id, name=frozen.name, notes=frozen.notes, is_active=False)
+    The single place a program is built from a snapshot: accepting an offer and
+    starting a preparation from one of the coach's programs both use it, so the
+    copy is always independent of its source. Flushed, not committed; the caller
+    decides what else belongs in the transaction, and that the unique "one active
+    program" index can only be satisfied when `active` is set after whatever was
+    active has been deactivated.
+    """
+    program = Program(user_id=owner_id, name=frozen.name, notes=frozen.notes, is_active=active)
     db.add(program)
     await db.flush()
     for template in frozen.templates:
@@ -489,8 +584,55 @@ async def accept_offer(db: AsyncSession, athlete: User, offer_id: UUID) -> Recei
                     notes=item.notes,
                 )
             )
+    await db.flush()
+    return program
+
+
+async def accept_offer(db: AsyncSession, athlete: User, offer_id: UUID) -> ReceivedOfferDetail:
+    """Create the athlete's own copy. Repeating it returns the same result.
+
+    The copy is inactive, except for one case: an offer that is a later version
+    of a prepared program, whose previously accepted copy is still the athlete's
+    active program right now. That copy is then deactivated (kept, with every
+    personal edit) and the new one takes its place, in the same transaction.
+    """
+    offer, coach = await _lock_offer(db, athlete, offer_id)
+    if offer.status == "accepted":
+        return _received_detail(offer, coach)
+    if offer.status == "declined":
+        raise ConflictError("You declined this program. Ask your coach to send it again.")
+    if offer.status == "superseded":
+        raise ConflictError(
+            "Your coach published a newer version, so this one can no longer be accepted. "
+            "Open the latest version instead."
+        )
+
+    frozen = OfferProgram.model_validate(offer.snapshot)
+    missing = await unusable_exercises(db, athlete.id, frozen)
+    if missing:
+        raise ConflictError(
+            "This program uses exercises that are no longer available: "
+            + ", ".join(missing)
+            + ". Nothing was added. Ask your coach to send an updated program."
+        )
+
+    # One transaction: the program, its days, their exercises, the change of the
+    # active program (if any) and the offer's new state commit together or not at all.
+    activates = False
+    if offer.lineage_id is not None:
+        # Same lock every activation, deletion and creation takes, so whether the
+        # previous copy is still active cannot change between this check and the commit.
+        await programs_service.lock_active_program(db, athlete.id)
+        preceding = await _preceding_copy(db, offer, athlete.id, lock=True)
+        if preceding is not None and preceding[1].is_active:
+            preceding[1].is_active = False
+            # The unique "one active program" index must see the old one off first.
+            await db.flush()
+            activates = True
+    program = await materialize_program(db, athlete.id, frozen, active=activates)
     offer.status = "accepted"
     offer.accepted_program_id = program.id
+    offer.activated_on_accept = activates
     offer.responded_at = datetime.now(UTC)
     await db.commit()
     return _received_detail(offer, coach)
@@ -500,6 +642,8 @@ async def decline_offer(db: AsyncSession, athlete: User, offer_id: UUID) -> Rece
     offer, coach = await _lock_offer(db, athlete, offer_id)
     if offer.status == "accepted":
         raise ConflictError("You already added this program. Delete your copy from Programs.")
+    if offer.status == "superseded":
+        raise ConflictError("Your coach already replaced this version with a newer one.")
     if offer.status == "pending":
         offer.status = "declined"
         offer.responded_at = datetime.now(UTC)

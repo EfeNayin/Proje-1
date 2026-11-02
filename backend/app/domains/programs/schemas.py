@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.domains.coaching.schemas import PersonSummary
+
 
 class TemplateExerciseCreate(BaseModel):
     """One exercise's targets within a template.
@@ -113,9 +115,27 @@ class ProgramSummary(BaseModel):
     is_active: bool
 
 
+class PreparedFor(BaseModel):
+    """Set while a program is a coach's preparation for one connected athlete."""
+
+    link_id: UUID
+    lineage_id: UUID
+    athlete: PersonSummary
+
+
+class WorkoutTemplateDetail(WorkoutTemplateRead):
+    """A template as the editor loads it. Only this read says whose preparation it belongs to;
+    the snapshot a started workout stores is the plain WorkoutTemplateRead."""
+
+    prepared_for: PreparedFor | None = None
+
+
 class ProgramDetail(ProgramSummary):
     notes: str | None
     templates: list[WorkoutTemplateRead]
+    # None for an ordinary program. While set, the program can be edited here but
+    # cannot be activated or deleted; it is published from Program management.
+    prepared_for: PreparedFor | None = None
 
 
 class TemplateStart(BaseModel):

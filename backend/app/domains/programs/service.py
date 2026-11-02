@@ -13,20 +13,33 @@ Two invariants this module is responsible for:
    deactivated in the SAME transaction, before the target program is
    activated — a single UPDATE that tried to do both at once would collide
    with itself under that index the instant both rows read is_active=true.
+
+3. Nothing that changes which program is active runs unserialised. Activating,
+   deleting, creating (active by default) and accepting a coach's updated program
+   all take the same per-user lock first (`lock_active_program`), so two of them
+   can never both decide "nothing else is active" and collide on the index.
+
+4. A coach's preparation for an athlete is an ordinary program they own, edited
+   with the endpoints below, but it never becomes their active program, is not
+   listed among their own programs and cannot be deleted while its connection
+   lasts. Once the connection ends it is just their program again.
 """
 
 import hashlib
 import json
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, exists, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationAppError
+from app.domains.coaching.schemas import PersonSummary
 from app.domains.programs.schemas import (
+    PreparedFor,
     ProgramCreate,
     ProgramDetail,
     ProgramSummary,
@@ -35,12 +48,22 @@ from app.domains.programs.schemas import (
     TemplateExercisesSet,
     TemplateStart,
     WorkoutTemplateCreate,
+    WorkoutTemplateDetail,
     WorkoutTemplateRead,
     WorkoutTemplateUpdate,
     WorkoutTemplateWithExercisesCreate,
 )
 from app.domains.workouts.service import close_dangling_workouts
-from app.models import Exercise, Program, TemplateExercise, Workout, WorkoutTemplate
+from app.models import (
+    CoachAthleteLink,
+    Exercise,
+    Program,
+    ProgramLineage,
+    TemplateExercise,
+    User,
+    Workout,
+    WorkoutTemplate,
+)
 from app.models.program import TemplateSaveRequest
 
 
@@ -158,6 +181,7 @@ async def _to_program_detail(db: AsyncSession, program: Program) -> ProgramDetai
         name=program.name,
         is_active=program.is_active,
         notes=program.notes,
+        prepared_for=await prepared_for(db, program.id),
         templates=[
             WorkoutTemplateRead(
                 id=t.id,
@@ -172,6 +196,56 @@ async def _to_program_detail(db: AsyncSession, program: Program) -> ProgramDetai
             for t in templates
         ],
     )
+
+
+async def lock_active_program(db: AsyncSession, user_id: UUID) -> None:
+    """Serialise changes to which program is active for this user, until commit.
+
+    A transaction-scoped advisory lock rather than a row lock: it does not
+    conflict with ordinary reads or with foreign-key checks, only with the other
+    callers of this function. Take it BEFORE locking any program row.
+    """
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"active-program:{user_id}"},
+    )
+
+
+def _is_managed_draft(program_id: Any) -> Any:
+    """SQL condition: this program is the draft of a lineage on a still-active connection."""
+    return exists().where(
+        ProgramLineage.draft_program_id == program_id,
+        ProgramLineage.link_id == CoachAthleteLink.id,
+        CoachAthleteLink.ended_at.is_(None),
+    )
+
+
+async def prepared_for(db: AsyncSession, program_id: UUID) -> PreparedFor | None:
+    row = (
+        await db.execute(
+            select(ProgramLineage.id, CoachAthleteLink.id, User)
+            .join(CoachAthleteLink, CoachAthleteLink.id == ProgramLineage.link_id)
+            .join(User, User.id == CoachAthleteLink.athlete_id)
+            .where(
+                ProgramLineage.draft_program_id == program_id,
+                CoachAthleteLink.ended_at.is_(None),
+            )
+        )
+    ).first()
+    if row is None:
+        return None
+    return PreparedFor(
+        link_id=row[1], lineage_id=row[0], athlete=PersonSummary.model_validate(row[2])
+    )
+
+
+async def _refuse_if_prepared(db: AsyncSession, program_id: UUID, action: str) -> None:
+    prepared = await prepared_for(db, program_id)
+    if prepared is not None:
+        raise ConflictError(
+            f"This program is being prepared for {prepared.athlete.username}, so you cannot "
+            f"{action} it. Publish it from Program management instead."
+        )
 
 
 async def _deactivate_current_program(db: AsyncSession, user_id: UUID) -> None:
@@ -191,6 +265,7 @@ async def _deactivate_current_program(db: AsyncSession, user_id: UUID) -> None:
 
 async def create_program(db: AsyncSession, user_id: UUID, payload: ProgramCreate) -> ProgramDetail:
     """A new program is active by default, so any current one is closed first."""
+    await lock_active_program(db, user_id)
     await _deactivate_current_program(db, user_id)
 
     program = Program(user_id=user_id, name=payload.name, notes=payload.notes, is_active=True)
@@ -203,7 +278,9 @@ async def create_program(db: AsyncSession, user_id: UUID, payload: ProgramCreate
 async def list_programs(db: AsyncSession, user_id: UUID) -> list[ProgramSummary]:
     rows = (
         await db.scalars(
-            select(Program).where(Program.user_id == user_id).order_by(Program.created_at.desc())
+            select(Program)
+            .where(Program.user_id == user_id, ~_is_managed_draft(Program.id))
+            .order_by(Program.created_at.desc())
         )
     ).all()
     return [ProgramSummary.model_validate(row) for row in rows]
@@ -228,7 +305,9 @@ async def update_program(
 
 async def activate_program(db: AsyncSession, user_id: UUID, program_id: UUID) -> ProgramDetail:
     """Make this the active program. Whatever was active closes first, same transaction."""
+    await lock_active_program(db, user_id)
     program = await _load_owned_program(db, program_id, user_id)
+    await _refuse_if_prepared(db, program.id, "activate")
 
     await _deactivate_current_program(db, user_id)
     program.is_active = True
@@ -239,7 +318,9 @@ async def activate_program(db: AsyncSession, user_id: UUID, program_id: UUID) ->
 
 async def delete_program(db: AsyncSession, user_id: UUID, program_id: UUID) -> None:
     """Delete a program. Its templates and their exercises go with it via cascade."""
+    await lock_active_program(db, user_id)
     program = await _load_owned_program(db, program_id, user_id)
+    await _refuse_if_prepared(db, program.id, "delete")
     await db.delete(program)
     await db.commit()
 
@@ -312,9 +393,14 @@ async def create_template_with_exercises(
     return detail
 
 
-async def get_template(db: AsyncSession, user_id: UUID, template_id: UUID) -> WorkoutTemplateRead:
+async def get_template(
+    db: AsyncSession, user_id: UUID, template_id: UUID
+) -> WorkoutTemplateDetail:
     template = await _load_owned_template(db, template_id, user_id)
-    return await _to_template_detail(db, template)
+    read = await _to_template_detail(db, template)
+    return WorkoutTemplateDetail(
+        **read.model_dump(), prepared_for=await prepared_for(db, template.program_id)
+    )
 
 
 async def update_template(

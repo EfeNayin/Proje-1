@@ -23,6 +23,7 @@ from app.domains.programs.schemas import (
     TemplateExercisesSet,
     TemplateStart,
     WorkoutTemplateCreate,
+    WorkoutTemplateDetail,
     WorkoutTemplateRead,
     WorkoutTemplateUpdate,
     WorkoutTemplateWithExercisesCreate,
@@ -140,12 +141,12 @@ async def save_template_once(
 
 @router.get(
     "/templates/{template_id}",
-    response_model=WorkoutTemplateRead,
+    response_model=WorkoutTemplateDetail,
     summary="Get one template with its exercise targets",
 )
 async def get_template(
     template_id: UUID, current_user: CurrentUser, db: DbSession
-) -> WorkoutTemplateRead:
+) -> WorkoutTemplateDetail:
     return await service.get_template(db, current_user.id, template_id)
 
 

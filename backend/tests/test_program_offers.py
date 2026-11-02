@@ -290,7 +290,7 @@ class TestAuthorisation:
 
         assert set(item) == {
             "id", "status", "program_name", "template_count", "exercise_count", "sent_at",
-            "responded_at", "coach", "program_id",
+            "responded_at", "coach", "program_id", "version", "superseded_at", "activated",
         }
         assert set(item["coach"]) == {"username", "first_name", "last_name"}
         assert "example.com" not in str(received)
@@ -902,8 +902,10 @@ class TestListing:
         assert sent["total"] == 1
         assert set(sent["items"][0]) == {
             "id", "status", "program_name", "template_count", "exercise_count", "sent_at",
-            "responded_at",
+            "responded_at", "version", "superseded_at", "lineage_id",
         }
+        # A legacy standalone offer carries no lineage or version.
+        assert sent["items"][0]["version"] is None and sent["items"][0]["lineage_id"] is None
         assert sent["items"][0]["status"] == "accepted"
 
 
