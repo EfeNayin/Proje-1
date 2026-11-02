@@ -133,6 +133,21 @@ kurulur (fixture); hazırlama, yayımlama ve kabul ekranda yapılır. 2. sürüm
 devralınması ve çalışan antrenmanın değişmemesi native'de **değil**, canlı API ile ve backend
 testleriyle doğrulanır.
 
+### "Neden gelişemiyorum?" ve günlük check-in akışı (native)
+
+`e2e/scripts/diagnosis.sh` (önce `up.sh`) aynı izole yığında üç geçici hesapla
+`e2e/flows/diagnosis-checkin.yaml`'ı çalıştırır: **EMPTY** (hiç kayıt yok) değerlendirmeyi görür,
+bağımsız günlük check-in'i açıp uyku/enerji kaydeder ve yenilenen değerlendirmeye döner;
+**HISTORY** (dört tamamlanmış hafta antrenman, beş gece uyku, 19 güne yayılan dört tartı, bulk
+hedefi) dönemi 4 → 8 → 12 haftaya çevirir ve bir eylemle mevcut bir ekrana gider;
+**FRESH** mevcut antrenman öncesi check-in'in antrenmanı hâlâ başlattığını gösterir. Script ayrıca
+akıştan sonra API ile EMPTY hesabında **sıfır antrenman** olduğunu, kaydedilen uyku/enerjinin
+yerinde durduğunu ve FRESH hesabında tam bir antrenman başladığını doğrular. Geçmiş kayıtlar
+gerçek hafta beklenmeden kurulur: hesaplar, hedef ve geçmiş antrenmanlar API ile; geçmiş tarihli
+uyku/tartı satırları (API yalnız bugünü yazar) kimliği doğrulanmış E2E veritabanına SQL ile
+eklenir. Elle kontrol gerektiren, native'de denenmeyen durumlar (gün değişimi, gecikmeli
+yanıtlar, hesap değişimi) `tests/daily-checkin.test.cjs` ve backend testlerindedir.
+
 ## Daha fazla bilgi
 
 - [Expo documentation](https://docs.expo.dev/)
