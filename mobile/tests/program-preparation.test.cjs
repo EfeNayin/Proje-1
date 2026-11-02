@@ -352,6 +352,8 @@ test('status wording: athlete, coach and preparation views', () => {
   }
 });
 
+const inactive_effect = () => ({ kind: 'inactive_copy', replaces_version: null, replaces_program_name: null, keeps_active_program_name: null });
+
 test('acceptance text states what accepting will do', () => {
   const inactive = display.acceptanceText(
     { kind: 'inactive_copy', replaces_version: null, replaces_program_name: null, keeps_active_program_name: 'Mine' },
@@ -359,7 +361,10 @@ test('acceptance text states what accepting will do', () => {
   );
   assert.match(inactive[0], /switched off/);
   assert.match(inactive[0], /“Mine”/);
-  assert.match(inactive.join(' '), /Personal edits.*not carried/);
+  // The first version has no earlier copy, so it does not talk about one.
+  assert.doesNotMatch(inactive.join(' '), /Personal edits/);
+  assert.doesNotMatch(display.acceptanceText(inactive_effect(), 'Cora', 1).join(' '), /Personal edits/);
+  assert.match(display.acceptanceText(inactive_effect(), 'Cora', 2).join(' '), /Personal edits.*not carried/);
   const none = display.acceptanceText(
     { kind: 'inactive_copy', replaces_version: null, replaces_program_name: null, keeps_active_program_name: null },
     'Cora',
@@ -368,7 +373,9 @@ test('acceptance text states what accepting will do', () => {
   const replaces = display.acceptanceText(
     { kind: 'replaces_active_copy', replaces_version: 1, replaces_program_name: 'Plan v1', keeps_active_program_name: null },
     'Cora',
+    2,
   );
+  assert.match(replaces[1], /Personal edits.*not carried/);
   assert.match(replaces[0], /version 1/);
   assert.match(replaces[0], /new copy becomes your active program/);
   assert.match(replaces[0], /not deleted/);
@@ -434,7 +441,7 @@ test('received program screens use the shared status icons and show the acceptan
     assert.doesNotMatch(source, /const STATUS_ICON/);
   }
   const offer = read('app/(app)/coaching/program-offer/[offerId].tsx');
-  assert.match(offer, /acceptanceText\(offer\.acceptance/);
+  assert.match(offer, /acceptanceText\(offer\.acceptance, from, offer\.version\)/);
   assert.match(offer, /acceptedNotice\(outcome\.offer\)/);
   assert.match(offer, /status === "superseded"/);
   assert.match(read('app/(app)/coaching/athlete/[linkId]/send-program.tsx'), /coachStatusLabel/);

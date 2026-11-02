@@ -196,7 +196,7 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
       {offer.status === "pending" ? (
         <View style={styles.card}>
           {(offer.acceptance
-            ? acceptanceText(offer.acceptance, from)
+            ? acceptanceText(offer.acceptance, from, offer.version)
             : [
                 `Adding this program puts an independent copy among your own programs. It is not switched on, so your current program stays active until you choose otherwise. It will not update if ${from} changes theirs, and ${from} cannot open or edit your copy.`,
               ]

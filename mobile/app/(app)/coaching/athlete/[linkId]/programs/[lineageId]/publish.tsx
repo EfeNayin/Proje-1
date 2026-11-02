@@ -86,7 +86,10 @@ function Publish({
       return;
     }
     if (outcome.kind === "done") {
-      router.replace(`/coaching/athlete/${linkId}/programs/${lineageId}`);
+      // Back to the preparation this screen was opened from; it reloads on focus and
+      // shows the new version, so no second copy of it is left in the stack.
+      if (router.canGoBack()) router.back();
+      else router.replace(`/coaching/athlete/${linkId}/programs/${lineageId}`);
       return;
     }
     setNotice(outcome.message);

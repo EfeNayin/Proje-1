@@ -81,8 +81,17 @@ export function versionLabel(version: number | null): string | null {
 }
 
 /** What the athlete is told accepting will do, from the server's reading of their programs. */
-export function acceptanceText(effect: AcceptanceEffect, from: string): string[] {
-  const common = `It is an independent copy: it will not change if ${from} edits theirs, and ${from} cannot open or edit it. Personal edits you made to an earlier copy are not carried into it.`;
+export function acceptanceText(
+  effect: AcceptanceEffect,
+  from: string,
+  version: number | null = null,
+): string[] {
+  const independent = `It is an independent copy: it will not change if ${from} edits theirs, and ${from} cannot open or edit it.`;
+  // Only an update has an earlier copy whose personal edits could be expected to follow.
+  const common =
+    version !== null && version > 1
+      ? `${independent} Personal edits you made to an earlier copy are not carried into it.`
+      : independent;
   if (effect.kind === "replaces_active_copy") {
     const replaced = effect.replaces_program_name
       ? `“${effect.replaces_program_name}”`
