@@ -22,7 +22,7 @@ function loadTs(file, cache = new Map()) {
     if (!request.startsWith('.')) throw new Error(`load-ts: cannot resolve "${request}" from ${file}`);
     return loadTs(path.relative(root, path.resolve(path.dirname(full), `${request}.ts`)), cache);
   };
-  vm.runInNewContext(code, { module: loaded, exports: loaded.exports, require: localRequire, Math, Set, WeakMap, Map, Number, Date, Array, String, Object });
+  vm.runInNewContext(code, { module: loaded, exports: loaded.exports, require: localRequire, Math, Set, WeakMap, Map, Number, Date, Array, String, Object, Error, Promise });
   return loaded.exports;
 }
 
