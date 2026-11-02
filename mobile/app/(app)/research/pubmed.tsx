@@ -27,11 +27,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import * as researchApi from "../../src/api/research";
-import type { Publication } from "../../src/api/research";
-import { light } from "../../src/lightTheme";
-import { createPublicationFeed } from "../../src/research/publicationFeed";
-import { pubmedLink } from "../../src/research/sourceLink";
+import * as researchApi from "../../../src/api/research";
+import type { Publication } from "../../../src/api/research";
+import { light } from "../../../src/lightTheme";
+import { createPublicationFeed } from "../../../src/research/publicationFeed";
+import { pubmedLink } from "../../../src/research/sourceLink";
 
 const MIN_TOUCH = 44;
 

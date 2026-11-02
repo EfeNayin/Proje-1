@@ -6,10 +6,12 @@ const { test } = require('node:test');
 const root = path.resolve(__dirname, '..');
 const read = (file) => readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 
-// Source-level guards for the Research presentation (the feed's behaviour is
-// covered by research-feed.test.cjs); they pin decisions a restyle could drop.
+// Source-level guards for the PubMed publications screen (the feed's behaviour is
+// covered by research-feed.test.cjs); they pin decisions a restyle could drop. The
+// screen moved from /research to /research/pubmed when the Turkish library became
+// the main Research screen; nothing in it changed but its import paths.
 
-const screen = () => read('app/(app)/research.tsx');
+const screen = () => read('app/(app)/research/pubmed.tsx');
 
 test('research: light theme and system font', () => {
   const source = screen();
