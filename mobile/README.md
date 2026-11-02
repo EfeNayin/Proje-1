@@ -122,6 +122,17 @@ kaldığı doğrulanır, sonra B girer ve A'nın verisinin görünmediği doğru
 yanıt/depolama yarışları native'de denenmez (üretim koduna test kancası eklenmez); onlar
 `tests/session-concurrency.test.cjs`'tedir.
 
+### Sporcuya özel program akışı (native)
+
+`e2e/scripts/revisions.sh` (önce `up.sh`) aynı izole yığında bağlı bir koç ve sporcu için
+`e2e/flows/program-revisions.yaml`'ı çalıştırır: koç kendi programından sporcuya özel taslak
+hazırlar, taslağın düzenleyicide alıcı bandıyla açıldığını ve etkinleştirilemediğini görür,
+sunucunun önizlemesini okuyup 1. sürümü açıkça yayımlar; sporcu programı alır, kabulün etkisini
+okur ve ekler (kopya pasif, mevcut aktif programı değişmez). Hesaplar ve bağlantı API ile
+kurulur (fixture); hazırlama, yayımlama ve kabul ekranda yapılır. 2. sürüm, etkin kopyanın
+devralınması ve çalışan antrenmanın değişmemesi native'de **değil**, canlı API ile ve backend
+testleriyle doğrulanır.
+
 ## Daha fazla bilgi
 
 - [Expo documentation](https://docs.expo.dev/)

@@ -1,0 +1,183 @@
+# Athlete-specific program journey on one simulator, accounts taking turns:
+# the coach prepares a draft for one athlete (copied from their own program), reads it
+# back and publishes version 1; the athlete reads the received program, sees what
+# accepting will do, and adds it. Started by e2e/scripts/revisions.sh (a connected coach
+# "Colt" with a program "Coach Base" and athlete "Avery" with an active program
+# "Athlete Own"). Every step is a real tap or text entry; only the fixtures were created
+# through the API. Self-contained on purpose (the Expo Go introduction handling is copied
+# from smoke-workout.yaml). One simulator, accounts in sequence: not two devices at once.
+appId: host.exp.Exponent
+---
+- launchApp
+- openLink: ${METRO_URL}
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- extendedWaitUntil:
+    visible: "Find your strength."
+    timeout: 180000
+- extendedWaitUntil:
+    visible: "Continue"
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - extendedWaitUntil:
+          visible: "Reload"
+          timeout: 10000
+      - tapOn: "Close"
+      - tapOn: "Gear Shape, Filled"
+      - extendedWaitUntil:
+          visible: "Reload"
+          timeout: 10000
+      - scrollUntilVisible:
+          element: "Tools button"
+          timeout: 15000
+      - tapOn:
+          text: "1"
+          rightOf: "Tools button"
+          index: 1
+      - tapOn: "Close"
+
+# ══ Coach: prepare a draft for Avery from an own program ══
+- tapOn:
+    id: "login-email"
+- inputText: ${E2E_EMAIL_COACH}
+- tapOn:
+    id: "login-password"
+- inputText: ${E2E_PASSWORD_COACH}
+- tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Profile, tab.*"
+    timeout: 30000
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Athletes.*"
+    timeout: 15000
+- tapOn: "My Athletes.*"
+- extendedWaitUntil:
+    visible: "Avery.*Open workouts"
+    timeout: 15000
+- tapOn: "Avery.*Open workouts"
+- extendedWaitUntil:
+    visible: "Program management for Avery"
+    timeout: 15000
+- tapOn: "Program management for Avery"
+- extendedWaitUntil:
+    visible: "Nothing prepared for Avery yet."
+    timeout: 15000
+- assertVisible: "Prepared for Avery"
+- takeScreenshot: rev-01-program-management-empty
+- tapOn: "Start from one of my programs"
+- extendedWaitUntil:
+    visible: "Copy Coach Base for Avery"
+    timeout: 15000
+- tapOn: "Copy Coach Base for Avery"
+- extendedWaitUntil:
+    visible: "Draft · not published yet"
+    timeout: 15000
+- assertVisible: "Prepared for Avery.*"
+- assertVisible: "Nothing published yet."
+- takeScreenshot: rev-02-draft-created
+
+# The draft opens in the ordinary editor, with the recipient in view and no way to
+# activate it or delete it as a personal program.
+- tapOn: "Edit the draft prepared for Avery"
+- extendedWaitUntil:
+    visible: "Draft prepared for Avery.*"
+    timeout: 15000
+- assertVisible: "Only you can see this draft.*"
+- assertNotVisible: "Make this the active program"
+- assertNotVisible: "Delete program"
+- takeScreenshot: rev-03-editor-recipient-banner
+- tapOn: "Back"
+
+# ══ Coach: review exactly what Avery would receive, then publish explicitly ══
+- extendedWaitUntil:
+    visible: "Review and publish for Avery"
+    timeout: 15000
+- tapOn: "Review and publish for Avery"
+- extendedWaitUntil:
+    visible: "Version 1"
+    timeout: 15000
+- assertVisible: "Publishing to Avery.*"
+- assertVisible: "Nothing has been sent yet.*"
+- scrollUntilVisible:
+    element: "Publish version 1 to Avery"
+    timeout: 15000
+- takeScreenshot: rev-04-review-before-publish
+- tapOn: "Publish version 1 to Avery"
+- extendedWaitUntil:
+    visible: "Version 1 · Waiting for answer"
+    timeout: 20000
+- takeScreenshot: rev-05-version-1-waiting
+# preparation → Program management → athlete → My Athletes → tab bar
+- tapOn: "Back"
+- tapOn: "Back"
+- tapOn: "Back"
+- tapOn: "Back"
+
+# ── sign out ──
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "Sign out"
+    timeout: 15000
+- tapOn: "Sign out"
+- extendedWaitUntil:
+    visible: "Find your strength."
+    timeout: 15000
+
+# ══ Athlete: read the received program, see the effect, add it ══
+- tapOn:
+    id: "login-email"
+- inputText: ${E2E_EMAIL_ATHLETE}
+- tapOn:
+    id: "login-password"
+- inputText: ${E2E_PASSWORD_ATHLETE}
+- tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Profile, tab.*"
+    timeout: 30000
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Coaches.*"
+    timeout: 15000
+- tapOn: "My Coaches.*"
+- extendedWaitUntil:
+    visible: "Received programs.*"
+    timeout: 15000
+- tapOn: "Received programs.*"
+- extendedWaitUntil:
+    visible: "Coach Base, from Colt.*"
+    timeout: 15000
+- takeScreenshot: rev-06-athlete-received-list
+- tapOn: "Coach Base, from Colt.*"
+- extendedWaitUntil:
+    visible: "Waiting · Version 1"
+    timeout: 15000
+- assertVisible: "Push Day"
+- scrollUntilVisible:
+    element: "Add Coach Base to my programs"
+    timeout: 15000
+- assertVisible: ".*stays active.*"
+- takeScreenshot: rev-07-athlete-effect-before-accept
+- tapOn: "Add Coach Base to my programs"
+- extendedWaitUntil:
+    visible: "Added to your programs. It is not active.*"
+    timeout: 20000
+- takeScreenshot: rev-08-athlete-accepted
+- scrollUntilVisible:
+    element: "Open my copy of this program"
+    timeout: 15000
+- tapOn: "Open my copy of this program"
+# The copy is the athlete's own, added inactive: their active program was not changed.
+- extendedWaitUntil:
+    visible: "Make this the active program"
+    timeout: 15000
+- assertNotVisible: "Draft prepared for"
+- takeScreenshot: rev-09-athlete-copy-inactive
