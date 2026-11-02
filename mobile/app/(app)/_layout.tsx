@@ -46,6 +46,7 @@ export default function AppLayout() {
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="diagnosis" options={{ title: "Diagnosis" }} />
+      <Stack.Screen name="daily-checkin" options={{ title: "Daily check-in" }} />
       <Stack.Screen name="research/index" options={{ title: "Araştırma" }} />
       <Stack.Screen name="research/[id]" options={{ title: "Konu" }} />
       <Stack.Screen name="research/pubmed" options={{ title: "PubMed yayınları" }} />

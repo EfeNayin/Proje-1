@@ -98,13 +98,63 @@ export type TrainingCoverage = {
   required_weeks_with_work: number;
 };
 
+/**
+ * How much a domain's records can support. Five distinct states, never merged:
+ * "missing" means no records in the window (not "nothing happened"), "not_applicable"
+ * means the comparison does not apply (weight without a directional goal).
+ */
+export type DomainState = "sufficient" | "insufficient" | "stale" | "missing" | "not_applicable";
+
+export type DomainReason =
+  | "no_working_sets"
+  | "no_completed_week"
+  | "too_few_weeks_with_work"
+  | "no_sleep_records"
+  | "too_few_nights"
+  | "stale_records"
+  | "no_measurements"
+  | "too_few_measurements"
+  | "short_span"
+  | "stale_measurements"
+  | "no_goal"
+  | "goal_maintain";
+
+/** What one domain rests on: its own window and the dates of the records found in it. */
+export type DomainCoverage = {
+  state: DomainState;
+  reason: DomainReason | null;
+  /** The window that was searched. Training: whole completed local weeks. Sleep/weight: up to today. */
+  period_start: string | null;
+  period_end: string | null;
+  record_count: number;
+  first_recorded_on: string | null;
+  last_recorded_on: string | null;
+  /** Age of the newest record in days (sleep and weight only). */
+  latest_age_days: number | null;
+};
+
+export type DiagnosisDomains = {
+  training: DomainCoverage;
+  sleep: DomainCoverage;
+  weight: DomainCoverage;
+};
+
 export type DiagnosisResponse = {
   period_weeks: number;
-  /** Requires recorded work in at least two eligible completed weeks. */
+  /**
+   * About TRAINING records only: recorded work in at least two eligible completed weeks.
+   * It gates the volume and consistency findings, not the whole assessment; sleep and
+   * weight are judged on their own records (see `domains`).
+   */
   has_enough_data: boolean;
   /** Optional while connecting to an older backend. */
   training_coverage?: TrainingCoverage;
   findings: Finding[];
+  /** The user's local calendar day the assessment was made on. Optional for older backends. */
+  today?: string;
+  timezone?: string;
+  /** Optional while connecting to an older backend. */
+  domains?: DiagnosisDomains;
 };
 
 export function fetchDiagnosis(weeks = 4): Promise<DiagnosisResponse> {

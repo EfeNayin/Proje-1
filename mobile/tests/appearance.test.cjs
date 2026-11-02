@@ -63,8 +63,11 @@ test('the app shell screens (restoring session, cannot connect) are light too', 
 
 test('diagnosis and check-in keep their states distinct and use no palette but the light one', () => {
   const diagnosis = read('app/(app)/diagnosis.tsx');
-  assert.match(diagnosis, /Not enough training records for this period/);
-  assert.match(diagnosis, /Nothing stands out/);
+  // The two empty states are different statements and come from the view model:
+  // too little recorded vs. enough recorded but nothing found (which is not "all good").
+  assert.match(diagnosis, /view\.empty\.kind === "insufficient"/);
+  assert.match(read('src/diagnosis/assessment.ts'), /Not enough records to say anything yet/);
+  assert.match(read('src/diagnosis/assessment.ts'), /No observations from the records that are sufficient/);
   assert.match(diagnosis, /Showing the previous result for this period\./);
   assert.match(diagnosis, /lightStatus/);
   const checkin = read('app/(app)/workout/checkin.tsx');

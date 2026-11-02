@@ -131,3 +131,10 @@ for (const code of ['volume_below_mev', 'volume_above_mrv']) {
     assert.doesNotMatch(copy.description, /Göğüs/);
   });
 }
+
+test('muscle names with underscores are shown as words, not database names', () => {
+  const copy = describeFinding({ code: 'muscles_untrained',
+    data: { region: 'core', count: 2, muscles: ['lower_back', 'obliques'], muscles_tr: ['Bel', 'Yan karın'] } });
+  assert.match(copy.description, /lower back, obliques/);
+  assert.doesNotMatch(copy.description, /_/);
+});

@@ -89,7 +89,7 @@ export function describeFinding(finding: Finding): FindingCopy {
       return {
         title: `${muscle}: high recorded volume`,
         description: `Averaging ${avgSets} recorded sets/week in the evaluated training period, above the ${mrv}-set reference (MRV).`,
-        action: "Cut back a few sets, or make sure sleep and nutrition can support this volume.",
+        action: "Check that this matches what you intended. The MRV is a general reference, not a personal limit.",
       };
     }
 
@@ -99,7 +99,7 @@ export function describeFinding(finding: Finding): FindingCopy {
       const muscles = data.muscles as string[];
       return {
         title: `${REGION_TITLES[region] ?? region}: ${count} muscle${count === 1 ? "" : "s"} without direct-work records`,
-        description: `No direct working sets were recorded for ${muscles.join(", ")} in the evaluated training period.`,
+        description: `No direct working sets were recorded for ${muscles.map((muscle) => muscle.replace(/_/g, " ")).join(", ")} in the evaluated training period.`,
         action: "Check that your logs are complete before changing your program.",
       };
     }
@@ -191,7 +191,7 @@ export function describeFinding(finding: Finding): FindingCopy {
         title: consistent ? "Training recorded consistently" : "Fewer than two recorded sessions per week",
         description: `Averaging ${avgPerWeek} recorded sessions/week across ${weeksTotal} evaluated weeks.`,
         action: consistent
-          ? "Keep it up."
+          ? "This describes how often sessions were recorded, not how effective they were."
           : "Check for missing logs before using this average to adjust your schedule.",
       };
     }

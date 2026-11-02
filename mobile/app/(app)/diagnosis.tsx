@@ -4,76 +4,150 @@
  * Volume, recovery and weight trend all have their own screens already;
  * this one is the synthesis, so it lives one tap away from Volume (see the
  * entry card at the top of app/(app)/(tabs)/volume.tsx) rather than as a
- * 5th tab. Reached from Volume, not buried in Profile, but it's its own
- * route — not a second view toggled in place — because it has its own
- * period selector (4/8/12 weeks) instead of Volume's week-by-week browser,
- * and cramming both interaction models into one screen would have made
- * neither of them simple.
+ * 5th tab. It has its own period selector (4/8/12 weeks) instead of Volume's
+ * week-by-week browser.
+ *
+ * It is a rule-based reading of what the user recorded, not a diagnosis. The screen
+ * first says what each area (training, sleep, body weight) rests on, with that area's
+ * own dates and one of five distinct states, then lists the few observations those
+ * records support, each with a suggestion and a real place to act. It never says why
+ * progress is slow and never calls the whole assessment complete. The logic that builds
+ * this view lives in src/diagnosis/assessment.ts.
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as analyticsApi from "../../src/api/analytics";
-import type { Finding } from "../../src/api/analytics";
+import { useAuth } from "../../src/auth/AuthContext";
+import { buildAssessment, hrefFor } from "../../src/diagnosis/assessment";
+import type {
+  AssessmentAction,
+  DomainView,
+  ObservationView,
+} from "../../src/diagnosis/assessment";
 import { createDiagnosisLoader, initialDiagnosisState } from "../../src/diagnosis/loader";
-import { describeFinding, describeTrainingCoverage } from "../../src/diagnosis/messages";
 import { light, lightStatus } from "../../src/lightTheme";
 
 const PERIODS = [4, 8, 12] as const;
 
-/**
- * The code alone can repeat within one response (volume_below_mev per
- * muscle, muscles_untrained per region), so fold in whichever field tells
- * those apart. Every other code is emitted at most once, so the code by
- * itself is already unique for them.
- */
-function findingKey(finding: Finding): string {
-  const discriminator = finding.data.muscle ?? finding.data.region;
-  return discriminator ? `${finding.code}-${String(discriminator)}` : finding.code;
-}
-
-/**
- * Severity shown as an icon and a spoken word as well as a colour, so it never
- * rests on colour alone. The colours are the light-surface status tones the
- * Volume screen uses (the same "above MRV / below MEV / optimal / no reference").
- */
-const SEVERITY: Record<
-  Finding["severity"],
-  { color: string; icon: React.ComponentProps<typeof Ionicons>["name"]; label: string }
-> = {
-  critical: { color: lightStatus.above_mrv.text, icon: "alert-circle", label: "Critical" },
-  warning: { color: lightStatus.below_mev.text, icon: "warning-outline", label: "Warning" },
-  good: { color: lightStatus.optimal.text, icon: "checkmark-circle-outline", label: "Good" },
-  info: { color: lightStatus.no_reference.text, icon: "information-circle-outline", label: "Information" },
+/** A word and an icon say how much a domain's records can support; colour never carries it alone. */
+const STATE_ICON: Record<DomainView["state"], React.ComponentProps<typeof Ionicons>["name"]> = {
+  sufficient: "checkmark-circle-outline",
+  insufficient: "hourglass-outline",
+  stale: "time-outline",
+  missing: "remove-circle-outline",
+  not_applicable: "information-circle-outline",
 };
 
-function FindingCard({ finding }: { finding: Finding }) {
-  const copy = describeFinding(finding);
-  const severity = SEVERITY[finding.severity];
+const KIND: Record<
+  ObservationView["kind"],
+  { icon: React.ComponentProps<typeof Ionicons>["name"]; label: string; color: string }
+> = {
+  check: { icon: "eye-outline", label: "Worth checking", color: lightStatus.below_mev.text },
+  consistent: { icon: "checkmark-circle-outline", label: "Looks consistent", color: lightStatus.optimal.text },
+};
 
+function Actions({
+  actions,
+  onOpen,
+}: {
+  actions: AssessmentAction[];
+  onOpen: (action: AssessmentAction) => void;
+}) {
+  if (actions.length === 0) return null;
   return (
-    <View
-      accessible
-      accessibilityLabel={`${severity.label}. ${copy.title}. ${copy.description} ${copy.action}`}
-      style={styles.card}
-    >
-      <View style={styles.cardHeader}>
-        <Ionicons name={severity.icon} size={20} color={severity.color} />
-        <Text style={[styles.cardTitle, { color: severity.color }]}>{copy.title}</Text>
+    <View style={styles.actions}>
+      {actions.map((action, index) => (
+        <Pressable
+          key={action.label}
+          accessibilityRole="button"
+          accessibilityLabel={action.label}
+          accessibilityHint={action.hint}
+          style={({ pressed }) => [
+            index === 0 ? styles.actionPrimary : styles.actionSecondary,
+            pressed && styles.pressed,
+          ]}
+          onPress={() => onOpen(action)}
+        >
+          <Text style={index === 0 ? styles.actionPrimaryText : styles.actionSecondaryText}>
+            {action.label}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function DomainCard({ view, onOpen }: { view: DomainView; onOpen: (action: AssessmentAction) => void }) {
+  return (
+    <View style={styles.card}>
+      <View
+        accessible
+        accessibilityRole="header"
+        accessibilityLabel={`${view.title}: ${view.stateLabel}`}
+        style={styles.cardHeader}
+      >
+        <Ionicons name={STATE_ICON[view.state]} size={20} color={light.text} accessible={false} />
+        <Text style={styles.cardTitle}>{view.title}</Text>
+        <Text style={styles.stateLabel}>{view.stateLabel}</Text>
       </View>
-      <Text style={styles.cardDescription}>{copy.description}</Text>
-      <View style={styles.cardAction}>
-        <Ionicons name="bulb-outline" size={16} color={light.textSecondary} />
-        <Text style={styles.cardActionText}>{copy.action}</Text>
+      <Text style={styles.cardDescription}>{view.windowText}</Text>
+      <Text style={styles.cardDescription}>{view.recordsText}</Text>
+      <Text style={styles.cardNote}>{view.note}</Text>
+      <Actions actions={view.actions} onOpen={onOpen} />
+    </View>
+  );
+}
+
+function ObservationCard({
+  view,
+  number,
+  onOpen,
+}: {
+  view: ObservationView;
+  number: number | null;
+  onOpen: (action: AssessmentAction) => void;
+}) {
+  const kind = KIND[view.kind];
+  const prefix = number ? `${number}. ` : "";
+  return (
+    <View style={styles.card}>
+      <View
+        accessible
+        accessibilityLabel={`${prefix}${kind.label}. ${view.title}. ${view.description} Suggestion: ${view.suggestion}`}
+      >
+        <View style={styles.cardHeader}>
+          <Ionicons name={kind.icon} size={18} color={kind.color} accessible={false} />
+          <Text style={[styles.kindLabel, { color: kind.color }]}>
+            {prefix}
+            {kind.label}
+          </Text>
+        </View>
+        <Text style={styles.observationTitle}>{view.title}</Text>
+        <Text style={styles.cardDescription}>{view.description}</Text>
+        <View style={styles.cardAction}>
+          <Ionicons name="bulb-outline" size={16} color={light.textSecondary} accessible={false} />
+          <Text style={styles.cardActionText}>{view.suggestion}</Text>
+        </View>
       </View>
+      <Actions actions={view.actions} onOpen={onOpen} />
     </View>
   );
 }
 
 export default function DiagnosisScreen() {
+  const { user } = useAuth();
+  // Keyed by account so a different user never sees, or reloads over, another's result.
+  return <Diagnosis key={user?.id ?? "signed-out"} />;
+}
+
+function Diagnosis() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [weeks, setWeeks] = useState<(typeof PERIODS)[number]>(4);
   const [state, setState] = useState(initialDiagnosisState);
   const [loader] = useState(() => createDiagnosisLoader(analyticsApi.fetchDiagnosis, setState));
@@ -83,7 +157,9 @@ export default function DiagnosisScreen() {
   const loading = !current || state.loading;
   const refreshing = current && state.refreshing;
   const error = current ? state.error : null;
+  const view = useMemo(() => (result ? buildAssessment(result) : null), [result]);
 
+  // Every focus, so a sleep record saved on the check-in screen is reflected on return.
   useFocusEffect(
     useCallback(() => {
       void loader.load(weeks);
@@ -93,10 +169,20 @@ export default function DiagnosisScreen() {
 
   const handleRefresh = () => loader.load(weeks, true);
 
+  const open = (action: AssessmentAction) => {
+    const href = hrefFor(action.target);
+    // The two tab destinations switch tabs instead of stacking another copy on top.
+    if (action.target.kind === "volume" || action.target.kind === "training-records") {
+      router.navigate(href as never);
+    } else {
+      router.push(href as never);
+    }
+  };
+
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 24 }]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -126,68 +212,85 @@ export default function DiagnosisScreen() {
         ))}
       </View>
 
-      {!loading && error && (
+      {!loading && error ? (
         <View style={styles.centered}>
-          <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
-          {result && <Text style={styles.emptyText}>Showing the previous result for this period.</Text>}
+          <Text accessibilityRole="alert" style={styles.error}>
+            {result ? `Could not refresh. ${error}` : error}
+          </Text>
+          {result ? (
+            <Text style={styles.emptyText}>Showing the previous result for this period.</Text>
+          ) : null}
           <Pressable accessibilityRole="button" style={styles.retry} onPress={handleRefresh}>
             <Text style={styles.retryText}>Try again</Text>
           </Pressable>
         </View>
-      )}
-
-      {!loading && result?.training_coverage && (
-        <View style={styles.card}>
-          <Text style={styles.cardDescription}>
-            {describeTrainingCoverage(result.training_coverage)}
-          </Text>
-          <Text style={styles.cardDescription}>
-            Sleep and weight use the selected {result.period_weeks}-week window through today.
-          </Text>
-        </View>
-      )}
+      ) : null}
 
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading" />
         </View>
-      ) : error && !result ? null : !result?.has_enough_data ? (
-        <View style={styles.centered}>
-          <Ionicons name="hourglass-outline" size={28} color={light.textSecondary} />
-          <Text style={styles.emptyTitle}>Not enough training records for this period</Text>
-          <Text style={styles.emptyText}>
-            {result?.training_coverage
-              ? `Working sets must be recorded in at least ${result.training_coverage.required_weeks_with_work} completed weeks. Continue logging or choose a wider period if you have older records.`
-              : "More training history is needed before this period can be evaluated."}
+      ) : view && result ? (
+        <>
+          <Text accessibilityRole="header" style={styles.sectionLabel}>
+            What was evaluated
           </Text>
-        </View>
-      ) : result.findings.length === 0 ? (
-        <View style={styles.centered}>
-          <Ionicons name="checkmark-circle-outline" size={28} color={light.positive} />
-          <Text style={styles.emptyTitle}>Nothing stands out</Text>
-          <Text style={styles.emptyText}>
-            No findings were generated from the available records for this period.
+          <Text style={styles.intro}>
+            Each area is judged on its own records and dates. {view.sufficientCount} of 3 have
+            enough records for the last {result.period_weeks} weeks.
           </Text>
-        </View>
-      ) : (
-        result.findings.map((finding) => (
-          // The code alone is not unique: volume_below_mev/above_mrv can
-          // list several muscles, and muscles_untrained several regions, in
-          // the same response. muscle/region together with the code is.
-          <FindingCard key={findingKey(finding)} finding={finding} />
-        ))
-      )}
+          {view.domains.map((domain) => (
+            <DomainCard key={domain.key} view={domain} onOpen={open} />
+          ))}
+
+          <Text accessibilityRole="header" style={styles.sectionLabel}>
+            Observations
+          </Text>
+          {view.observations.map((observation, index) => (
+            <ObservationCard
+              key={observation.key}
+              view={observation}
+              number={observation.kind === "check" ? index + 1 : null}
+              onOpen={open}
+            />
+          ))}
+          {view.empty ? (
+            <View style={styles.card} accessibilityLiveRegion="polite">
+              <View style={styles.cardHeader}>
+                <Ionicons
+                  name={view.empty.kind === "insufficient" ? "hourglass-outline" : "information-circle-outline"}
+                  size={20}
+                  color={light.text}
+                  accessible={false}
+                />
+                <Text style={styles.cardTitle}>{view.empty.title}</Text>
+              </View>
+              <Text style={styles.cardDescription}>{view.empty.text}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.limits}>
+            {view.limitations.map((line) => (
+              <Text key={line} style={styles.limitText}>
+                {line}
+              </Text>
+            ))}
+            {view.referenceNote ? <Text style={styles.limitText}>{view.referenceNote}</Text> : null}
+          </View>
+        </>
+      ) : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: light.background },
-  content: { padding: 16, paddingBottom: 32 },
+  content: { padding: 16 },
   centered: { alignItems: "center", justifyContent: "center", padding: 32, gap: 8 },
   error: { color: light.danger, fontSize: 15, lineHeight: 21, textAlign: "center", padding: 16 },
   retry: { minHeight: 44, justifyContent: "center", paddingHorizontal: 16 },
   retryText: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
+  pressed: { backgroundColor: light.pressed },
 
   // Segmented period choice: the selected one is filled, the others outlined;
   // the weeks are in the text, so selection never relies on colour alone.
@@ -207,7 +310,8 @@ const styles = StyleSheet.create({
   chipText: { color: light.text, fontSize: 14, fontWeight: "600" },
   chipTextActive: { color: light.onPrimary },
 
-  emptyTitle: { color: light.text, fontSize: 17, fontWeight: "600", lineHeight: 22, marginTop: 4, textAlign: "center" },
+  sectionLabel: { color: light.textSecondary, fontSize: 13, fontWeight: "600", marginLeft: 4, marginTop: 8, marginBottom: 6 },
+  intro: { color: light.textSecondary, fontSize: 14, lineHeight: 20, marginHorizontal: 4, marginBottom: 12 },
   emptyText: { color: light.textSecondary, fontSize: 15, lineHeight: 21, textAlign: "center" },
 
   card: {
@@ -217,8 +321,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   cardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  cardTitle: { flex: 1, fontSize: 16, fontWeight: "600", lineHeight: 22 },
+  cardTitle: { flex: 1, color: light.text, fontSize: 16, fontWeight: "600", lineHeight: 22 },
+  stateLabel: { color: light.text, fontSize: 13, fontWeight: "600", lineHeight: 22, flexShrink: 1, textAlign: "right" },
+  kindLabel: { flex: 1, fontSize: 13, fontWeight: "700", lineHeight: 18 },
+  observationTitle: { color: light.text, fontSize: 16, fontWeight: "600", lineHeight: 22, marginTop: 6 },
   cardDescription: { color: light.textSecondary, fontSize: 14, lineHeight: 20, marginTop: 8 },
+  cardNote: { color: light.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 8 },
   cardAction: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -229,4 +337,19 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   cardActionText: { flex: 1, color: light.text, fontSize: 14, lineHeight: 20 },
+
+  actions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 12 },
+  actionPrimary: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: light.primary,
+  },
+  actionPrimaryText: { color: light.onPrimary, fontSize: 14, fontWeight: "600" },
+  actionSecondary: { minHeight: 44, justifyContent: "center", paddingHorizontal: 6, borderRadius: 8 },
+  actionSecondaryText: { color: light.text, fontSize: 14, fontWeight: "600", textDecorationLine: "underline" },
+
+  limits: { gap: 8, marginTop: 8, paddingHorizontal: 4 },
+  limitText: { color: light.textSecondary, fontSize: 12, lineHeight: 18 },
 });

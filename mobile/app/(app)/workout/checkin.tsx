@@ -26,41 +26,9 @@ import * as programsApi from "../../../src/api/programs";
 import * as readinessApi from "../../../src/api/readiness";
 import * as workoutsApi from "../../../src/api/workouts";
 import { light } from "../../../src/lightTheme";
+import { buildCheckinPatch } from "../../../src/readiness/checkinPayload";
+import { RatingRow } from "../../../src/readiness/RatingRow";
 import { setActiveWorkout } from "../../../src/workout/activeWorkout";
-
-function RatingRow({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number | null;
-  onChange: (value: number | null) => void;
-}) {
-  return (
-    <View style={styles.ratingRow}>
-      <Text style={styles.ratingLabel}>{label}</Text>
-      <View style={styles.ratingOptions}>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <Pressable
-            key={n}
-            accessibilityRole="button"
-            accessibilityLabel={`${label}, ${n} of 5`}
-            accessibilityState={{ selected: value === n }}
-            style={[styles.ratingDot, value === n && styles.ratingDotActive]}
-            // Tapping the already-selected value clears it: every field here
-            // is optional, so there must be a way back to "unanswered".
-            onPress={() => onChange(value === n ? null : n)}
-          >
-            <Text style={[styles.ratingDotText, value === n && styles.ratingDotTextActive]}>
-              {n}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
 
 function SorenessSection({
   muscles,
@@ -103,12 +71,6 @@ function SorenessSection({
         ))}
     </View>
   );
-}
-
-function parseSleepHours(raw: string): number | null {
-  if (raw.trim() === "") return null;
-  const parsed = Number(raw.replace(",", "."));
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 24 ? parsed : null;
 }
 
 export default function ReadinessCheckin() {
@@ -170,11 +132,10 @@ export default function ReadinessCheckin() {
     setSubmitting(true);
     setError(null);
     try {
-      await readinessApi.upsertTodayReadiness({
-        sleep_hours: parseSleepHours(sleepHours),
-        energy,
-        soreness: Object.keys(soreness).length > 0 ? soreness : null,
-      });
+      // Only what was filled in: a blank field must not erase a value recorded
+      // earlier today (for example from the standalone daily check-in).
+      const patch = buildCheckinPatch({ sleepText: sleepHours, energy, soreness });
+      if (patch) await readinessApi.patchTodayReadiness(patch);
     } catch {
       // Best-effort: a failed save should not stand between the user and
       // the workout they came here to start.
@@ -280,25 +241,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-
-  // The label sits above its five choices so long muscle names and larger
-  // text wrap instead of squeezing the buttons.
-  ratingRow: { marginBottom: 20 },
-  ratingLabel: { color: light.text, fontSize: 15, lineHeight: 20, marginBottom: 8 },
-  ratingOptions: { flexDirection: "row", gap: 8 },
-  ratingDot: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: 10,
-    backgroundColor: light.surface,
-    borderColor: light.separator,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  ratingDotActive: { backgroundColor: light.primary, borderColor: light.primary },
-  ratingDotText: { color: light.text, fontSize: 15, fontWeight: "600" },
-  ratingDotTextActive: { color: light.onPrimary },
 
   section: {
     backgroundColor: light.surface,

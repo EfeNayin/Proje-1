@@ -312,6 +312,12 @@ export default function ProfileScreen() {
             label="Nutrition Goals"
             hint="View and update your targets"
             onPress={() => router.push("/profile/nutrition-goals")}
+          />
+          <MenuRow
+            icon="moon-outline"
+            label="Daily check-in"
+            hint="Record today's sleep and energy"
+            onPress={() => router.push("/daily-checkin")}
             last
           />
         </View>
