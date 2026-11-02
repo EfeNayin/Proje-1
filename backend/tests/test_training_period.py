@@ -57,7 +57,9 @@ async def test_old_history_and_invalid_or_single_week_work_cannot_unlock_period(
                      reps=0 if pattern == "zero" else 8, sets=0 if pattern == "empty" else 1)
     body = (await client.get("/analytics/diagnosis", headers=auth_headers)).json()
     assert body["has_enough_data"] is False
-    assert body["findings"] == []
+    # Insufficient training withholds every training-derived finding; only the sleep
+    # coverage note (no sleep records here) remains.
+    assert [f["code"] for f in body["findings"]] == ["readiness_no_data"]
     assert body["training_coverage"]["weeks_with_work"] < 2
 
 

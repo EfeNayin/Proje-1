@@ -129,13 +129,75 @@ class TrainingCoverage(BaseModel):
     required_weeks_with_work: int = 2
 
 
+DomainState = Literal["sufficient", "insufficient", "stale", "missing", "not_applicable"]
+"""How much a domain's records can support, kept apart on purpose:
+
+- sufficient: enough records, recent enough, for the comparison this domain makes.
+- insufficient: some records exist, but too few (or spanning too short a time).
+- stale: enough records, but the latest one is too old to describe the present.
+- missing: no records at all in the evaluated window. This says nothing about what
+  happened: an empty log is not evidence of no training, zero hours of sleep or no
+  change in weight.
+- not_applicable: the comparison does not apply (weight without a directional goal).
+"""
+
+DomainReason = Literal[
+    "no_working_sets",
+    "no_completed_week",
+    "too_few_weeks_with_work",
+    "no_sleep_records",
+    "too_few_nights",
+    "stale_records",
+    "no_measurements",
+    "too_few_measurements",
+    "short_span",
+    "stale_measurements",
+    "no_goal",
+    "goal_maintain",
+]
+
+
+class DomainCoverage(BaseModel):
+    """What one domain's evaluation rests on: its own window and its own records.
+
+    The windows differ: training covers whole completed local weeks, sleep and weight
+    cover the selected number of days up to today. `period_*` is the window that was
+    searched; `first_recorded_on` / `last_recorded_on` are the dates of the records
+    actually found in it (training: the days with recorded working sets).
+    `latest_age_days` is the age of the newest record (sleep and weight only).
+    """
+
+    state: DomainState
+    reason: DomainReason | None
+    period_start: date | None
+    period_end: date | None
+    record_count: int
+    first_recorded_on: date | None
+    last_recorded_on: date | None
+    latest_age_days: int | None
+
+
+class DiagnosisDomains(BaseModel):
+    training: DomainCoverage
+    sleep: DomainCoverage
+    weight: DomainCoverage
+
+
 class DiagnosisResponse(BaseModel):
     """Structural findings across volume, recovery, weight trend and
     consistency. Capped at a handful of findings — see analytics/service.py's
     diagnosis() for why: showing everything is the same as showing nothing.
+
+    `has_enough_data` is about TRAINING records only (the gate for the volume and
+    consistency findings). It does not say the whole assessment is complete: sleep and
+    weight are judged on their own records, and their findings are returned even when
+    training is insufficient. `domains` states what each one rests on.
     """
 
     period_weeks: int
     has_enough_data: bool
     training_coverage: TrainingCoverage
     findings: list[Finding]
+    today: date
+    timezone: str
+    domains: DiagnosisDomains

@@ -212,7 +212,10 @@ class TestShape:
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["has_enough_data"] is False
-        assert body["findings"] == []
+        # Training gates only the volume and consistency findings; with no sleep records
+        # the sleep coverage note is the only finding left, and nothing is said about
+        # training, muscles or weight.
+        assert [f["code"] for f in body["findings"]] == ["readiness_no_data"]
         assert body["period_weeks"] == 4
 
     async def test_reports_the_requested_period(
@@ -393,4 +396,4 @@ class TestIsolation:
         body = (await client.get("/analytics/diagnosis", headers=auth_headers)).json()
 
         assert body["has_enough_data"] is False
-        assert body["findings"] == []
+        assert [f["code"] for f in body["findings"]] == ["readiness_no_data"]

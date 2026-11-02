@@ -19,13 +19,17 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.domains.analytics.schemas import (
+    DiagnosisDomains,
     DiagnosisQuery,
     DiagnosisResponse,
+    DomainCoverage,
+    DomainReason,
+    DomainState,
     Finding,
     MuscleWeeklyVolume,
     TrainingCoverage,
@@ -377,9 +381,15 @@ def _volume_candidates(
     return candidates
 
 
-async def _readiness_finding(db: AsyncSession, user: User, weeks: int) -> Finding | None:
-    """Recovery signal: average sleep over the period, or a call-out that
-    there is not enough check-in data to say anything at all."""
+async def _sleep_assessment(
+    db: AsyncSession, user: User, weeks: int
+) -> tuple[DomainCoverage, Finding | None]:
+    """Recovery signal from recorded sleep, plus what that signal rests on.
+
+    The window is the selected number of days up to the user's local today (a search
+    boundary, not a measurement duration). A night without a record is unknown, never
+    zero hours: only recorded nights are averaged.
+    """
     today = _today_in(user.timezone)
     window_start = today - timedelta(days=weeks * 7 - 1)
 
@@ -407,14 +417,29 @@ async def _readiness_finding(db: AsyncSession, user: User, weeks: int) -> Findin
         "latest_age_days": latest_age,
     }
 
-    if len(nights) < _MIN_READINESS_NIGHTS or (
-        latest_age is not None and latest_age > _MAX_SLEEP_AGE_DAYS
-    ):
-        return Finding(
+    state: DomainState
+    reason: DomainReason | None
+    if not nights:
+        state, reason = "missing", "no_sleep_records"
+    elif len(nights) < _MIN_READINESS_NIGHTS:
+        state, reason = "insufficient", "too_few_nights"
+    elif latest_age is not None and latest_age > _MAX_SLEEP_AGE_DAYS:
+        state, reason = "stale", "stale_records"
+    else:
+        state, reason = "sufficient", None
+    domain = DomainCoverage(
+        state=state, reason=reason, period_start=window_start, period_end=today,
+        record_count=len(nights),
+        first_recorded_on=raw_nights[0].log_date if raw_nights else None,
+        last_recorded_on=raw_nights[-1].log_date if raw_nights else None,
+        latest_age_days=latest_age,
+    )
+
+    if state != "sufficient":
+        return domain, Finding(
             code="readiness_no_data",
             severity="info",
-            data={**coverage, "reason": "too_few_nights" if len(nights) < _MIN_READINESS_NIGHTS
-                  else "stale_records"},
+            data={**coverage, "reason": "stale_records" if state == "stale" else "too_few_nights"},
         )
 
     avg_hours = sum(nights, start=Decimal("0")) / len(nights)
@@ -426,24 +451,28 @@ async def _readiness_finding(db: AsyncSession, user: User, weeks: int) -> Findin
     }
 
     if avg_hours < _VERY_LOW_SLEEP_HOURS:
-        return Finding(code="sleep_very_low", severity="critical", data=sleep_data)
+        return domain, Finding(code="sleep_very_low", severity="critical", data=sleep_data)
     if avg_hours < _LOW_SLEEP_HOURS:
-        return Finding(code="sleep_low", severity="warning", data=sleep_data)
-    return None
+        return domain, Finding(code="sleep_low", severity="warning", data=sleep_data)
+    return domain, None
 
 
-async def _weight_finding(db: AsyncSession, user: User, weeks: int) -> Finding | None:
+async def _readiness_finding(db: AsyncSession, user: User, weeks: int) -> Finding | None:
+    """The sleep finding alone (see _sleep_assessment for the coverage that goes with it)."""
+    return (await _sleep_assessment(db, user, weeks))[1]
+
+
+async def _weight_assessment(
+    db: AsyncSession, user: User, weeks: int
+) -> tuple[DomainCoverage, Finding | None]:
     """Describe endpoint weight change over its actual observed date interval.
 
     The selected window is a search boundary, not the measurement duration.
-    This compares direction only; it does not infer intake or an ideal pace.
+    This compares direction only; it does not infer intake, an ideal pace, or muscle
+    gain: body weight does not separate muscle from fat or water. Without a
+    directional goal the comparison does not apply, but the records are still reported.
     """
     goal = user.nutrition_goal
-    if goal is None or goal == "maintain":
-        # Nothing directional to check: maintain has no "wrong direction",
-        # and without a goal we don't know which direction would be right.
-        return None
-
     today = _today_in(user.timezone)
     window_start = today - timedelta(days=weeks * 7 - 1)
     rows = (
@@ -470,18 +499,36 @@ async def _weight_finding(db: AsyncSession, user: User, weeks: int) -> Finding |
         "required_span_days": _MIN_WEIGHT_SPAN_DAYS,
         "latest_age_days": latest_age_days,
     }
-    reason = None
-    if len(rows) < _MIN_WEIGHT_MEASUREMENTS:
-        reason = "too_few_measurements"
+
+    def describe(state: DomainState, reason: DomainReason | None) -> DomainCoverage:
+        return DomainCoverage(
+            state=state, reason=reason, period_start=window_start, period_end=today,
+            record_count=len(rows),
+            first_recorded_on=rows[0].measured_on if rows else None,
+            last_recorded_on=rows[-1].measured_on if rows else None,
+            latest_age_days=latest_age_days,
+        )
+
+    if goal is None or goal == "maintain":
+        # Nothing directional to check: maintain has no "wrong direction",
+        # and without a goal we don't know which direction would be right.
+        return describe("not_applicable", "no_goal" if goal is None else "goal_maintain"), None
+
+    shortfall: tuple[DomainState, DomainReason, str] | None = None
+    if not rows:
+        shortfall = ("missing", "no_measurements", "too_few_measurements")
+    elif len(rows) < _MIN_WEIGHT_MEASUREMENTS:
+        shortfall = ("insufficient", "too_few_measurements", "too_few_measurements")
     elif span_days < _MIN_WEIGHT_SPAN_DAYS:
-        reason = "short_span"
+        shortfall = ("insufficient", "short_span", "short_span")
     elif latest_age_days is not None and latest_age_days > _MAX_WEIGHT_AGE_DAYS:
-        reason = "stale_measurements"
-    if reason is not None:
-        return Finding(
+        shortfall = ("stale", "stale_measurements", "stale_measurements")
+    if shortfall is not None:
+        state, reason, finding_reason = shortfall
+        return describe(state, reason), Finding(
             code="weight_no_data",
             severity="info",
-            data={**coverage, "reason": reason},
+            data={**coverage, "reason": finding_reason},
         )
 
     first, last = rows[0], rows[-1]
@@ -492,16 +539,22 @@ async def _weight_finding(db: AsyncSession, user: User, weeks: int) -> Finding |
         "change_kg": float(round(change_kg, 2)),
         "change_pct": float(round(change_pct, 2)),
     }
+    domain = describe("sufficient", None)
 
     if goal == "bulk":
         if change_pct < _STALL_THRESHOLD_PCT:
-            return Finding(code="weight_stalled_bulk", severity="warning", data=weight_data)
-        return Finding(code="weight_on_track", severity="good", data=weight_data)
+            return domain, Finding(code="weight_stalled_bulk", severity="warning", data=weight_data)
+        return domain, Finding(code="weight_on_track", severity="good", data=weight_data)
 
     # goal == "cut": the only branch left after the maintain/None guard above.
     if change_pct > -_STALL_THRESHOLD_PCT:
-        return Finding(code="weight_stalled_cut", severity="warning", data=weight_data)
-    return Finding(code="weight_on_track", severity="good", data=weight_data)
+        return domain, Finding(code="weight_stalled_cut", severity="warning", data=weight_data)
+    return domain, Finding(code="weight_on_track", severity="good", data=weight_data)
+
+
+async def _weight_finding(db: AsyncSession, user: User, weeks: int) -> Finding | None:
+    """The weight finding alone (see _weight_assessment for the coverage that goes with it)."""
+    return (await _weight_assessment(db, user, weeks))[1]
 
 
 def _consistency_finding(coverage: TrainingCoverage) -> Finding | None:
@@ -517,33 +570,103 @@ def _consistency_finding(coverage: TrainingCoverage) -> Finding | None:
     return None
 
 
+async def _training_domain(
+    db: AsyncSession, user: User, coverage: TrainingCoverage
+) -> DomainCoverage:
+    """What the training evaluation rests on: whole completed local weeks, and only
+    sessions with recorded working sets. No record is not "no training": the user may
+    simply not have logged it."""
+    state: DomainState
+    reason: DomainReason | None
+    first_on: date | None = None
+    last_on: date | None = None
+    if coverage.period_start is not None:
+        local_time = func.timezone(user.timezone, Workout.performed_at)
+        first_on, last_on = (
+            await db.execute(
+                select(func.min(local_time).cast(Date), func.max(local_time).cast(Date)).where(
+                    Workout.user_id == user.id,
+                    _has_working_set(),
+                    local_time >= coverage.period_start,
+                    local_time < coverage.period_end + timedelta(days=1),
+                )
+            )
+        ).one()
+
+    if coverage.weeks_with_work >= _MIN_TRAINING_WEEKS:
+        state, reason = "sufficient", None
+    elif coverage.period_start is None:
+        # Nothing recorded yet, or only in the unfinished first/current week.
+        has_any = await db.scalar(
+            select(Workout.id)
+            .where(Workout.user_id == user.id, Workout.performed_at <= datetime.now(UTC),
+                   _has_working_set())
+            .limit(1)
+        )
+        if has_any is None:
+            state, reason = "missing", "no_working_sets"
+        else:
+            state, reason = "insufficient", "no_completed_week"
+    elif coverage.weeks_with_work == 0:
+        state, reason = "missing", "no_working_sets"
+    else:
+        state, reason = "insufficient", "too_few_weeks_with_work"
+    return DomainCoverage(
+        state=state, reason=reason, period_start=coverage.period_start,
+        period_end=coverage.period_end if coverage.period_start is not None else None,
+        record_count=coverage.sessions, first_recorded_on=first_on, last_recorded_on=last_on,
+        latest_age_days=None,
+    )
+
+
 async def diagnosis(db: AsyncSession, user: User, query: DiagnosisQuery) -> DiagnosisResponse:
     """The "why am I not growing" screen's endpoint. See the module comment
     above for the ranking and budget rules that keep this from turning into
-    a wall of text."""
+    a wall of text.
+
+    Each domain is judged on its own records. Training sufficiency gates only the
+    volume and consistency findings; sleep and weight findings (and their coverage)
+    are returned either way, so a user with plenty of sleep records but little
+    training still sees what those records support, and `domains` says which parts of
+    the assessment are missing rather than hiding the whole result.
+    """
     coverage = await _training_coverage(db, user, query.weeks)
-    if coverage.weeks_with_work < _MIN_TRAINING_WEEKS:
-        return DiagnosisResponse(period_weeks=query.weeks, has_enough_data=False,
-                                 training_coverage=coverage, findings=[])
+    training_ok = coverage.weeks_with_work >= _MIN_TRAINING_WEEKS
+    findings: list[Finding] = []
 
-    muscle_groups_query = select(MuscleGroup).order_by(MuscleGroup.region, MuscleGroup.name)
-    muscle_groups = list((await db.scalars(muscle_groups_query)).all())
-    current_week, by_week = await _week_muscle_aggregates(
-        db, user, coverage.completed_weeks,
-        last_week=coverage.period_end - timedelta(days=6),
-    )
+    if training_ok:
+        muscle_groups_query = select(MuscleGroup).order_by(MuscleGroup.region, MuscleGroup.name)
+        muscle_groups = list((await db.scalars(muscle_groups_query)).all())
+        current_week, by_week = await _week_muscle_aggregates(
+            db, user, coverage.completed_weeks,
+            last_week=coverage.period_end - timedelta(days=6),
+        )
+        candidates = _volume_candidates(
+            muscle_groups, by_week, current_week, coverage.completed_weeks
+        )
+        candidates.sort(key=lambda candidate: candidate.score, reverse=True)
+        findings = [candidate.finding for candidate in candidates[:_VOLUME_FINDING_BUDGET]]
 
-    candidates = _volume_candidates(muscle_groups, by_week, current_week, coverage.completed_weeks)
-    candidates.sort(key=lambda candidate: candidate.score, reverse=True)
-    findings = [candidate.finding for candidate in candidates[:_VOLUME_FINDING_BUDGET]]
-
+    sleep_domain, sleep_finding = await _sleep_assessment(db, user, query.weeks)
+    weight_domain, weight_finding = await _weight_assessment(db, user, query.weeks)
     for finding in (
-        await _readiness_finding(db, user, query.weeks),
-        await _weight_finding(db, user, query.weeks),
-        _consistency_finding(coverage),
+        sleep_finding,
+        weight_finding,
+        _consistency_finding(coverage) if training_ok else None,
     ):
         if finding is not None:
             findings.append(finding)
 
-    return DiagnosisResponse(period_weeks=query.weeks, has_enough_data=True,
-                             training_coverage=coverage, findings=findings)
+    return DiagnosisResponse(
+        period_weeks=query.weeks,
+        has_enough_data=training_ok,
+        training_coverage=coverage,
+        findings=findings,
+        today=_today_in(user.timezone),
+        timezone=user.timezone,
+        domains=DiagnosisDomains(
+            training=await _training_domain(db, user, coverage),
+            sleep=sleep_domain,
+            weight=weight_domain,
+        ),
+    )

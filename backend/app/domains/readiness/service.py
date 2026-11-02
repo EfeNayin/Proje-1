@@ -20,11 +20,12 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ValidationAppError
+from app.core.exceptions import ConflictError, ValidationAppError
 from app.domains.readiness.schemas import (
     ReadinessHistoryQuery,
     ReadinessHistoryResponse,
     ReadinessLogRead,
+    ReadinessPatch,
     ReadinessUpsert,
 )
 from app.models import MuscleGroup, ReadinessLog, User
@@ -103,6 +104,38 @@ async def upsert_today(db: AsyncSession, user: User, payload: ReadinessUpsert) -
         .returning(ReadinessLog)
     )
 
+    row = (await db.execute(stmt)).scalar_one()
+    await db.commit()
+    return ReadinessLogRead.model_validate(row)
+
+
+async def patch_today(db: AsyncSession, user: User, payload: ReadinessPatch) -> ReadinessLogRead:
+    """Change only the sent fields of today's log, creating it if there is none.
+
+    One INSERT ... ON CONFLICT DO UPDATE whose SET lists just the sent fields, so a
+    concurrent edit of a different field is never overwritten by a stale read-modify-
+    write, and a field that was not sent is never replaced by null.
+    """
+    changes = payload.model_dump(exclude_unset=True, exclude={"expected_log_date"})
+    if not changes:
+        raise ValidationAppError("Nothing to save: send at least one field.")
+    await _assert_soreness_keys_known(db, payload.soreness)
+    log_date = _today_in(user.timezone)
+    if payload.expected_log_date is not None and payload.expected_log_date != log_date:
+        raise ConflictError(
+            f"The day changed: today's check-in is for {log_date.isoformat()}, not "
+            f"{payload.expected_log_date.isoformat()}. Nothing was saved."
+        )
+
+    stmt = (
+        pg_insert(ReadinessLog)
+        .values(user_id=user.id, log_date=log_date, **changes)
+        .on_conflict_do_update(
+            index_elements=[ReadinessLog.user_id, ReadinessLog.log_date],
+            set_=changes,
+        )
+        .returning(ReadinessLog)
+    )
     row = (await db.execute(stmt)).scalar_one()
     await db.commit()
     return ReadinessLogRead.model_validate(row)
