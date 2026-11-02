@@ -45,9 +45,21 @@ export type ProgramSummary = {
   is_active: boolean;
 };
 
+/** Set while a program is a coach's preparation for one connected athlete. */
+export type PreparedFor = {
+  link_id: string;
+  lineage_id: string;
+  athlete: { username: string; first_name: string | null; last_name: string | null };
+};
+
 export type ProgramDetail = ProgramSummary & {
   notes: string | null;
   templates: WorkoutTemplate[];
+  /**
+   * Null for an ordinary program. While set, the program is edited here as usual but
+   * cannot be activated or deleted; it is published from Program management.
+   */
+  prepared_for?: PreparedFor | null;
 };
 
 export type TemplateStart = {
@@ -113,8 +125,8 @@ export function createTemplateWithExercises(
   });
 }
 
-export function getTemplate(id: string): Promise<WorkoutTemplate> {
-  return apiRequest<WorkoutTemplate>(`/templates/${id}`);
+export function getTemplate(id: string): Promise<WorkoutTemplate & { prepared_for?: PreparedFor | null }> {
+  return apiRequest<WorkoutTemplate & { prepared_for?: PreparedFor | null }>(`/templates/${id}`);
 }
 
 export function updateTemplate(

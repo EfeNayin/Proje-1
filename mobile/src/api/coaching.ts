@@ -286,7 +286,7 @@ export function getAthleteOverview(
 // vanish with it. Nothing here names an owner: the backend takes the caller
 // from the token and the connection or offer id.
 
-export type OfferStatus = "pending" | "accepted" | "declined";
+export type OfferStatus = "pending" | "accepted" | "declined" | "superseded";
 
 export type OfferExercise = {
   exercise_id: string;
@@ -322,19 +322,45 @@ type OfferBase = {
   exercise_count: number;
   sent_at: string;
   responded_at: string | null;
+  /** Which published version of a prepared program this is; null for a standalone offer. */
+  version: number | null;
+  /** Set when a newer version replaced this one before it was answered. */
+  superseded_at: string | null;
 };
 
-/** The coach's view of one sent offer. It never says which program the athlete ended up with. */
-export type SentOffer = OfferBase;
+/**
+ * The coach's view of one sent offer. It never says which program the athlete ended up
+ * with, or whether it is active: "accepted" only means they added a copy.
+ */
+export type SentOffer = OfferBase & { lineage_id: string | null };
 export type SentOfferDetail = SentOffer & { program: OfferProgram };
 export type SentOfferPage = { items: SentOffer[]; total: number; limit: number; offset: number };
 
 export type ReceivedOffer = OfferBase & {
   coach: Person;
-  /** The athlete's own copy once accepted; null while pending or declined. */
+  /** The athlete's own copy once accepted; null while pending or declined (or after deleting it). */
   program_id: string | null;
+  /** Once accepted: whether accepting made the new copy the active program, as recorded then. */
+  activated: boolean | null;
 };
-export type ReceivedOfferDetail = ReceivedOffer & { program: OfferProgram };
+
+/**
+ * What accepting would do to the athlete's programs, as of this read (the decision is
+ * made again when they accept). With `replaces_active_copy` the copy of an earlier
+ * accepted version is active now: it is kept, switched off, and the new copy takes over.
+ */
+export type AcceptanceEffect = {
+  kind: "inactive_copy" | "replaces_active_copy";
+  replaces_version: number | null;
+  replaces_program_name: string | null;
+  keeps_active_program_name: string | null;
+};
+
+export type ReceivedOfferDetail = ReceivedOffer & {
+  program: OfferProgram;
+  /** Only while the offer is waiting for an answer. */
+  acceptance: AcceptanceEffect | null;
+};
 export type ReceivedOfferPage = {
   items: ReceivedOffer[];
   total: number;
@@ -395,4 +421,97 @@ export function declineOffer(offerId: string): Promise<ReceivedOfferDetail> {
   return apiRequest<ReceivedOfferDetail>(`/coaching/program-offers/${offerId}/decline`, {
     method: "POST",
   });
+}
+
+// ── Prepared programs ────────────────────────────────────────────────────
+// A coach prepares one program for ONE connection and publishes it as numbered,
+// immutable versions. The coach edits the draft with the ordinary program
+// endpoints; publishing freezes it as an offer (see above).
+
+export type LineageSummary = {
+  id: string;
+  /** The coach's editable draft: an ordinary program they own. */
+  draft_program_id: string;
+  name: string;
+  /** Who it is for. */
+  athlete: Person;
+  created_at: string;
+  latest_version: number | null;
+  latest_status: OfferStatus | null;
+  pending_version: number | null;
+};
+
+export type LineageList = { items: LineageSummary[] };
+
+export type LineageDetail = LineageSummary & {
+  /** False only when the draft equals the newest published version. */
+  has_unpublished_changes: boolean;
+  /** Newest first. */
+  versions: SentOffer[];
+};
+
+export type LineageCreateInput = { name?: string; from_program_id?: string };
+
+/** What publishing would send right now, the number it would get and the version it would replace. */
+export type LineagePreview = ProgramPreview & {
+  lineage_id: string;
+  athlete: Person;
+  version: number;
+  replaces_version: number | null;
+};
+
+const lineagesPath = (linkId: string) => `/coaching/athletes/${linkId}/program-lineages`;
+
+export function listLineages(linkId: string): Promise<LineageList> {
+  return apiRequest<LineageList>(lineagesPath(linkId));
+}
+
+/** Safe to repeat with the same request id: the backend returns the preparation it already made. */
+export function createLineage(
+  linkId: string,
+  requestId: string,
+  input: LineageCreateInput,
+): Promise<LineageDetail> {
+  return apiRequest<LineageDetail>(`${lineagesPath(linkId)}/${requestId}`, {
+    method: "PUT",
+    body: input,
+  });
+}
+
+export function getLineage(linkId: string, lineageId: string): Promise<LineageDetail> {
+  return apiRequest<LineageDetail>(`${lineagesPath(linkId)}/${lineageId}`);
+}
+
+/** Only a preparation that was never published can be discarded. */
+export function discardLineage(linkId: string, lineageId: string): Promise<void> {
+  return apiRequest<void>(`${lineagesPath(linkId)}/${lineageId}`, { method: "DELETE" });
+}
+
+export function getLineagePreview(linkId: string, lineageId: string): Promise<LineagePreview> {
+  return apiRequest<LineagePreview>(`${lineagesPath(linkId)}/${lineageId}/preview`);
+}
+
+/**
+ * Confirm the previewed content. The backend rebuilds the draft itself and refuses (412)
+ * if it, or the number it would get, no longer matches `fingerprint`. Safe to repeat
+ * with the same request id.
+ */
+export function publishLineageVersion(
+  linkId: string,
+  lineageId: string,
+  requestId: string,
+  fingerprint: string,
+): Promise<SentOfferDetail> {
+  return apiRequest<SentOfferDetail>(`${lineagesPath(linkId)}/${lineageId}/versions/${requestId}`, {
+    method: "PUT",
+    body: { fingerprint },
+  });
+}
+
+export function getLineageVersion(
+  linkId: string,
+  lineageId: string,
+  version: number,
+): Promise<SentOfferDetail> {
+  return apiRequest<SentOfferDetail>(`${lineagesPath(linkId)}/${lineageId}/versions/${version}`);
 }

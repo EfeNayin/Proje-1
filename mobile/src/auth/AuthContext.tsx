@@ -17,6 +17,7 @@ import { athleteOverviewStore } from "../coaching/athleteOverviewSession";
 import { athleteWorkoutsStore } from "../coaching/athleteWorkoutsSession";
 import { coachingStore } from "../coaching/coachingSession";
 import { programOffersStore } from "../coaching/programOffersSession";
+import { programPreparationStore } from "../coaching/programPreparationSession";
 import { receivedFeedbackStore } from "../coaching/receivedFeedbackSession";
 import { workoutFeedbackStore } from "../coaching/workoutFeedbackSession";
 import { createSessionController } from "./sessionController";
@@ -58,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           athleteWorkoutsStore.reset();
           athleteOverviewStore.reset();
           programOffersStore.reset();
+          programPreparationStore.reset();
         },
         apply: (view) => {
           setUser(view.user);

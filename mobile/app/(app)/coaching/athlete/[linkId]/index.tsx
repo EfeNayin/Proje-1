@@ -105,6 +105,18 @@ function AthleteWorkouts({ userId, linkId }: { userId: string | null; linkId: st
       {!ended ? (
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel={`Program management for ${name}`}
+          accessibilityHint="Prepare a program for this athlete and publish numbered versions"
+          style={({ pressed }) => [styles.sendRow, styles.sendRowTight, pressed && styles.pressed]}
+          onPress={() => router.push(`/coaching/athlete/${linkId}/programs`)}
+        >
+          <Text style={styles.sendButtonText}>Program management</Text>
+          <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
+        </Pressable>
+      ) : null}
+      {!ended ? (
+        <Pressable
+          accessibilityRole="button"
           accessibilityLabel={`Send a program to ${name}`}
           accessibilityHint="Choose one of your programs and review it before sending"
           style={({ pressed }) => [styles.sendRow, pressed && styles.pressed]}
@@ -293,5 +305,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 16,
   },
+  sendRowTight: { marginBottom: 8 },
   sendButtonText: { color: light.text, fontSize: 16, fontWeight: "600" },
 });

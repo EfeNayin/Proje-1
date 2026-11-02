@@ -2,10 +2,12 @@
  * One received program: who sent it, everything in it, and the athlete's choice
  * to add it or decline.
  *
- * Accepting creates an independent copy among the athlete's own programs. It is
- * created inactive, so the current program stays active until the athlete
- * switches on the copy themselves, and nothing keeps it in step with the coach's
- * original afterwards. The coach never gets access to the copy.
+ * Accepting creates an independent copy among the athlete's own programs. A first
+ * version is created inactive, so the current program stays active until the athlete
+ * switches on the copy themselves. An updated version replaces the athlete's copy of the
+ * earlier version as the active program only if that copy is still the active one when
+ * they accept; the earlier copy and the athlete's edits to it are kept. Nothing keeps a
+ * copy in step with the coach's original afterwards, and the coach never gets access to it.
  */
 
 import { Ionicons } from "@expo/vector-icons";
@@ -25,7 +27,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../../../src/auth/AuthContext";
 import { light } from "../../../../src/lightTheme";
 import { OfferProgramView } from "../../../../src/coaching/OfferProgramView";
-import { offerStatusLabel } from "../../../../src/coaching/offerDisplay";
+import {
+  OFFER_STATUS_ICON,
+  acceptanceText,
+  acceptedNotice,
+  offerStatusLabel,
+  versionLabel,
+} from "../../../../src/coaching/offerDisplay";
 import { formatConnectedDate, personHandle, personName } from "../../../../src/coaching/presentation";
 import { programOffersStore } from "../../../../src/coaching/programOffersSession";
 import { useProgramOffers } from "../../../../src/coaching/useProgramOffers";
@@ -44,12 +52,6 @@ export default function ProgramOfferScreen() {
     />
   );
 }
-
-const STATUS_ICON = {
-  pending: "time-outline",
-  accepted: "checkmark-circle-outline",
-  declined: "close-circle-outline",
-} as const;
 
 function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: string }) {
   const router = useRouter();
@@ -83,8 +85,8 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
     if (outcome.kind === "done") {
       setNotice(
         action === "accept"
-          ? "Added to your programs. It is not active yet."
-          : "Declined. Nothing was added.",
+          ? acceptedNotice(outcome.offer)
+          : "Declined. Nothing was added and your programs are unchanged.",
       );
       return;
     }
@@ -93,7 +95,7 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
   };
 
   const confirmDecline = () =>
-    Alert.alert("Decline this program?", "Nothing is added to your programs. Your coach can send it again.", [
+    Alert.alert("Decline this program?", "Nothing is added and your programs stay as they are. Your coach can send it again.", [
       { text: "Cancel", style: "cancel" },
       { text: "Decline", style: "destructive", onPress: () => void run("decline") },
     ]);
@@ -150,8 +152,11 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
       <View style={styles.card}>
         {/* The word and its icon say where the offer stands, never the colour alone. */}
         <View style={styles.statusRow}>
-          <Ionicons name={STATUS_ICON[offer.status]} size={16} color={light.text} />
-          <Text style={styles.status}>{offerStatusLabel(offer.status)}</Text>
+          <Ionicons name={OFFER_STATUS_ICON[offer.status]} size={16} color={light.text} />
+          <Text style={styles.status}>
+            {offerStatusLabel(offer.status)}
+            {versionLabel(offer.version) ? ` · ${versionLabel(offer.version)}` : ""}
+          </Text>
         </View>
         <Text accessibilityRole="header" style={styles.cardTitle}>
           From {from}
@@ -190,11 +195,16 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
 
       {offer.status === "pending" ? (
         <View style={styles.card}>
-          <Text style={styles.body}>
-            Adding this program puts an independent copy among your own programs. It is not
-            switched on, so your current program stays active until you choose otherwise. It
-            will not update if {from} changes theirs, and {from} cannot open or edit your copy.
-          </Text>
+          {(offer.acceptance
+            ? acceptanceText(offer.acceptance, from)
+            : [
+                `Adding this program puts an independent copy among your own programs. It is not switched on, so your current program stays active until you choose otherwise. It will not update if ${from} changes theirs, and ${from} cannot open or edit your copy.`,
+              ]
+          ).map((line) => (
+            <Text key={line} style={styles.body}>
+              {line}
+            </Text>
+          ))}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Add ${offer.program_name} to my programs`}
@@ -229,8 +239,10 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
           {offer.program_id ? (
             <>
               <Text style={styles.body}>
-                This program is in your programs as your own copy. It was added inactive, so your
-                active program was not changed. Open it to activate it or change it.
+                {offer.activated
+                  ? "This version is in your programs as your own copy, and it is your active program. Your copy of the earlier version is kept, switched off, with your edits."
+                  : "This version is in your programs as your own copy. It was added inactive, so your active program was not changed. Open it to activate it or change it."}{" "}
+                Adding a program does not mean you are following it; that is up to you.
               </Text>
               <Pressable
                 accessibilityRole="button"
@@ -246,6 +258,13 @@ function ProgramOffer({ userId, offerId }: { userId: string | null; offerId: str
               You added this program and later deleted your copy. It will not be added again.
             </Text>
           )}
+        </View>
+      ) : offer.status === "superseded" ? (
+        <View style={styles.card}>
+          <Text style={styles.body}>
+            {from} sent a newer version, so this one can no longer be added or declined. Look for
+            the newer version in your received programs.
+          </Text>
         </View>
       ) : (
         <View style={styles.card}>

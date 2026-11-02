@@ -27,6 +27,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as programsApi from "../../../src/api/programs";
 import type { ProgramDetail } from "../../../src/api/programs";
+import { RecipientBanner } from "../../../src/coaching/RecipientBanner";
 import { light } from "../../../src/lightTheme";
 import { createProgramMutations } from "../../../src/programs/programActions";
 
@@ -270,10 +271,17 @@ export default function ProgramScreen() {
   }
 
   const count = program.templates.length;
+  // A draft prepared for one athlete: it cannot be activated or deleted here, and the
+  // recipient stays in view while it is edited. The backend refuses both as well.
+  const preparedFor = program.prepared_for ?? null;
 
   return (
     <View style={styles.screen}>
-      <TopBar topInset={insets.top} onDelete={handleDelete} deleting={deleting} />
+      <TopBar
+        topInset={insets.top}
+        onDelete={preparedFor ? undefined : handleDelete}
+        deleting={deleting}
+      />
 
       <ScrollView
         style={styles.flex}
@@ -285,6 +293,16 @@ export default function ProgramScreen() {
         // bottom. Android resizes the window itself.
         automaticallyAdjustKeyboardInsets
       >
+        {preparedFor ? (
+          <View style={styles.preparedBlock}>
+            <RecipientBanner athlete={preparedFor.athlete} label="Draft prepared for" />
+            <Text style={styles.preparedText}>
+              Only you can see this draft. It is not part of your own programs and does not change
+              your active program. Publish it from Program management when it is ready.
+            </Text>
+          </View>
+        ) : null}
+
         {program.is_active ? (
           <View style={styles.activeRow}>
             <View style={styles.activeDot} />
@@ -298,7 +316,7 @@ export default function ProgramScreen() {
           onSave={(name) => void handleSaveName(name)}
         />
 
-        {!program.is_active ? (
+        {!program.is_active && !preparedFor ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Make this the active program"
@@ -465,6 +483,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
+  preparedBlock: { gap: 8, marginTop: 8 },
+  preparedText: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
   activeRow: { flexDirection: "row", alignItems: "center", columnGap: 6, marginTop: 8 },
   activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: light.positive },
   activeText: { color: light.positive, fontSize: 13, fontWeight: "600" },

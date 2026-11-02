@@ -32,8 +32,8 @@ import { useAuth } from "../../../../../src/auth/AuthContext";
 import { light } from "../../../../../src/lightTheme";
 import { OfferProgramView } from "../../../../../src/coaching/OfferProgramView";
 import {
+  coachStatusLabel,
   exerciseCount,
-  offerStatusLabel,
   summaryText,
 } from "../../../../../src/coaching/offerDisplay";
 import { coachingStore } from "../../../../../src/coaching/coachingSession";
@@ -343,11 +343,11 @@ function SendProgram({ userId, linkId }: { userId: string | null; linkId: string
             key={offer.id}
             style={styles.sentRow}
             accessible
-            accessibilityLabel={`${offer.program_name}, ${offerStatusLabel(offer.status)}`}
+            accessibilityLabel={`${offer.program_name}, ${coachStatusLabel(offer.status)}`}
           >
             <Text style={styles.sentTitle}>{offer.program_name}</Text>
             <Text style={styles.meta}>
-              {offerStatusLabel(offer.status)} · {summaryText(offer.template_count, offer.exercise_count)}
+              {coachStatusLabel(offer.status)} · {summaryText(offer.template_count, offer.exercise_count)}
               {formatConnectedDate(offer.sent_at) ? ` · ${formatConnectedDate(offer.sent_at)}` : ""}
             </Text>
           </View>

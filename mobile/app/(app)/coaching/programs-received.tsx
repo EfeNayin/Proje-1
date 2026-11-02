@@ -24,7 +24,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ReceivedOffer } from "../../../src/api/coaching";
 import { useAuth } from "../../../src/auth/AuthContext";
 import { light } from "../../../src/lightTheme";
-import { offerStatusLabel, summaryText } from "../../../src/coaching/offerDisplay";
+import {
+  OFFER_STATUS_ICON,
+  offerStatusLabel,
+  summaryText,
+  versionLabel,
+} from "../../../src/coaching/offerDisplay";
 import { formatConnectedDate, personName } from "../../../src/coaching/presentation";
 import { programOffersStore } from "../../../src/coaching/programOffersSession";
 import { useProgramOffers } from "../../../src/coaching/useProgramOffers";
@@ -125,15 +130,12 @@ function ReceivedPrograms({ userId }: { userId: string | null }) {
   );
 }
 
-const STATUS_ICON = {
-  pending: "time-outline",
-  accepted: "checkmark-circle-outline",
-  declined: "close-circle-outline",
-} as const;
-
 function OfferRow({ offer, onOpen }: { offer: ReceivedOffer; onOpen: () => void }) {
   const from = personName(offer.coach);
-  const status = offerStatusLabel(offer.status);
+  const version = versionLabel(offer.version);
+  const status = version
+    ? `${offerStatusLabel(offer.status)} · ${version}`
+    : offerStatusLabel(offer.status);
   const summary = summaryText(offer.template_count, offer.exercise_count);
   const sent = formatConnectedDate(offer.sent_at);
   return (
@@ -147,7 +149,7 @@ function OfferRow({ offer, onOpen }: { offer: ReceivedOffer; onOpen: () => void 
       <View style={styles.rowText}>
         {/* The word and its icon say what state an offer is in, never the colour alone. */}
         <View style={styles.statusRow}>
-          <Ionicons name={STATUS_ICON[offer.status]} size={14} color={light.text} />
+          <Ionicons name={OFFER_STATUS_ICON[offer.status]} size={14} color={light.text} />
           <Text style={styles.status}>{status}</Text>
         </View>
         <Text style={styles.rowTitle}>{offer.program_name}</Text>

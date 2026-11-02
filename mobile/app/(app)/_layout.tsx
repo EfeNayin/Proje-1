@@ -54,6 +54,10 @@ export default function AppLayout() {
       <Stack.Screen name="coaching/athlete/[linkId]/index" options={{ title: "Athlete" }} />
       <Stack.Screen name="coaching/athlete/[linkId]/workout/[workoutId]" options={{ title: "Workout" }} />
       <Stack.Screen name="coaching/athlete/[linkId]/send-program" options={{ title: "Send program" }} />
+      <Stack.Screen name="coaching/athlete/[linkId]/programs/index" options={{ title: "Program management" }} />
+      <Stack.Screen name="coaching/athlete/[linkId]/programs/[lineageId]/index" options={{ title: "Prepared program" }} />
+      <Stack.Screen name="coaching/athlete/[linkId]/programs/[lineageId]/publish" options={{ title: "Review and publish" }} />
+      <Stack.Screen name="coaching/athlete/[linkId]/programs/[lineageId]/version/[version]" options={{ title: "Published version" }} />
       <Stack.Screen name="coaching/programs-received" options={{ title: "Received programs" }} />
       <Stack.Screen name="coaching/program-offer/[offerId]" options={{ title: "Program" }} />
       <Stack.Screen name="workout/[id]" options={{ title: "Workout" }} />

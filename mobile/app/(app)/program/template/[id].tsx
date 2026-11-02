@@ -22,7 +22,8 @@ import {
 } from "react-native";
 
 import * as programsApi from "../../../../src/api/programs";
-import type { TemplateExerciseInput, WorkoutTemplate } from "../../../../src/api/programs";
+import type { PreparedFor, TemplateExerciseInput, WorkoutTemplate } from "../../../../src/api/programs";
+import { RecipientBanner } from "../../../../src/coaching/RecipientBanner";
 import { light } from "../../../../src/lightTheme";
 import { setActiveWorkout } from "../../../../src/workout/activeWorkout";
 import { usePickedExercise } from "../../../../src/workout/usePickedExercise";
@@ -150,7 +151,7 @@ export default function TemplateEditor() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const [template, setTemplate] = useState<WorkoutTemplate | null>(null);
+  const [template, setTemplate] = useState<(WorkoutTemplate & { prepared_for?: PreparedFor | null }) | null>(null);
   const [draftName, setDraftName] = useState("");
   const [exercises, setExercises] = useState<DraftExercise[]>([]);
   const [loading, setLoading] = useState(true);
@@ -324,6 +325,15 @@ export default function TemplateEditor() {
         }}
       />
 
+      {template.prepared_for ? (
+        <View style={styles.prepared}>
+          <RecipientBanner athlete={template.prepared_for.athlete} label="Draft prepared for" />
+          <Text style={styles.preparedText}>
+            Part of a draft only you can see. It reaches the athlete when you publish a version.
+          </Text>
+        </View>
+      ) : null}
+
       <TextInput
         accessibilityLabel="Template name"
         style={styles.nameInput}
@@ -405,6 +415,8 @@ export default function TemplateEditor() {
 }
 
 const styles = StyleSheet.create({
+  prepared: { gap: 8, marginBottom: 12 },
+  preparedText: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
   screen: { flex: 1, backgroundColor: light.background },
   centered: {
     flex: 1,
