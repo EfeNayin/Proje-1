@@ -1,0 +1,173 @@
+# Deleting the account from Profile, on a real simulator against the isolated E2E backend.
+#
+# One disposable account (the "coach" of a connected athlete, with a program the athlete
+# accepted) goes through: Profile -> Delete account -> Cancel (nothing happens) -> a wrong
+# password (refused, still signed in, screen kept) -> the right password -> the final
+# confirmation -> back on the sign-in screen with the "deleted" notice -> the app is
+# closed and opened again and stays signed out. What this flow cannot see (that the
+# records are gone, that the athlete's copy and a bystander survived, that the old
+# credentials are dead) is checked by e2e/scripts/deletion.sh through the API and the
+# database afterwards. Started by that script, which creates the accounts.
+# The Expo Go introduction handling is copied from diagnosis-checkin.yaml.
+appId: host.exp.Exponent
+---
+- launchApp
+- openLink: ${METRO_URL}
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- extendedWaitUntil:
+    visible: "Find your strength."
+    timeout: 180000
+- extendedWaitUntil:
+    visible: "Continue"
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - extendedWaitUntil:
+          visible: "Reload"
+          timeout: 10000
+      - tapOn: "Close"
+      - tapOn: "Gear Shape, Filled"
+      - extendedWaitUntil:
+          visible: "Reload"
+          timeout: 10000
+      - scrollUntilVisible:
+          element: "Tools button"
+          timeout: 15000
+      - tapOn:
+          text: "1"
+          rightOf: "Tools button"
+          index: 1
+      - tapOn: "Close"
+
+# ── sign in as the account that will be deleted ──
+- tapOn:
+    id: "login-email"
+- inputText: ${E2E_EMAIL}
+- tapOn:
+    id: "login-password"
+- inputText: ${E2E_PASSWORD}
+- tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Profile, tab.*"
+    timeout: 30000
+- tapOn: "Profile, tab.*"
+
+# ── 1. the entry is in the Account section, and Cancel leaves without doing anything ──
+- scrollUntilVisible:
+    element: "Delete account.*"
+    timeout: 15000
+- tapOn: "Delete account.*"
+- extendedWaitUntil:
+    visible: "This permanently deletes your account. It cannot be undone."
+    timeout: 10000
+- assertVisible: "What will be deleted"
+- assertVisible: "What stays with other people"
+- scrollUntilVisible:
+    element:
+      id: "delete-account-cancel"
+    timeout: 15000
+- tapOn:
+    id: "delete-account-cancel"
+- extendedWaitUntil:
+    visible: "Delete account.*"
+    timeout: 10000
+# Still the signed-in Profile: the sign-out button is further down.
+- scrollUntilVisible:
+    element: "Sign out"
+    timeout: 15000
+
+# ── 2. an empty password is refused on the device ──
+- tapOn: "Delete account.*"
+- scrollUntilVisible:
+    element:
+      id: "delete-account-open"
+    timeout: 15000
+- tapOn:
+    id: "delete-account-open"
+- extendedWaitUntil:
+    visible: "Enter your current password to continue."
+    timeout: 10000
+
+# ── 3. a wrong password: refused by the server, the account and the session stay ──
+- tapOn:
+    id: "delete-account-password"
+- inputText: ${E2E_WRONG_PASSWORD}
+# The keyboard's Go key asks for the confirmation, as the button does.
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: "delete-account-confirm"
+    timeout: 15000
+- assertVisible: "Delete your account for good?"
+- tapOn:
+    id: "delete-account-confirm"
+- extendedWaitUntil:
+    visible: "That password is not correct.*"
+    timeout: 20000
+# Still signed in and on the same screen (the form is scrolled, so check its field).
+- assertVisible:
+    id: "delete-account-password"
+- assertNotVisible: "Find your strength."
+
+# ── 4. "Keep my account" in the final confirmation leaves without deleting ──
+- tapOn:
+    id: "delete-account-password"
+- inputText: ${E2E_PASSWORD}
+# Put the keyboard away, then use the button itself.
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "delete-account-open"
+    timeout: 15000
+- tapOn:
+    id: "delete-account-open"
+- scrollUntilVisible:
+    element:
+      id: "delete-account-keep"
+    timeout: 15000
+- tapOn:
+    id: "delete-account-keep"
+- scrollUntilVisible:
+    element:
+      id: "delete-account-open"
+    timeout: 15000
+- assertNotVisible: "Delete your account for good?"
+
+# ── 5. the right password, then the explicit final confirmation ──
+- tapOn:
+    id: "delete-account-open"
+- scrollUntilVisible:
+    element:
+      id: "delete-account-confirm"
+    timeout: 15000
+- assertVisible: "Delete your account for good?"
+- tapOn:
+    id: "delete-account-confirm"
+- extendedWaitUntil:
+    visible: "Find your strength."
+    timeout: 60000
+- assertVisible: "Your account has been deleted.*"
+- assertNotVisible: "Profile, tab.*"
+
+# ── 6. closed and opened again: still signed out ──
+- stopApp
+- launchApp
+- openLink: ${METRO_URL}
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- extendedWaitUntil:
+    visible: "Find your strength."
+    timeout: 120000
+- assertNotVisible: "Profile, tab.*"
+- assertNotVisible: "Your account has been deleted.*"

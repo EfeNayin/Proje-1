@@ -148,6 +148,25 @@ uyku/tartı satırları (API yalnız bugünü yazar) kimliği doğrulanmış E2E
 eklenir. Elle kontrol gerektiren, native'de denenmeyen durumlar (gün değişimi, gecikmeli
 yanıtlar, hesap değişimi) `tests/daily-checkin.test.cjs` ve backend testlerindedir.
 
+### Hesap silme (native)
+
+`e2e/scripts/deletion.sh` (önce `up.sh`) aynı izole yığında üç geçici hesap kurar: silinecek **COACH**
+(bağlı sporcusu, sporcunun kabul ettiği programı ve kendi antrenmanıyla), **ATHLETE** ve ilgisiz bir
+**BYSTANDER**. `e2e/flows/account-deletion.yaml` gerçek dokunuşlarla şunları yapar: Profile > Delete
+account > **Cancel** (hiçbir şey olmaz) > boş parola (cihazda reddedilir) > **yanlış parola** (sunucu
+reddeder, oturum ve ekran kalır) > doğru parola ile **"Keep my account"** (silmeden çıkar) > doğru
+parola + son onay > giriş ekranında "Your account has been deleted." > uygulamayı kapatıp yeniden
+açma: **oturum kapalı kalır**. Akıştan sonra script API ve veritabanıyla bağımsız kanıt toplar:
+eski kimlik bilgileri ve eski access token reddedilir; silinen hesabı adlandıran **hiçbir satır**
+hiçbir tabloda kalmaz; sporcunun kabul ettiği kopya (ve içeriği), antrenmanı ve oturumu yerinde durur;
+koçla bağlantısı kalmaz; ilgisiz hesap etkilenmez; egzersiz kataloğunun satır sayıları değişmez.
+Hesap silme **geri alınamaz**; test yalnızca bu koşu için üretilmiş hesapları siler.
+
+Native'de **denenmeyenler:** ağ kopması/zaman aşımı, hız sınırı (429) ve sunucu hatası yanıtları,
+silme sürerken hesap değişimi ve gecikmiş yanıtlar. Bunlar `tests/account-deletion.test.cjs`
+(gerçek token deposu, API istemcisi ve oturum denetleyicisi; yalnız Keychain ve ağ sahte) ve backend
+testleriyle kapsanır.
+
 ## Daha fazla bilgi
 
 - [Expo documentation](https://docs.expo.dev/)
