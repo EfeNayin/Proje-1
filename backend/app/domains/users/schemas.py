@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Re-exported so callers have a single obvious place to import the profile
 # shape from, even though it is defined alongside the auth responses.
@@ -18,7 +18,7 @@ from app.domains.auth.schemas import (
     validate_timezone,
 )
 
-__all__ = ["UserProfile", "UserUpdate"]
+__all__ = ["DeleteAccountRequest", "UserProfile", "UserUpdate"]
 
 # Columns that are NOT NULL. Omitting one means "leave it", but sending an
 # explicit null cannot mean "clear it" and used to reach the database, which
@@ -76,3 +76,18 @@ class UserUpdate(BaseModel):
     def timezone_is_known(cls, value: str | None) -> str | None:
         # None means "leave unchanged" and must skip validation.
         return value if value is None else validate_timezone(value)
+
+class DeleteAccountRequest(BaseModel):
+    """The current password, nothing else.
+
+    The account to delete is always the signed-in one: there is no field naming a user,
+    and extra fields are refused rather than ignored so a request that tries to point
+    elsewhere fails instead of silently deleting the caller. The length bound is only
+    there so absurd input is refused before bcrypt; the password rule itself lives in
+    auth.service.password_matches. Validation errors never echo the value (see
+    main.py).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    password: str = Field(min_length=1, max_length=1024)

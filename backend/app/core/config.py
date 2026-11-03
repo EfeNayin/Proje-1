@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_INVITE_USER_WINDOW_SECONDS: int = Field(default=600, ge=1)
     RATE_LIMIT_INVITE_IP_LIMIT: int = Field(default=30, ge=1)
     RATE_LIMIT_INVITE_IP_WINDOW_SECONDS: int = Field(default=600, ge=1)
+    # Account-deletion attempts (each one checks the current password), per signed-in
+    # account and per requester. Only wrong passwords stay counted.
+    RATE_LIMIT_DELETE_USER_LIMIT: int = Field(default=5, ge=1)
+    RATE_LIMIT_DELETE_USER_WINDOW_SECONDS: int = Field(default=900, ge=1)
+    RATE_LIMIT_DELETE_IP_LIMIT: int = Field(default=20, ge=1)
+    RATE_LIMIT_DELETE_IP_WINDOW_SECONDS: int = Field(default=900, ge=1)
 
     # ── NCBI E-utilities (PubMed) ──
     # Both optional. An API key raises NCBI's per-IP limit from 3 to 10

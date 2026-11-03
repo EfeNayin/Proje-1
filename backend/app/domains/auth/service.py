@@ -9,9 +9,11 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.dberrors import references_missing_user
 from app.core.exceptions import ConflictError, UnauthorizedError
 from app.core.security import (
     JWTError,
@@ -69,6 +71,19 @@ async def register(db: AsyncSession, payload: RegisterRequest) -> tuple[User, To
     return user, tokens
 
 
+def password_matches(candidate: str, password_hash: str) -> bool:
+    """Whether `candidate` is the password behind `password_hash`.
+
+    Registration refuses passwords over 72 bytes, so none exists; bcrypt would only
+    compare the first 72 bytes and accept a longer string with the right prefix.
+    Compare an empty string instead, which no account can match. One rule for every
+    place that checks a password (sign-in, account deletion).
+    """
+    if len(candidate.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        candidate = ""
+    return verify_password(candidate, password_hash)
+
+
 async def login(
     db: AsyncSession, payload: LoginRequest, throttle: AuthThrottle
 ) -> tuple[User, TokenPair]:
@@ -83,13 +98,7 @@ async def login(
     # Always run one bcrypt verification, against a throwaway hash when the email
     # is unknown, so the response time does not reveal whether it is registered.
     password_hash = user.password_hash if user is not None else dummy_password_hash()
-    # Registration refuses passwords over 72 bytes, so none exists; bcrypt would
-    # only compare the first 72 bytes and accept a longer string with the right
-    # prefix. Compare an empty string instead, which no account can match.
-    candidate = payload.password
-    if len(candidate.encode("utf-8")) > BCRYPT_MAX_BYTES:
-        candidate = ""
-    password_ok = verify_password(candidate, password_hash)
+    password_ok = password_matches(payload.password, password_hash)
 
     if user is None or not password_ok:
         raise UnauthorizedError(_INVALID_CREDENTIALS)
@@ -98,7 +107,15 @@ async def login(
     await attempt.refund()
 
     tokens = await _issue_token_pair(db, user.id)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as error:
+        # The account was deleted between the password check and this write: nothing
+        # was stored, and the answer is the same as for an unknown email.
+        await db.rollback()
+        if references_missing_user(error):
+            raise UnauthorizedError(_INVALID_CREDENTIALS) from None
+        raise
     return user, tokens
 
 
@@ -147,14 +164,14 @@ async def refresh(db: AsyncSession, raw_token: str, throttle: AuthThrottle) -> T
     # above never gets here and never spends this account's allowance.
     await throttle.refresh_user(user_id)
 
-    # Rotation and logout of one session take turns (see _lock_family). Which
+    # Rotation and logout of one session take turns (see lock_family). Which
     # session this is has to be read first; the row is read again under the lock.
     family_id = await db.scalar(
         select(RefreshToken.family_id).where(RefreshToken.token_hash == hash_token(raw_token))
     )
     if family_id is None:
         raise UnauthorizedError("Invalid or expired refresh token")
-    await _lock_family(db, family_id)
+    await lock_family(db, family_id)
 
     stored = await db.scalar(
         select(RefreshToken)
@@ -180,7 +197,15 @@ async def refresh(db: AsyncSession, raw_token: str, throttle: AuthThrottle) -> T
 
     stored.revoked_at = now
     tokens = await _issue_token_pair(db, user.id, stored.family_id)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as error:
+        # Deleted while this rotation was running: nothing was stored (the old token
+        # is not revoked either), and the session is simply gone.
+        await db.rollback()
+        if references_missing_user(error):
+            raise UnauthorizedError("Invalid or expired refresh token") from None
+        raise
     return tokens
 
 
@@ -202,7 +227,7 @@ async def logout(db: AsyncSession, raw_token: str) -> None:
     token and the family's live tokens; tokens rotated away earlier stay, so
     `refresh()` still recognises their replay.
 
-    Rotation and this function take the same per-family lock (`_lock_family`), so
+    Rotation and this function take the same per-family lock (`lock_family`), so
     they run one after the other: whichever comes second sees everything the first
     committed, including a successor that did not exist when this request began.
 
@@ -224,7 +249,7 @@ async def logout(db: AsyncSession, raw_token: str) -> None:
     )
     if family_id is None:
         return  # unknown, or already signed out
-    await _lock_family(db, family_id)
+    await lock_family(db, family_id)
     await db.execute(
         delete(RefreshToken).where(
             RefreshToken.family_id == family_id,
@@ -234,7 +259,7 @@ async def logout(db: AsyncSession, raw_token: str) -> None:
     await db.commit()
 
 
-async def _lock_family(db: AsyncSession, family_id: UUID) -> None:
+async def lock_family(db: AsyncSession, family_id: UUID) -> None:
     """Serialise rotation and logout of one session until this transaction ends.
 
     A row lock cannot do this: logout has to see a successor row that a rotation

@@ -10,9 +10,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
+from app.core.dberrors import references_missing_user
 from app.core.exceptions import AppError
 from app.core.ratelimit import close_rate_limiter
 from app.domains.analytics.router import router as analytics_router
@@ -56,6 +60,36 @@ async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's default 422, minus the submitted values.
+
+    The default answer echoes each rejected value back (`input`). For a password field
+    that would return the password, and a body that is not an object returns the whole
+    body. Where the problem is (`loc`) and what it is (`msg`, `type`) is all a client
+    needs.
+    """
+    errors = [
+        {key: value for key, value in error.items() if key != "input"} for error in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
+
+
+@app.exception_handler(IntegrityError)
+async def handle_integrity_error(_: Request, exc: IntegrityError) -> JSONResponse:
+    """A write for an account that was deleted while the request ran is a plain 401.
+
+    The row names a user id that no longer exists (the account deletion committed
+    first, and nothing is stored). Any other integrity error is not handled here and
+    stays the server error it always was.
+    """
+    if references_missing_user(exc):
+        return JSONResponse(
+            status_code=401, content={"detail": "Invalid or expired access token"}
+        )
+    raise exc
 
 
 app.include_router(analytics_router, prefix=API_PREFIX)
