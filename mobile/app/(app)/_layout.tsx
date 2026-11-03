@@ -80,6 +80,7 @@ export default function AppLayout() {
       <Stack.Screen name="profile/personal-details" options={{ title: "Personal Details" }} />
       <Stack.Screen name="profile/weight-history" options={{ title: "Weight History" }} />
       <Stack.Screen name="profile/preferences" options={{ title: "Preferences" }} />
+      <Stack.Screen name="profile/delete-account" options={{ title: "Delete account" }} />
       <Stack.Screen name="profile/nutrition-goals" options={{ title: "Nutrition Goals" }} />
     </Stack>
   );

@@ -13,13 +13,18 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { clearAccountDeletedNotice, useAccountDeletedNotice } from "../../src/account/deletionNotice";
 import { useAuth } from "../../src/auth/AuthContext";
 import { authStyles as styles } from "../../src/auth/authStyles";
 import { createLoginSubmitter } from "../../src/auth/loginSubmit";
 import { light } from "../../src/lightTheme";
 
+// The notice is good news, not an error: same layout as the error line, its own colour.
+const noticeText = [styles.errorText, { color: light.text }];
+
 export default function LoginScreen() {
   const { signIn } = useAuth();
+  const accountDeleted = useAccountDeletedNotice();
   const insets = useSafeAreaInsets();
 
   const [email, setEmail] = useState("");
@@ -64,6 +69,23 @@ export default function LoginScreen() {
             { paddingTop: insets.top + 32, paddingBottom: Math.max(insets.bottom, 24) + 16 },
           ]}
         >
+          {accountDeleted ? (
+            <View style={styles.errorRow}>
+              <Ionicons name="checkmark-circle-outline" size={18} color={light.positive} accessible={false} />
+              <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={noticeText}>
+                Your account has been deleted. You are signed out on this device.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss"
+                onPress={clearAccountDeletedNotice}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={18} color={light.textSecondary} />
+              </Pressable>
+            </View>
+          ) : null}
+
           <Text accessibilityRole="header" style={styles.title}>
             Find your strength.
           </Text>

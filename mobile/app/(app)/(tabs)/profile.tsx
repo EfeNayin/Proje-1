@@ -48,12 +48,15 @@ function MenuRow({
   hint,
   onPress,
   last,
+  destructive,
 }: {
   icon: IconName;
   label: string;
   hint: string;
   onPress: () => void;
   last?: boolean;
+  /** Red title and icon; the label and hint still say what it does. */
+  destructive?: boolean;
 }) {
   return (
     <Pressable
@@ -62,10 +65,10 @@ function MenuRow({
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       onPress={onPress}
     >
-      <Ionicons name={icon} size={22} color={light.textSecondary} />
+      <Ionicons name={icon} size={22} color={destructive ? light.danger : light.textSecondary} />
       <View style={[styles.rowBody, !last && styles.rowDivider]}>
         <View style={styles.rowText}>
-          <Text style={styles.rowTitle}>{label}</Text>
+          <Text style={[styles.rowTitle, destructive && styles.rowTitleDestructive]}>{label}</Text>
           <Text style={styles.rowHint}>{hint}</Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
@@ -299,7 +302,14 @@ export default function ProfileScreen() {
             label="Preferences"
             hint="Weight unit, rest timer, time zone"
             onPress={() => router.push("/profile/preferences")}
+          />
+          <MenuRow
+            icon="trash-outline"
+            label="Delete account"
+            hint="Permanently delete your account and data"
+            onPress={() => router.push("/profile/delete-account")}
             last
+            destructive
           />
         </View>
 
@@ -451,6 +461,7 @@ const styles = StyleSheet.create({
   rowDivider: { borderBottomColor: light.separator, borderBottomWidth: StyleSheet.hairlineWidth },
   rowText: { flex: 1, rowGap: 2 },
   rowTitle: { color: light.text, fontSize: 16, lineHeight: 22 },
+  rowTitleDestructive: { color: light.danger },
   rowHint: { color: light.textSecondary, fontSize: 13, lineHeight: 18 },
   weightValue: { color: light.text, fontSize: 20, lineHeight: 26, fontWeight: "600" },
 

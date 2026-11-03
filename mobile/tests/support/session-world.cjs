@@ -81,7 +81,7 @@ function createNetwork() {
   const routes = [];
   const holds = [];
   const delays = [];
-  async function fetch(url, options = {}) {
+  async function handle(url, options = {}) {
     const entry = {
       path: url.replace('https://bodytrack.test/api/v1', ''),
       method: options.method ?? 'GET',
@@ -111,6 +111,21 @@ function createNetwork() {
     }
     if (answer instanceof Error) throw answer;
     return answer;
+  }
+  // A request given an AbortSignal stops waiting when it fires, as a real fetch does
+  // (the server may well have acted already).
+  function fetch(url, options = {}) {
+    const answer = handle(url, options);
+    const { signal } = options;
+    if (!signal) return answer;
+    return Promise.race([
+      answer,
+      new Promise((_, reject) => {
+        const abort = () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        if (signal.aborted) abort();
+        else signal.addEventListener('abort', abort);
+      }),
+    ]);
   }
   return {
     calls,
@@ -155,7 +170,7 @@ function createWorld(extraFiles = {}) {
     }).outputText;
     vm.runInNewContext(code, {
       module: module_, exports: module_.exports, fetch: net.fetch, Error, Promise,
-      JSON, console, setTimeout, clearTimeout,
+      JSON, console, setTimeout, clearTimeout, AbortController,
       require: (id) => {
         if (id === 'expo-secure-store') return store;
         if (id in extraFiles) return extraFiles[id];
@@ -183,6 +198,7 @@ function createServer(net) {
   const refresh = new Map(); // token -> { user, family, live }
   const access = new Map(); // token -> { user, valid }
   const emails = { A: 'a@example.com', B: 'b@example.com' };
+  const deleted = new Set();
   function issue(user, family = `fam-${user}-${++counter}`) {
     const pair = { access_token: `${user}-access-${++counter}`, refresh_token: `${user}-refresh-${++counter}` };
     access.set(pair.access_token, { user, valid: true });
@@ -196,7 +212,7 @@ function createServer(net) {
       case '/auth/login':
       case '/auth/register': {
         const user = Object.keys(emails).find((u) => emails[u] === body.email);
-        if (!user || body.password === 'wrong') return reply(401, { detail: 'Invalid email or password' });
+        if (!user || deleted.has(user) || body.password === 'wrong') return reply(401, { detail: 'Invalid email or password' });
         return reply(200, { user: { id: user, email: body.email }, tokens: issue(user) });
       }
       case '/auth/refresh': {
@@ -218,6 +234,17 @@ function createServer(net) {
         }
         return reply(204);
       }
+      case '/users/me/delete-account': {
+        // The rules the real endpoint keeps: the caller's own account only, the right
+        // password (403 when it is not, never 401), and nothing of the account survives.
+        const row = userFor(entry);
+        if (!row || !row.valid) return reply(401, { detail: 'Invalid or expired access token' });
+        if (body.password !== 'right') return reply(403, { detail: 'Incorrect password' });
+        deleted.add(row.user);
+        for (const [token, r] of refresh) if (r.user === row.user) refresh.delete(token);
+        for (const a of access.values()) if (a.user === row.user) a.valid = false;
+        return reply(204);
+      }
       default: {
         const row = userFor(entry);
         return row && row.valid
@@ -228,6 +255,7 @@ function createServer(net) {
   });
   return {
     emails,
+    isDeleted: (user) => deleted.has(user),
     /** A signed-in session for `user`, as a pair (the caller stores it where the app would). */
     seed: (user) => issue(user),
     expireAccess() { for (const row of access.values()) row.valid = false; },

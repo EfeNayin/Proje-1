@@ -12,6 +12,10 @@
  *    obsolete and cannot write tokens, clear tokens or reach a caller.
  *  - A new account's tokens are written only after the previous account's
  *    sign-out cleanup has finished, so a late delete cannot remove them.
+ *  - A confirmed account deletion ends the session like a sign-out, minus the
+ *    server call (there is no session left to end), and only for the sign-in the
+ *    deletion was made under: a deletion that was answered late, after another
+ *    account signed in, changes nothing about that account.
  */
 
 import * as authApi from "../api/auth";
@@ -31,6 +35,8 @@ export type SessionHooks = {
   resetAccountState: () => void;
   /** Shows this state. Called synchronously, never after an await that the caller of a transition does not control. */
   apply: (view: AccountView) => void;
+  /** The account was deleted on the server (not merely signed out). Lets the sign-in screen say so. */
+  announceDeletion?: () => void;
 };
 
 /**
@@ -56,10 +62,12 @@ export function createSessionController(hooks: SessionHooks) {
     hooks.apply({ status: "signedOut", user: null });
   }
 
-  async function signOut(): Promise<SignOutResult> {
-    // Before any await: the epoch moves on, the stores reset, the screens leave.
-    leaveAccount();
-
+  /**
+   * Clears what this device keeps for the account: the tokens and the active-workout
+   * pointer. Returns the newest refresh token it took (for a server sign-out) and
+   * whether everything was cleared. Never rejects.
+   */
+  async function clearDevice(): Promise<{ refreshToken: string | null; localClear: boolean }> {
     let localClear = true;
     let refreshToken: string | null = null;
     const finished = (async () => {
@@ -86,6 +94,14 @@ export function createSessionController(hooks: SessionHooks) {
     })();
     cleanup = finished;
     await finished;
+    return { refreshToken, localClear };
+  }
+
+  async function signOut(): Promise<SignOutResult> {
+    // Before any await: the epoch moves on, the stores reset, the screens leave.
+    leaveAccount();
+
+    const { refreshToken, localClear } = await clearDevice();
 
     // Best effort, once, and not awaited: signing out on this device must not
     // depend on the network, and nothing is retried in the background where it
@@ -97,6 +113,21 @@ export function createSessionController(hooks: SessionHooks) {
         )
       : Promise.resolve("none" as const);
     return { localClear, revocation };
+  }
+
+  /**
+   * The server confirmed (204) that the account made under sign-in `epoch` is gone.
+   * Leaves it at once, clears the device and sends no sign-out: its sessions went
+   * with it, and the token is not worth a request. `applied` is false, and nothing
+   * is touched, when that sign-in is already over (signed out, expired or replaced
+   * by another account while the deletion was running).
+   */
+  async function accountDeleted(epoch: number): Promise<{ applied: boolean; localClear: boolean }> {
+    if (currentAuthEpoch() !== epoch) return { applied: false, localClear: true };
+    leaveAccount();
+    hooks.announceDeletion?.();
+    const { localClear } = await clearDevice();
+    return { applied: true, localClear };
   }
 
   /** The API client gave up on the session (refresh rejected). The epoch has moved on already. */
@@ -132,7 +163,7 @@ export function createSessionController(hooks: SessionHooks) {
     return currentAuthEpoch() === epoch ? restored : null;
   }
 
-  return { signIn, signUp, signOut, sessionExpired, restore };
+  return { signIn, signUp, signOut, accountDeleted, sessionExpired, restore };
 }
 
 export type SessionController = ReturnType<typeof createSessionController>;

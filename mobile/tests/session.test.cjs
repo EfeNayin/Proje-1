@@ -234,12 +234,16 @@ test('a rejected or failed logout never refreshes, clears tokens or expires the 
 test('signing out takes the refresh token and ends the server session without waiting for it', () => {
   const source = readFileSync(path.join(mobileRoot, 'src/auth/sessionController.ts'), 'utf8')
     .replace(/\r\n/g, '\n');
-  const signOut = source.slice(source.indexOf('async function signOut'), source.indexOf('/** The API client gave up'));
+  // signOut leaves the account, then clears the device through clearDevice() (which takes the
+  // token), then asks the server to end the session.
+  const signOut = source.slice(source.indexOf('async function signOut'), source.indexOf('/**\n   * The server confirmed'));
+  const clearDevice = source.slice(source.indexOf('async function clearDevice'), source.indexOf('async function signOut'));
   const left = signOut.indexOf('leaveAccount()');
-  const take = signOut.indexOf('await takeRefreshToken()');
+  const cleared = signOut.indexOf('await clearDevice()');
   const call = signOut.indexOf('authApi.logout(refreshToken)');
-  assert.ok(left > -1 && left < take, 'the account is left before any storage work');
-  assert.ok(take > -1 && take < call, 'the token is taken (read and cleared in one step) before the request is built');
+  assert.ok(left > -1 && left < cleared, 'the account is left before any storage work');
+  assert.ok(cleared > -1 && cleared < call, 'the device is cleared (token taken) before the request is built');
+  assert.match(clearDevice, /await takeRefreshToken\(\)/, 'the token is read and cleared in one step');
   assert.doesNotMatch(signOut, /await authApi\.logout/, 'signing out must not wait for the network');
   assert.match(signOut, /authApi\.logout\(refreshToken\)\.then\(/, 'failure is reported as unconfirmed, never thrown');
 });

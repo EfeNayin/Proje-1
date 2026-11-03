@@ -11,6 +11,8 @@ import type { ReactNode } from "react";
 
 import * as authApi from "../api/auth";
 import type { RegisterInput, UserProfile } from "../api/auth";
+import { accountDeletionStore } from "../account/deletionSession";
+import { clearAccountDeletedNotice, showAccountDeletedNotice } from "../account/deletionNotice";
 import { setOnSessionExpired } from "../api/client";
 import { athleteExerciseHistoryStore } from "../coaching/athleteExerciseHistorySession";
 import { athleteOverviewStore } from "../coaching/athleteOverviewSession";
@@ -62,11 +64,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           programOffersStore.reset();
           programPreparationStore.reset();
           dailyCheckinStore.reset();
+          accountDeletionStore.reset();
         },
         apply: (view) => {
+          // Whoever signs in next is not told about the account that was deleted.
+          if (view.status === "signedIn") clearAccountDeletedNotice();
           setUser(view.user);
           setStatus(view.status);
         },
+        announceDeletion: showAccountDeletedNotice,
       }),
     [],
   );
@@ -83,6 +89,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setOnSessionExpired(controller.sessionExpired);
     return () => setOnSessionExpired(null);
+  }, [controller]);
+
+  // Once the server has confirmed a deletion, this ends the session on the device.
+  // The store passes the sign-in the deletion was made under; a deletion answered
+  // after another account signed in does nothing to that account.
+  useEffect(() => {
+    accountDeletionStore.setOnDeleted(async (epoch) => {
+      await controller.accountDeleted(epoch);
+    });
+    return () => accountDeletionStore.setOnDeleted(null);
   }, [controller]);
 
   // Restore the session on launch.

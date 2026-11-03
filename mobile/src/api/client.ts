@@ -117,11 +117,23 @@ async function performRefresh(epoch: number): Promise<boolean> {
   return true;
 }
 
-async function fetchWithNetworkError(url: string, options: RequestInit): Promise<Response> {
+async function fetchWithNetworkError(
+  url: string,
+  options: RequestInit,
+  timeoutMs?: number,
+): Promise<Response> {
+  // Only requests that ask for it have a deadline. A request that must not hang
+  // forever (one that locks the screen while it runs) gets one; the server may
+  // still have acted, which is why the error is the same "no answer" status 0
+  // as a lost connection and callers never read it as a refusal.
+  const controller = timeoutMs === undefined ? null : new AbortController();
+  const timer = controller === null ? null : setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, options);
+    return await fetch(url, controller === null ? options : { ...options, signal: controller.signal });
   } catch {
     throw new ApiError(0, "Cannot connect right now. Check your connection and try again.");
+  } finally {
+    if (timer !== null) clearTimeout(timer);
   }
 }
 
@@ -170,10 +182,12 @@ type RequestOptions = {
   body?: unknown;
   /** Skip the Authorization header, for login and register. */
   anonymous?: boolean;
+  /** Give up waiting for the response after this long (status 0, like a lost connection). */
+  timeoutMs?: number;
 };
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, anonymous = false } = options;
+  const { method = "GET", body, anonymous = false, timeoutMs } = options;
 
   // The sign-in this request was made for. Anonymous requests (login, register,
   // logout) carry no session; their callers guard them.
@@ -192,11 +206,15 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       if (token) headers.Authorization = `Bearer ${token}`;
     }
 
-    return fetchWithNetworkError(`${API_URL}${API_PREFIX}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    return fetchWithNetworkError(
+      `${API_URL}${API_PREFIX}${path}`,
+      {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      },
+      timeoutMs,
+    );
   };
 
   let response = await send();

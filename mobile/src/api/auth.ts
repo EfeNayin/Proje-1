@@ -128,3 +128,24 @@ export function updateMe(changes: UserUpdateInput): Promise<UserProfile> {
   // omitted fields keep their value, an explicit null clears one.
   return apiRequest<UserProfile>("/users/me", { method: "PATCH", body: changes });
 }
+
+/** Longer than a normal request: the server checks the password and may wait out a lock. */
+const DELETE_ACCOUNT_TIMEOUT_MS = 45_000;
+
+/**
+ * Permanently deletes the signed-in account. The password travels only in the
+ * JSON body of this one request; it is never part of a URL, and the server never
+ * echoes it back. The account is always the caller's own: there is no way to name
+ * another one.
+ *
+ * Resolves only on 204, which is the one proof the account is gone. A wrong
+ * password is 403 (not 401, which this client would read as a dead session), a
+ * limit is 429, and "no answer" is status 0: the server may or may not have acted.
+ */
+export function deleteAccount(password: string): Promise<void> {
+  return apiRequest<void>("/users/me/delete-account", {
+    method: "POST",
+    body: { password },
+    timeoutMs: DELETE_ACCOUNT_TIMEOUT_MS,
+  });
+}
