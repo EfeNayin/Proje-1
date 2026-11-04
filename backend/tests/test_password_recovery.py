@@ -32,6 +32,7 @@ import app.domains.auth.recovery as recovery
 import app.domains.auth.service as auth_service
 from app.core.config import Settings, settings
 from app.core.mailer import SmtpMailer, get_mailer
+from app.core.passwordwork import PasswordWorkBusyError
 from app.core.ratelimit import Bucket, RateLimiter, get_rate_limiter
 from app.main import app
 from tests.support.smtp_sink import SmtpSink
@@ -893,6 +894,39 @@ async def challenge_delete_trigger(db: AsyncSession) -> AsyncIterator[Callable[[
     )
     await db.execute(text("DROP FUNCTION IF EXISTS test_before_challenge_delete()"))
     await db.commit()
+
+
+class TestBusyPasswordWork:
+    async def test_a_busy_worker_changes_nothing_and_the_same_code_still_works_afterwards(
+        self,
+        client: AsyncClient,
+        mailer: SmtpMailer,
+        sink: SmtpSink,
+        db: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        await _signup(client)
+        await _ask(client)
+        code = _code_in(sink)
+        real = recovery.offload
+
+        async def busy(*_: Any) -> Any:
+            raise PasswordWorkBusyError
+
+        monkeypatch.setattr(recovery, "offload", busy)
+        refused = await _reset(client, EMAIL, code)
+
+        assert refused.status_code == 503
+        assert refused.headers["Retry-After"] == "2"
+        assert "Nothing was changed" in refused.json()["detail"]
+        assert code not in refused.text and NEW_PASSWORD not in refused.text
+        assert (await _login(client, PASSWORD)).status_code == 200  # the old password stands
+        assert await _scalar(db, "SELECT credential_version FROM users") == 0
+        assert (await _challenge(db)).attempts == 1  # the one guess spent before the check
+
+        monkeypatch.setattr(recovery, "offload", real)
+        assert (await _reset(client, EMAIL, code)).status_code == 204
+        assert (await _login(client, NEW_PASSWORD)).status_code == 200
 
 
 class TestAtomicity:

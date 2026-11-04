@@ -10,6 +10,7 @@ proves nothing here (see tests/test_logout_refresh_race.py).
 """
 
 import asyncio
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ from app.main import app
 from tests.test_coaching import Headers, _connect
 from tests.test_coaching_feedback import _create as _feedback
 from tests.test_coaching_workouts import _log, _set, _share
+from tests.test_password_offload import wait_until
 from tests.test_program_lineages import _publish_edit, _ready, _version
 from tests.test_program_offers import _accept as _accept_offer
 from tests.test_program_offers import _offer, _program, _programs, _shape
@@ -355,6 +357,44 @@ class TestErrorsNeverCarryTheSecret:
 
 
 # ── the shared limiter ───────────────────────────────────────────────────
+
+
+class TestBusyPasswordWork:
+    async def test_a_busy_worker_refuses_with_503_deletes_nothing_and_spends_no_attempt(
+        self, client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # One worker and no waiting place, taken by a sign-in whose check is held.
+        monkeypatch.setattr(settings, "PASSWORD_WORK_WORKERS", 1)
+        monkeypatch.setattr(settings, "PASSWORD_WORK_MAX_QUEUED", 0)
+        who = await _signup(client, "efe")
+        entered, release = threading.Event(), threading.Event()
+        real = auth_service.verify_password
+
+        def held(plain: str, password_hash: str) -> bool:
+            entered.set()
+            release.wait(timeout=10)
+            return real(plain, password_hash)
+
+        monkeypatch.setattr(auth_service, "verify_password", held)
+        sign_in = asyncio.create_task(
+            client.post("/auth/login", json={"email": who.email, "password": PASSWORD})
+        )
+        await wait_until(entered.is_set)
+
+        refused = await _delete(client, who, "wrong")
+
+        assert refused.status_code == 503
+        assert refused.headers["Retry-After"] == "2"
+        assert "wrong" not in refused.text
+        release.set()
+        assert (await sign_in).status_code == 200
+        assert await _user_row(db, who.id)
+        # The refused request counted for nothing: the whole allowance of wrong passwords
+        # is still there, and only the one after it is refused.
+        limit = settings.RATE_LIMIT_DELETE_USER_LIMIT
+        for _ in range(limit):
+            assert (await _delete(client, who, "wrong")).status_code == 403
+        assert (await _delete(client, who, "wrong")).status_code == 429
 
 
 class TestSharedRateLimit:
@@ -1223,14 +1263,18 @@ class TestRacesWithDeletion:
         who = await _signup(client, "efe")
         real = programs_service.lock_active_program
 
+        reached = asyncio.Event()
+
         async def slow(session: AsyncSession, user_id: UUID) -> None:
             await real(session, user_id)
+            reached.set()
             await asyncio.sleep(0.5)  # the session locks are held, the user row is not yet
 
         monkeypatch.setattr(LOCK, slow)
 
         deleting = asyncio.create_task(_delete(client, who))
-        await asyncio.sleep(0.15)
+        # The password check runs in a worker first; wait for the lock stage, not a fixed time.
+        await asyncio.wait_for(reached.wait(), timeout=10)
         refreshed = await client.post("/auth/refresh", json={"refresh_token": who.refresh_token})
         deleted = await deleting
         monkeypatch.undo()
@@ -1245,14 +1289,17 @@ class TestRacesWithDeletion:
         who = await _signup(client, "efe")
         real = programs_service.lock_active_program
 
+        reached = asyncio.Event()
+
         async def slow(session: AsyncSession, user_id: UUID) -> None:
             await real(session, user_id)
+            reached.set()
             await asyncio.sleep(0.6)
 
         monkeypatch.setattr(LOCK, slow)
 
         deleting = asyncio.create_task(_delete(client, who))
-        await asyncio.sleep(0.1)
+        await asyncio.wait_for(reached.wait(), timeout=10)
         login = await client.post("/auth/login", json={"email": who.email, "password": PASSWORD})
         deleted = await deleting
         monkeypatch.undo()
@@ -1343,14 +1390,17 @@ class TestRacesWithDeletion:
         who = await _signup(client, "efe")
         real = programs_service.lock_active_program
 
+        reached = asyncio.Event()
+
         async def slow(session: AsyncSession, user_id: UUID) -> None:
             await real(session, user_id)
+            reached.set()
             await asyncio.sleep(0.6)
 
         monkeypatch.setattr(LOCK, slow)
 
         deleting = asyncio.create_task(_delete(client, who))
-        await asyncio.sleep(0.1)
+        await asyncio.wait_for(reached.wait(), timeout=10)
         write = await client.post(
             "/workouts",
             headers=who.headers,

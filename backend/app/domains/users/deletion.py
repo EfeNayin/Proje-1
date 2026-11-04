@@ -75,6 +75,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dberrors import RETRYABLE_SQLSTATES, sqlstate_of
 from app.core.exceptions import ForbiddenError, ServiceUnavailableError, UnauthorizedError
+from app.core.passwordwork import PasswordWorkBusyError
 from app.domains.auth.service import lock_family, password_matches
 from app.domains.programs.service import lock_active_program
 from app.domains.users.ratelimit import AccountDeletionThrottle
@@ -92,7 +93,13 @@ async def delete_account(
     """Check the password again, then erase `user` (always the signed-in account)."""
     # Counted before bcrypt, so a refused caller never reaches it.
     attempt = await throttle.begin(user)
-    if not password_matches(password, user.password_hash):
+    try:
+        matches = await password_matches(password, user.password_hash)
+    except PasswordWorkBusyError:
+        # Nothing was checked, so this is not a wrong password: it must not count.
+        await attempt.refund()
+        raise
+    if not matches:
         # 403, not 401: this client reads a 401 as "the session is dead" and signs out.
         raise ForbiddenError("Incorrect password")
     # Only wrong passwords stay counted.

@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 14
 
+    # ── Password work (bcrypt; see app/core/passwordwork.py) ──
+    # Hashing and checking a password costs ~0.2 s of CPU. It runs in this many worker
+    # threads, never on the event loop. At most MAX_QUEUED more calls may wait for a
+    # worker; beyond that the request is refused with a 503 (and Retry-After) instead of
+    # queueing without limit.
+    PASSWORD_WORK_WORKERS: int = Field(default=4, ge=1, le=32)
+    PASSWORD_WORK_MAX_QUEUED: int = Field(default=64, ge=0, le=1024)
+
     # ── Rate limiting (shared through Redis; see app/core/ratelimit.py) ──
     # Each limit is "this many admitted requests per window"; the window starts at
     # the first request and the counter disappears when it ends. Defaults and the

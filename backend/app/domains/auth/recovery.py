@@ -58,6 +58,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.dberrors import RETRYABLE_SQLSTATES, references_missing_user, sqlstate_of
 from app.core.exceptions import BadRequestError, ServiceUnavailableError
+from app.core.passwordwork import BUSY_RETRY_AFTER_SECONDS, PasswordWorkBusyError, offload
 from app.core.security import hash_password
 from app.domains.auth.service import lock_family
 from app.domains.auth.throttle import AuthThrottle
@@ -206,7 +207,12 @@ async def reset_password(
 
     # The slow part, outside any lock. Plain values are read now: a rollback in the loop
     # below expires the ORM objects.
-    password_hash = hash_password(new_password)
+    try:
+        password_hash = await offload(hash_password, new_password)
+    except PasswordWorkBusyError:
+        # The code was right and nothing was changed: not a failed attempt.
+        await attempt.refund()
+        raise ServiceUnavailableError(_NOT_CHANGED, retry_after=BUSY_RETRY_AFTER_SECONDS) from None
     user_id, challenge_id, account_email = user.id, challenge.id, user.email
 
     for attempt_number in range(_ATTEMPTS):

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.dberrors import references_missing_user
 from app.core.exceptions import ConflictError, UnauthorizedError
+from app.core.passwordwork import PasswordWorkBusyError, offload
 from app.core.security import (
     JWTError,
     create_access_token,
@@ -55,10 +56,12 @@ async def register(db: AsyncSession, payload: RegisterRequest) -> tuple[User, To
         # Which field collided is not disclosed, for the same reason as above.
         raise ConflictError("Email or username is already taken")
 
+    # The slow part, in a worker thread (see app/core/passwordwork.py); no lock is held.
+    password_hash = await offload(hash_password, payload.password)
     user = User(
         email=payload.email,
         username=payload.username,
-        password_hash=hash_password(payload.password),
+        password_hash=password_hash,
         first_name=payload.first_name,
         timezone=payload.timezone,
         locale=payload.locale,
@@ -72,8 +75,11 @@ async def register(db: AsyncSession, payload: RegisterRequest) -> tuple[User, To
     return user, tokens
 
 
-def password_matches(candidate: str, password_hash: str) -> bool:
+async def password_matches(candidate: str, password_hash: str) -> bool:
     """Whether `candidate` is the password behind `password_hash`.
+
+    The bcrypt check runs in a worker thread and may raise PasswordWorkBusyError (nothing
+    was checked); callers give back the attempt they counted.
 
     Registration refuses passwords over 72 bytes, so none exists; bcrypt would only
     compare the first 72 bytes and accept a longer string with the right prefix.
@@ -82,7 +88,7 @@ def password_matches(candidate: str, password_hash: str) -> bool:
     """
     if len(candidate.encode("utf-8")) > BCRYPT_MAX_BYTES:
         candidate = ""
-    return verify_password(candidate, password_hash)
+    return await offload(verify_password, candidate, password_hash)
 
 
 async def login(
@@ -98,8 +104,15 @@ async def login(
 
     # Always run one bcrypt verification, against a throwaway hash when the email
     # is unknown, so the response time does not reveal whether it is registered.
-    password_hash = user.password_hash if user is not None else dummy_password_hash()
-    password_ok = password_matches(payload.password, password_hash)
+    try:
+        password_hash = (
+            user.password_hash if user is not None else await offload(dummy_password_hash)
+        )
+        password_ok = await password_matches(payload.password, password_hash)
+    except PasswordWorkBusyError:
+        # Nothing was checked, so this is not a failed attempt: it must not count.
+        await attempt.refund()
+        raise
 
     if user is None or not password_ok:
         raise UnauthorizedError(_INVALID_CREDENTIALS)
