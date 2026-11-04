@@ -86,4 +86,40 @@ maestro --udid "$UDID" test "$FLOW" \
 STATUS="${PIPESTATUS[0]}"
 set -e
 echo "e2e: artifacts (screenshots, logs) in $OUT — outside the repository"
-exit "$STATUS"
+[ "$STATUS" -eq 0 ] || exit "$STATUS"
+
+# ── what the screens cannot show: independent read-only checks of the final state ──
+# NOT native UI evidence. After the flow, the database is read for what the screens only imply:
+# the frozen plan stored on each workout, which copy is active, that the old copy kept its own
+# prescription, and that the published versions are unchanged. Nothing here writes.
+DBC="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=db")"
+[ -n "$DBC" ] || die "E2E database container not found"
+sql() { docker exec -i "$DBC" psql -U e2e -d "$DB_NAME" -tA -v ON_ERROR_STOP=1 -c "$1"; }
+ATH="(select id from users where email = '$E2E_EMAIL_ATHLETE')"
+export DB_WORKOUT_SNAPSHOTS="$(sql "select string_agg(coalesce(template_snapshot->'exercises'->0->>'target_reps_max', 'none') || ':' || (finished_at is not null)::text, ',' order by performed_at) from workouts where user_id = $ATH and template_id is not null")"
+export DB_PROGRAMS="$(sql "select string_agg(p.name || ':' || p.is_active::text || ':' || coalesce((select te.target_reps_max::text from workout_templates t join template_exercises te on te.template_id = t.id where t.program_id = p.id limit 1), '-'), ',' order by p.created_at) from programs p where p.user_id = $ATH")"
+export DB_OFFERS="$(sql "select string_agg(o.version || ':' || o.status || ':' || coalesce(o.activated_on_accept::text, '-') || ':' || (o.snapshot->'templates'->0->'exercises'->0->>'target_reps_max'), ',' order by o.version) from program_offers o join coach_athlete_links l on l.id = o.link_id join users a on a.id = l.athlete_id where a.email = '$E2E_EMAIL_ATHLETE'")"
+export DB_COPIES="$(sql "select count(distinct accepted_program_id) from program_offers o join coach_athlete_links l on l.id = o.link_id join users a on a.id = l.athlete_id where a.email = '$E2E_EMAIL_ATHLETE' and o.status = 'accepted'")"
+python3 <<'PY'
+import os, sys
+
+env = os.environ
+failed = []
+def check(label, ok):
+    print(f"e2e-db: {'ok  ' if ok else 'FAIL'} {label}")
+    if not ok: failed.append(label)
+
+check("the two workouts started from a template are both finished, and the frozen plan of the first "
+      "(started from version 1) still says 8 max reps while the second (from version 2) says 12",
+      env["DB_WORKOUT_SNAPSHOTS"] == "8:true,12:true")
+check("the published versions are untouched: version 1 holds 8 max reps, version 2 holds 12, both accepted, "
+      "and only version 2 replaced an active copy",
+      env["DB_OFFERS"] == "1:accepted:false:8,2:accepted:true:12")
+check("two distinct copies exist (one per accepted version)", env["DB_COPIES"] == "2")
+check("the athlete's programs are: the own program (off), the copy of version 1 (off, still 8 max reps), "
+      "the copy of version 2 (the only active one, 12 max reps)",
+      env["DB_PROGRAMS"] == "Athlete Own:false:-,Coach Base:false:8,Coach Base:true:12")
+print(f"e2e-db: {len(failed)} failed")
+sys.exit(1 if failed else 0)
+PY
+exit 0

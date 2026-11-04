@@ -1,0 +1,13 @@
+# Signs in from the login screen with EMAIL / PASSWORD and waits for the tab bar.
+appId: host.exp.Exponent
+---
+- tapOn:
+    id: "login-email"
+- inputText: ${EMAIL}
+- tapOn:
+    id: "login-password"
+- inputText: ${PASSWORD}
+- tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Profile, tab.*"
+    timeout: 30000

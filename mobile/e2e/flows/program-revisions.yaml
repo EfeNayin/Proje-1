@@ -181,3 +181,229 @@ appId: host.exp.Exponent
     timeout: 15000
 - assertNotVisible: "Draft prepared for"
 - takeScreenshot: rev-09-athlete-copy-inactive
+
+# ══ Athlete: switch the copy of version 1 on, start a workout from it ══
+# Avery's own program "Athlete Own" is active until now; accepting version 1 left it that way.
+- tapOn: "Make this the active program"
+- extendedWaitUntil:
+    visible: "Active program"
+    timeout: 15000
+- assertNotVisible: "Make this the active program"
+- takeScreenshot: rev-10-copy-v1-active
+# program → offer → received programs → My Coaches → Profile tab
+- tapOn: "Back"
+- tapOn: "Back"
+- tapOn: "Back"
+- tapOn: "Back"
+- tapOn: "Training, tab.*"
+- extendedWaitUntil:
+    visible: "Start from a template in Coach Base.*"
+    timeout: 20000
+- tapOn: "Start from a template in Coach Base.*"
+- extendedWaitUntil:
+    visible: "Push Day"
+    timeout: 10000
+- tapOn: "Push Day"
+- runFlow:
+    when:
+      visible: "How are you feeling today?"
+    commands:
+      - tapOn: "Skip"
+- extendedWaitUntil:
+    visible: "Starting plan: Push Day"
+    timeout: 20000
+- assertVisible: "0 working sets"
+- takeScreenshot: rev-11-workout-from-v1-started
+# The session stays open on the device while the accounts take turns (it is resumed later).
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible: "Resume workout"
+    timeout: 15000
+- runFlow: steps/sign-out.yaml
+
+# ══ Coach: change one prescription in the draft and publish version 2 ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_COACH}
+      PASSWORD: ${E2E_PASSWORD_COACH}
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Athletes.*"
+    timeout: 15000
+- tapOn: "My Athletes.*"
+- extendedWaitUntil:
+    visible: "Avery.*Open workouts"
+    timeout: 15000
+- tapOn: "Avery.*Open workouts"
+- extendedWaitUntil:
+    visible: "Program management for Avery"
+    timeout: 15000
+- tapOn: "Program management for Avery"
+- extendedWaitUntil:
+    visible: "Coach Base, Version 1 · Accepted"
+    timeout: 15000
+- takeScreenshot: rev-12-coach-sees-v1-accepted
+- tapOn: "Coach Base, Version 1 · Accepted"
+- extendedWaitUntil:
+    visible: "Edit the draft prepared for Avery"
+    timeout: 15000
+- assertVisible: "Publishing creates version 2.*"
+- tapOn: "Edit the draft prepared for Avery"
+- extendedWaitUntil:
+    visible: "Push Day, .*"
+    timeout: 15000
+- tapOn: "Push Day, .*"
+- extendedWaitUntil:
+    visible: "Maximum reps for Barbell Bench Press"
+    timeout: 15000
+# Reps 6-8 become 6-12. The tap lands at the right edge of the field so the cursor sits after the
+# old value (a tap in the middle puts it inside, and erasing goes backwards from the cursor).
+- tapOn:
+    text: "Maximum reps for Barbell Bench Press"
+    point: "95%,50%"
+- eraseText
+- inputText: "12"
+- takeScreenshot: rev-13-coach-edits-max-reps
+# The number pad has no Done key and cannot be closed by hideKeyboard; it covers Save, and the
+# hierarchy still lists Save while it is covered (a tap there would press a key). A tap on plain
+# text, which no control handles, closes it, and only then is Save tapped.
+- tapOn: "Exercises"
+- waitForAnimationToEnd
+- takeScreenshot: rev-13b-keyboard-closed-save-in-reach
+- tapOn: "Save"
+# the editor goes back by itself once the template is saved; the template count is only on the
+# program screen (the editor shows the same "Draft prepared for" banner, so it cannot tell them apart)
+- extendedWaitUntil:
+    visible: "1 template"
+    timeout: 15000
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible: "Review and publish for Avery"
+    timeout: 15000
+- tapOn: "Review and publish for Avery"
+- extendedWaitUntil:
+    visible: "Version 2"
+    timeout: 15000
+- scrollUntilVisible:
+    element: "Publish version 2 to Avery"
+    timeout: 15000
+- takeScreenshot: rev-14-review-before-publish-v2
+- tapOn: "Publish version 2 to Avery"
+- extendedWaitUntil:
+    visible: "Version 2 · Waiting for answer"
+    timeout: 20000
+- assertVisible: "Version 1, Accepted.*"
+- takeScreenshot: rev-15-version-2-waiting
+- tapOn: "Back"
+- tapOn: "Back"
+- tapOn: "Back"
+- tapOn: "Back"
+- runFlow: steps/sign-out.yaml
+
+# ══ Athlete: read version 2, see the effect, add it ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_ATHLETE}
+      PASSWORD: ${E2E_PASSWORD_ATHLETE}
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Coaches.*"
+    timeout: 15000
+- tapOn: "My Coaches.*"
+- extendedWaitUntil:
+    visible: "Received programs.*"
+    timeout: 15000
+- tapOn: "Received programs.*"
+- extendedWaitUntil:
+    visible: "Coach Base, from Colt, Waiting.*"
+    timeout: 15000
+- takeScreenshot: rev-16-athlete-received-v2
+- tapOn: "Coach Base, from Colt, Waiting.*"
+- extendedWaitUntil:
+    visible: "Waiting · Version 2"
+    timeout: 15000
+- scrollUntilVisible:
+    element: "Add Coach Base to my programs"
+    timeout: 15000
+# Version 1's copy is the active program, so adding version 2 will replace it as the active one.
+- assertVisible: ".*is your active program. If it still is when you add this.*"
+- takeScreenshot: rev-17-athlete-effect-replaces-active
+- tapOn: "Add Coach Base to my programs"
+- extendedWaitUntil:
+    visible: "Added, and it is now your active program.*"
+    timeout: 20000
+- takeScreenshot: rev-18-athlete-accepted-v2
+- tapOn: "Back"
+- tapOn: "Back"
+- tapOn: "Back"
+- tapOn: "Programs, tab.*"
+- extendedWaitUntil:
+    visible: "Coach Base, active program"
+    timeout: 15000
+# Both copies, the one of version 1 (now off) and the one of version 2 (on), and the athlete's own program.
+- assertVisible: "Athlete Own"
+- takeScreenshot: rev-19-programs-after-v2
+
+# ══ Athlete: the open workout still has version 1's plan; finish it ══
+- tapOn: "Training, tab.*"
+- extendedWaitUntil:
+    visible: "Resume workout"
+    timeout: 20000
+- tapOn: "Resume workout"
+- extendedWaitUntil:
+    visible: "Starting plan: Push Day"
+    timeout: 20000
+- takeScreenshot: rev-20-open-workout-resumed
+- runFlow: steps/log-three-sets.yaml
+- takeScreenshot: rev-21-v1-workout-sets-logged
+- tapOn: "Finish workout"
+- extendedWaitUntil:
+    visible: "Finish workout\\?"
+    timeout: 10000
+- tapOn: "Finish"
+- extendedWaitUntil:
+    visible: "Recent workouts"
+    timeout: 20000
+- tapOn: ".*, 3 sets"
+- extendedWaitUntil:
+    visible: "Edit workout"
+    timeout: 20000
+- assertVisible: "Starting plan: Push Day"
+# The app shows only the plan's name, not its prescription: that this workout kept version 1's
+# 6-8 reps is proven afterwards from the database by revisions.sh (independent check, not UI).
+- takeScreenshot: rev-22-v1-workout-finished
+- tapOn: "Back"
+
+# ══ Athlete: the next workout from the active copy uses version 2 ══
+- extendedWaitUntil:
+    visible: "Start from a template in Coach Base.*"
+    timeout: 20000
+- tapOn: "Start from a template in Coach Base.*"
+- tapOn: "Push Day"
+- runFlow:
+    when:
+      visible: "How are you feeling today?"
+    commands:
+      - tapOn: "Skip"
+- extendedWaitUntil:
+    visible: "Starting plan: Push Day"
+    timeout: 20000
+- runFlow: steps/log-three-sets.yaml
+- tapOn: "Finish workout"
+- extendedWaitUntil:
+    visible: "Finish workout\\?"
+    timeout: 10000
+- tapOn: "Finish"
+- extendedWaitUntil:
+    visible: "Recent workouts"
+    timeout: 20000
+- tapOn:
+    text: ".*, 3 sets"
+    index: 0
+- extendedWaitUntil:
+    visible: "Edit workout"
+    timeout: 20000
+# Its stored prescription (6-12 reps, version 2's) is likewise checked from the database afterwards.
+- takeScreenshot: rev-23-v2-workout-finished
