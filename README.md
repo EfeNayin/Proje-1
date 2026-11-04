@@ -241,9 +241,11 @@ Native doğrulama ve e2e kutusu: `mobile/README.md`.
 
 ## Staging'e dağıtım (Render + Neon + Upstash + Resend, ücretsiz planlar)
 
-> **Durum (5 Kasım 2026): Neon ve Upstash gerçek servislere karşı doğrulandı ve staging
-> veritabanına şema kuruldu; Render'a dağıtım YAPILMADI ve hiçbir gerçek e-posta gönderilmedi.**
-> Ayrıntı ve kanıt: aşağıda "Barındırılan doğrulama (Neon + Upstash)". "Yerel prova" gerçek
+> **Durum (5 Kasım 2026): Neon ve Upstash gerçek servislere karşı doğrulandı, staging
+> veritabanına şema kuruldu; sahip Render'a dağıttı (`https://proje-1-t6lh.onrender.com`; ben dağıtmadım,
+> yalnız dışarıdan doğruladım) ve çekirdek antrenman yolculuğu iOS simülatöründe bu adrese karşı
+> çalıştı. Hiçbir gerçek e-posta gönderilmedi; gerçek iPhone ve genel yayın hazırlığı DOĞRULANMADI.**
+> Ayrıntı ve kanıt: aşağıda "Barındırılan doğrulama (Neon + Upstash)" ve "Mobil istemci ↔ staging". "Yerel prova" gerçek
 > servislere dokunmaz; yalnızca aynı imajı, TLS'li PostgreSQL/Redis ve bir HTTPS Resend taklidiyle
 > çalıştırır. Sağlayıcı davranışı için kaynak 4 Kasım 2026'da okunan resmi dokümanlardır; Resend,
 > Render ve istemci adresi hâlâ doğrulanmadı. Bu bir satın alma ya da yayın izni değildir.
@@ -465,6 +467,71 @@ hesap sahibinin kendi e-posta adresine gönderebilir; rastgele kullanıcılara p
 **gönderemez**. Gönderim bu turda denenmedi; yalnız anahtarın yapılandırıldığı (`mail transport 'resend' is
 configured`) görüldü, anahtarın geçerliliği ve teslimat doğrulanmadı.
 
+### Mobil istemci ↔ staging (5 Kasım 2026, iOS simülatörü; fiziksel cihaz DEĞİL)
+
+**Yapılandırma.** Yalnız yerel, Git dışı `mobile/.env` içinde `EXPO_PUBLIC_API_URL=https://proje-1-t6lh.onrender.com`
+(istemci `/api/v1`'i kendisi ekler; URL'ye yazılmaz; kaynakta sabit adres yok; `.env.example`'ın amacı —
+yerel geliştirme — değişmedi). Önceki yerel değer `.env`'de yorum satırı olarak durur. `EXPO_PUBLIC_*` değerleri
+pakete **düz metin** girer: backend sırları, JWT anahtarı, veritabanı adresi ve Resend anahtarı mobil
+yapılandırmaya **asla** yazılmaz. Expo belgesine göre `.env` düzenlemesi için CLI'yi yeniden başlatmak gerekmez,
+çalışan uygulamada **tam yeniden yükleme** (Expo Go'da sallayıp *Reload*) gerekir; bu bilgi *canlı* belge
+sayfasından okundu (v57'ye özel sayfa değil) ve kabuk ortam değişkeninin `.env`'e önceliğini belge söylemiyor.
+Deneysel doğrulama: yalnız `.env` ile başlatılan Metro'nun ürettiği iOS paketinde `EXPO_PUBLIC_API_URL`
+hosted adrese sabitlendi, `localhost:8000` yalnızca yorum ve hata metninde geçiyor. Yeniden yükleme işe
+yaramazsa Metro'yu `npx expo start --clear` ile yeniden başlat.
+
+**Dışarıdan sağlık (bağımsız):** `/health` 200 `{"status":"ok","environment":"staging"}` (≈ 0,41 sn),
+`/health/ready` 200 `{"status":"ready"}` (≈ 0,31 sn), `/docs` 404. Servis o anda **uyanıktı**; **soğuk başlangıç
+ölçülmedi**.
+
+**Yöntem ve sınır.** Mevcut `e2e/scripts/up.sh|run.sh|down.sh` kasıtlı olarak **yerel Docker yığınına** bağlı
+(hesabı `127.0.0.1`'e kaydeder, `down -v` ile hacim siler); hosted staging'e **yönlendirilmedi** ve korumaları
+gevşetilmedi. Yalnız özel `BodyTrack-E2E` simülatörü (Expo Go SDK 57, temiz Keychain), mevcut adım dosyaları
+(`open-app`, `sign-out`, `sign-in`) ve depo dışında yazılan, tek kullanımlık Maestro akışları kullanıldı;
+bu akışlar depoya **eklenmedi**. Maestro `--udid` ile yalnız özel simülatöre bağlandı; sahibin cihazına/
+Keychain'ine dokunulmadı.
+
+**Geçici hesap:** `bt-staging-test-9a5500@example.com` / `bt_stg_9a5500` (`example.com`'a posta gitmez; kurtarma
+e-postası **gönderilmedi**). Hız sınırları açık bırakıldı: 1 kayıt, 1 arayüz girişi (çıkıştan sonra), 1 API giriş
+denemesi (silme sonrası, 401); başarısızlık döngüsü yok, yazma isteklerine otomatik yeniden deneme eklenmedi.
+
+| # | Doğrulama (simülatör, native UI) | Sonuç |
+|---|---|---|
+| 1 | Kayıt (arayüzden) ve giriş | geçti — kayıt sonrası doğrudan Training ekranı; ayrıca çıkıştan sonra yeniden giriş geçti |
+| 2 | Training ekranı katalogu yüklüyor | geçti — seçici filtresiz liste ve "Barbell Bench" araması (Barbell/Decline Barbell/Incline Barbell Bench…) geldi |
+| 3 | Antrenman başlat, egzersiz ekle | geçti (check-in "Skip" ile atlandı) |
+| 4 | **Tam bir** çalışma seti, 80 kg × 8 | geçti — "Set 1, 80 … 8 reps", "1 working sets", "Set 2" yok |
+| 5 | Antrenmanı bitir | geçti (onay iletişim kutusu "Finish") |
+| 6 | Geçmişten aç, seti doğrula | geçti — "…, 1 sets" → "Edit workout", "Barbell Bench Press", "1 working sets", "80 kg", "× 8" |
+| 7 | Uygulamayı kapatıp aç: oturum + veri | geçti — giriş ekranı **görünmedi**, "Profile" sekmesi geldi, geçmiş ve set aynı |
+| 8 | Çıkış → özel veri temizliği | geçti — çıkış sonrası "Recent workouts", "…, 1 sets", "Barbell Bench Press" yok; kapatıp açınca hâlâ çıkış durumunda; yeniden girişte veri **sunucudan** geri geldi |
+| 9 | Hesap silme (temizlik) | geçti — uygulamadan silme, "Your account has been deleted" bildirimi, yeniden açılışta oturum kapalı; API'de silinen bilgilerle giriş **401** |
+
+Kanıt: Maestro komut kayıtları (`commands.json`) — yolculuk 83 komut (81 tamamlandı, 2 atlandı), çıkış/yeniden
+giriş 37 (35 tamamlandı, 2 atlandı), silme onayı + yeniden açılış 16 (15 tamamlandı, 1 atlandı); **hiçbiri
+başarısız değil**. Atlananların hepsi koşullu `runFlow`: iOS'un "Open in Expo Go?" iletişim kutusu bu açılışlarda
+görünmediği için "Open" dokunuşu atlandı (yolculuk akışının 2 yeniden açılışı, çıkış akışının 2'si, silme
+akışının 1'i); Expo Go ilk kurulum tanıtması ise çalıştı. Ekran görüntüleri depo dışındaki geçici dizinde.
+
+**Dürüstçe sınırlar ve bulgular:**
+- Bu bir **simülatör**; fiziksel iPhone, VoiceOver, Dynamic Type, hücresel ağ ve gerçek Keychain davranışı denenmedi.
+  Uygulama Expo Go içinde (geliştirme sunucusu) çalıştı; **imzalı/TestFlight yapısı denenmedi**.
+- "Özel veri temizlendi" yalnızca **ekrandan** doğrulandı; SecureStore/Keychain ve cihaz depolama içeriği
+  doğrudan incelenmedi. Silinen hesabın veritabanı satırlarının gittiği sunucu veritabanında **incelenmedi**
+  (uygulama bildirimi + giriş 401); katalog seed'ine dokunulmadı.
+- **Uygulama kusuru bulunmadı; kaynak değişmedi.** Üç sorun **araç/ortam** kaynaklıydı: (a) kayıt formunda
+  `tapOn: "Email"` etiketi giriş alanı yerine etiket metnine denk geldi (yalnız "First name" doluydu); sunucuya
+  göndermeden placeholder metinleriyle düzeltildi; (b) **makinenin diski doldu** (ENOSPC): Maestro'nun terminal
+  çıktısı kayboldu ve komutlar çalışmadı — sonuçlar `commands.json`'dan çıkarıldı, silme akışı disk açılana
+  kadar bekledi; (c) silme akışında `scrollUntilVisible: id delete-account-confirm` 15 sn'de zaman aşımına
+  uğradı, oysa düğme ekranda görünürdü — nedeni **açıklanamadı** (yerel yığındaki aynı akış önceden geçmişti);
+  onay "Yes, delete my account" metniyle verildi. Erişilebilirlik kimliğinin bu panelde ağaçta olup olmadığı
+  ayrıca incelenmeli.
+- Docker Desktop disk dolunca başlamaz hale geldi (`Docker Desktop is unable to start`); geliştirme servisleri
+  (backend/db/redis) bu yüzden durmuş olabilir. Docker'a, hacimlere ve imajlara **dokunulmadı**.
+- Yeni dağıtımın doğruladıkları bu yolculukla **sınırlı**. Birkaç başarılı istek ve sağlıklı `/health` genel yayın
+  hazırlığını göstermez.
+
 ### Dağıtım sonrası doğrulanacaklar (sırayla; 1. ve 2. madde Neon/Upstash için 5 Kasım 2026'da yapıldı)
 
 1. ~~`python -m app.preflight` gerçek Neon + Upstash'e karşı~~ — **yapıldı** (yukarıdaki tablo). Render'ın ağından
@@ -472,7 +539,9 @@ configured`) görüldü, anahtarın geçerliliği ve teslimat doğrulanmadı.
 2. ~~Staging'e `alembic upgrade head` → `alembic check`~~ — **yapıldı** (head `d3f8a6b1c294`, sıfır fark, tekrar = no-op).
 3. Render'da servisi oluştur, ilk dağıtımın günlüğünde `start: migrations are at head` ve uvicorn satırını gör;
    Render'ın `PORT`'unu ve **imajın son aşamasını** (production) kullandığını doğrula.
-4. `GET /health`, `GET /health/ready`; `/docs` 404.
+4. ~~`GET /health`, `GET /health/ready`; `/docs` 404~~ — dışarıdan **yapıldı** (5 Kasım 2026, uyanık serviste).
+   Kayıt/giriş/yenileme ve çekirdek antrenman yolculuğu simülatörde geçti ("Mobil istemci ↔ staging"); **soğuk
+   başlangıç, Render istemci adresi, ücretsiz CPU'da bcrypt ve Resend açık**.
 5. Kayıt + giriş + yenileme (telefonun staging adresine bakacak bir `EXPO_PUBLIC_API_URL` build'i **bu işin
    kapsamı dışı**; önce `curl` ile).
 6. Resend: alan adı doğrulandıktan sonra bir kurtarma kodu iste → e-posta gelsin, sıfırla; ardından
