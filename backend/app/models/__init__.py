@@ -16,6 +16,7 @@ from app.models.coaching import (
 from app.models.exercise import Exercise, ExerciseMuscleGroup, MuscleGroup
 from app.models.program import Program, TemplateExercise, TemplateSaveRequest, WorkoutTemplate
 from app.models.readiness import ReadinessLog
+from app.models.recovery import PasswordResetChallenge
 from app.models.user import RefreshToken, User
 from app.models.workout import Set, SetSaveRequest, Workout
 
@@ -27,6 +28,7 @@ __all__ = [
     "Exercise",
     "ExerciseMuscleGroup",
     "MuscleGroup",
+    "PasswordResetChallenge",
     "Program",
     "ProgramLineage",
     "ProgramOffer",

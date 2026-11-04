@@ -9,7 +9,7 @@ göz ardı edilir (pydantic-settings tanımadığı alanı yok sayar).
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 256 bits, the size of an HS256 key.
@@ -80,12 +80,55 @@ class Settings(BaseSettings):
     RATE_LIMIT_DELETE_IP_LIMIT: int = Field(default=20, ge=1)
     RATE_LIMIT_DELETE_IP_WINDOW_SECONDS: int = Field(default=900, ge=1)
 
+    # Password recovery (see README.md, "Parola kurtarma"). A code request is counted
+    # per requester, per email address as typed and as a resend cooldown, whether or
+    # not the address belongs to an account; confirmations per requester and per address.
+    RATE_LIMIT_RECOVERY_REQUEST_IP_LIMIT: int = Field(default=15, ge=1)
+    RATE_LIMIT_RECOVERY_REQUEST_IP_WINDOW_SECONDS: int = Field(default=3600, ge=1)
+    RATE_LIMIT_RECOVERY_REQUEST_ACCOUNT_LIMIT: int = Field(default=5, ge=1)
+    RATE_LIMIT_RECOVERY_REQUEST_ACCOUNT_WINDOW_SECONDS: int = Field(default=3600, ge=1)
+    RATE_LIMIT_RECOVERY_RESEND_COOLDOWN_SECONDS: int = Field(default=60, ge=1)
+    RATE_LIMIT_RECOVERY_CONFIRM_IP_LIMIT: int = Field(default=30, ge=1)
+    RATE_LIMIT_RECOVERY_CONFIRM_IP_WINDOW_SECONDS: int = Field(default=900, ge=1)
+    RATE_LIMIT_RECOVERY_CONFIRM_ACCOUNT_LIMIT: int = Field(default=10, ge=1)
+    RATE_LIMIT_RECOVERY_CONFIRM_ACCOUNT_WINDOW_SECONDS: int = Field(default=900, ge=1)
+
+    # ── Password recovery codes ──
+    # 8 random digits (~26.6 bits). Short on purpose, so what protects them is the
+    # attempt limit (per code, per address, per requester), the lifetime and the keyed
+    # hash they are stored under, not their size.
+    PASSWORD_RESET_CODE_TTL_SECONDS: int = Field(default=900, ge=60, le=3600)
+    PASSWORD_RESET_MAX_ATTEMPTS: int = Field(default=5, ge=1, le=10)
+
+    # ── Outgoing email (SMTP) ──
+    # Unset SMTP_HOST means "no delivery configured": recovery requests are still
+    # answered the same way but nothing is created or sent. Credentials stay here,
+    # on the backend. Outside development a host is required and the connection
+    # must be encrypted (see check_deployment_safety).
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = Field(default=587, ge=1, le=65535)
+    # starttls: plain connect, then the server must upgrade (587). implicit: TLS from
+    # the first byte (465). none: unencrypted, development only.
+    SMTP_SECURITY: Literal["starttls", "implicit", "none"] = "starttls"
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: SecretStr | None = None
+    SMTP_FROM: str = "BodyTrack <no-reply@example.invalid>"
+    # Applies to each socket operation (connect, greeting, STARTTLS, login, send).
+    SMTP_TIMEOUT_SECONDS: float = Field(default=10, gt=0, le=60)
+    # Sends running at once, and sends allowed to wait; beyond that a message is dropped.
+    SMTP_MAX_CONCURRENT: int = Field(default=4, ge=1, le=32)
+    SMTP_MAX_PENDING: int = Field(default=100, ge=1, le=10_000)
+
     # ── NCBI E-utilities (PubMed) ──
     # Both optional. An API key raises NCBI's per-IP limit from 3 to 10
     # requests/second; it lives only here on the backend, never in the mobile
     # bundle. Leave unset to use the anonymous limit.
     NCBI_API_KEY: str | None = None
     NCBI_EMAIL: str | None = None
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.SMTP_HOST)
 
     @property
     def is_production(self) -> bool:
@@ -104,6 +147,16 @@ class Settings(BaseSettings):
         startup error. Raised as a plain error, never a pydantic one, so the
         message cannot echo the secret or the other settings.
         """
+        if not self.is_development and not self.smtp_configured:
+            raise RuntimeError(
+                f"SMTP_HOST must be set when ENVIRONMENT is {self.ENVIRONMENT!r}: "
+                "password recovery cannot deliver codes without it."
+            )
+        if not self.is_development and self.SMTP_SECURITY == "none":
+            raise RuntimeError(
+                f"SMTP_SECURITY must be 'starttls' or 'implicit' when ENVIRONMENT is "
+                f"{self.ENVIRONMENT!r}: recovery codes must not cross the network in clear."
+            )
         if not self.is_development and len(self.JWT_SECRET_KEY.encode()) < MIN_JWT_SECRET_BYTES:
             raise RuntimeError(
                 f"JWT_SECRET_KEY must be at least {MIN_JWT_SECRET_BYTES} bytes when "

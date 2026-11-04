@@ -59,14 +59,19 @@ def hash_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
-def create_access_token(user_id: UUID) -> str:
-    """Kısa ömürlü access token üretir. DB'ye yazılmaz (stateless)."""
+def create_access_token(user_id: UUID, credential_version: int = 0) -> str:
+    """Kısa ömürlü access token üretir. DB'ye yazılmaz (stateless).
+
+    `credential_version` is users.credential_version at issue time; the token is
+    refused once the account's value differs (see credential_version_of).
+    """
     expire_at = datetime.now(UTC) + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "type": _TOKEN_TYPE_ACCESS,
+        "cv": credential_version,
         # jti (JWT ID): her token'ı benzersiz kılar. Olmazsa aynı saniyede
         # üretilen iki token birebir aynı olur (iat/exp saniye hassasiyetinde),
         # bu da refresh_tokens.token_hash UNIQUE kısıtını ihlal eder.
@@ -77,7 +82,7 @@ def create_access_token(user_id: UUID) -> str:
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_refresh_token(user_id: UUID) -> tuple[str, datetime]:
+def create_refresh_token(user_id: UUID, credential_version: int = 0) -> tuple[str, datetime]:
     """Uzun ömürlü refresh token üretir.
 
     Ham token'ı ve son geçerlilik tarihini döner. Çağıran taraf (auth
@@ -88,6 +93,7 @@ def create_refresh_token(user_id: UUID) -> tuple[str, datetime]:
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "type": _TOKEN_TYPE_REFRESH,
+        "cv": credential_version,
         "jti": str(uuid4()),
         "iat": datetime.now(UTC),
         "exp": expire_at,
@@ -108,6 +114,19 @@ def decode_token(token: str) -> dict[str, Any]:
     return payload
 
 
+def credential_version_of(payload: dict[str, Any]) -> int:
+    """The credential version a token was issued under.
+
+    Tokens issued before credential versions existed carry none and count as 0, the
+    value every existing account starts with, so they stay valid until the account's
+    credentials change. A malformed value matches no account (-1).
+    """
+    value = payload.get("cv", 0)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return -1
+    return int(value)
+
+
 def is_access_token(payload: dict[str, Any]) -> bool:
     return payload.get("type") == _TOKEN_TYPE_ACCESS
 
@@ -120,6 +139,7 @@ __all__ = [
     "JWTError",
     "create_access_token",
     "create_refresh_token",
+    "credential_version_of",
     "decode_token",
     "dummy_password_hash",
     "hash_password",

@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 from zoneinfo import available_timezones
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 # bcrypt hashes at most 72 BYTES and silently ignores the rest. Two passwords
 # sharing their first 72 bytes would therefore be interchangeable, so we
@@ -48,6 +48,19 @@ Username = Annotated[
 ]
 
 Password = Annotated[str, Field(min_length=8, max_length=72, examples=["s3cret-passphrase"])]
+
+
+def _fits_bcrypt(value: str) -> str:
+    if len(value.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        raise ValueError(
+            f"Password must be at most {BCRYPT_MAX_BYTES} bytes "
+            "(non-ASCII characters count as more than one byte)"
+        )
+    return value
+
+
+# The registration rules, for a password that is chosen again (password recovery).
+NewPassword = Annotated[Password, AfterValidator(_fits_bcrypt)]
 
 
 def validate_timezone(value: str) -> str:
@@ -97,6 +110,30 @@ class LoginRequest(BaseModel):
     # far above the 72-byte registration limit; the exact rule is in
     # service.login.
     password: str = Field(max_length=1024)
+
+
+class PasswordRecoveryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+
+
+class PasswordRecoveryAccepted(BaseModel):
+    """The one answer to a recovery request, whether or not the address has an account."""
+
+    message: str
+    # Constants of the deployment, so they say nothing about the address.
+    code_valid_minutes: int
+    resend_after_seconds: int
+
+
+class PasswordRecoveryConfirm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    # What the person typed: spaces and hyphens are tolerated and removed by the service.
+    code: str = Field(max_length=32)
+    new_password: NewPassword
 
 
 class RefreshRequest(BaseModel):

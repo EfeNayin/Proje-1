@@ -1033,6 +1033,7 @@ class TestEveryReferenceToAUserHasADecision:
         ("coach_invites", "accepted_by_id", "SET NULL"),
         ("coach_invites", "coach_id", "CASCADE"),
         ("exercises", "created_by", "SET NULL"),
+        ("password_reset_challenges", "user_id", "CASCADE"),
         ("program_lineages", "coach_id", "CASCADE"),
         ("program_offers", "coach_id", "CASCADE"),
         ("programs", "user_id", "CASCADE"),

@@ -31,6 +31,13 @@ class NotFoundError(AppError):
     default_detail = "Kaynak bulunamadı"
 
 
+class BadRequestError(AppError):
+    """The request is well-formed but cannot be honoured as asked (e.g. a spent code)."""
+
+    status_code = 400
+    default_detail = "Bad request"
+
+
 class UnauthorizedError(AppError):
     """Kimlik doğrulama başarısız veya token geçersiz/eksik."""
 

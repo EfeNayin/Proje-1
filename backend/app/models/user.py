@@ -121,6 +121,15 @@ class User(Base):
         Boolean, nullable=False, server_default=text("false")
     )
 
+    # Bumped whenever the credentials change (a completed password recovery). Every
+    # token carries the value it was issued under and is refused once it differs, so a
+    # reset ends access tokens as well as refresh sessions, with no clock comparison
+    # to get wrong at a boundary. Tokens issued before the column existed carry no
+    # value and count as 0, which is every existing account's value until its first reset.
+    credential_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+
     created_at: Mapped[created_at]
     updated_at: Mapped[updated_at]
 

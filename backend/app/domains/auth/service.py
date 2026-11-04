@@ -19,6 +19,7 @@ from app.core.security import (
     JWTError,
     create_access_token,
     create_refresh_token,
+    credential_version_of,
     decode_token,
     dummy_password_hash,
     hash_password,
@@ -65,7 +66,7 @@ async def register(db: AsyncSession, payload: RegisterRequest) -> tuple[User, To
     db.add(user)
     await db.flush()  # populate user.id before it is used as a foreign key
 
-    tokens = await _issue_token_pair(db, user.id)
+    tokens = await _issue_token_pair(db, user.id, credential_version=0)
     await db.commit()
     await db.refresh(user)
     return user, tokens
@@ -106,7 +107,24 @@ async def login(
     # A right password is not a failed attempt; only failures stay counted.
     await attempt.refund()
 
-    tokens = await _issue_token_pair(db, user.id)
+    # Share-lock the account row for the rest of this transaction. A password recovery
+    # (or a deletion) needs that row exclusively, so it either finished before this
+    # point, which the check below sees, or waits until the tokens issued here are
+    # committed, and then ends them with everything else. Without this, a login that
+    # checked the old password just before a reset could come out with a live session.
+    current = await db.scalar(
+        select(User)
+        .where(User.id == user.id)
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
+    if current is None or current.password_hash != password_hash:
+        raise UnauthorizedError(_INVALID_CREDENTIALS)
+    user = current
+
+    tokens = await _issue_token_pair(
+        db, user.id, credential_version=user.credential_version
+    )
     try:
         await db.commit()
     except IntegrityError as error:
@@ -190,13 +208,25 @@ async def refresh(db: AsyncSession, raw_token: str, throttle: AuthThrottle) -> T
     if stored.expires_at <= now:
         raise UnauthorizedError("Invalid or expired refresh token")
 
-    # The account may have been deleted since the token was issued.
-    user = await db.get(User, user_id)
+    # The account may have been deleted since the token was issued. Share-locked, so a
+    # password recovery cannot commit between this check and the new tokens below.
+    user = await db.scalar(
+        select(User)
+        .where(User.id == user_id)
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
     if user is None:
+        raise UnauthorizedError("Invalid or expired refresh token")
+    # Issued before the password was reset (a recovery deletes the sessions it knows
+    # about; this also covers one that was being created while it ran).
+    if credential_version_of(claims) != user.credential_version:
         raise UnauthorizedError("Invalid or expired refresh token")
 
     stored.revoked_at = now
-    tokens = await _issue_token_pair(db, user.id, stored.family_id)
+    tokens = await _issue_token_pair(
+        db, user.id, stored.family_id, credential_version=user.credential_version
+    )
     try:
         await db.commit()
     except IntegrityError as error:
@@ -273,16 +303,21 @@ async def lock_family(db: AsyncSession, family_id: UUID) -> None:
 
 
 async def _issue_token_pair(
-    db: AsyncSession, user_id: UUID, family_id: UUID | None = None
+    db: AsyncSession,
+    user_id: UUID,
+    family_id: UUID | None = None,
+    *,
+    credential_version: int,
 ) -> TokenPair:
     """Create an access + refresh token and persist the refresh token's hash.
 
     `family_id` is the session being rotated; without it the token starts a new
-    session (register, login). Does not commit; the caller decides the
-    transaction boundary.
+    session (register, login). `credential_version` is the account's current value
+    (users.credential_version); both tokens carry it. Does not commit; the caller
+    decides the transaction boundary.
     """
-    access = create_access_token(user_id)
-    raw_refresh, expires_at = create_refresh_token(user_id)
+    access = create_access_token(user_id, credential_version)
+    raw_refresh, expires_at = create_refresh_token(user_id, credential_version)
 
     db.add(
         RefreshToken(

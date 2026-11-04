@@ -4,6 +4,10 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 _FOREIGN_KEY_VIOLATION = "23503"
 
+# Deadlock detected, serialization failure, lock wait timed out: the transaction was
+# rolled back and trying it again from the start is safe.
+RETRYABLE_SQLSTATES = frozenset({"40P01", "40001", "55P03"})
+
 
 def references_missing_user(error: IntegrityError) -> bool:
     """Whether a write failed because the account it belongs to no longer exists.

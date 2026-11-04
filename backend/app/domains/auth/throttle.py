@@ -30,6 +30,16 @@ Refresh
      that fails verification (forged, tampered, expired, or an access token) never
      reaches this bucket, so nobody can spend another account's allowance with a
      made-up token.
+
+Password recovery (README.md, "Parola kurtarma")
+  Request a code: requester, address as typed (case-folded) and a resend cooldown on that
+  address, admitted together or not at all. Confirm a code: requester and address, spent
+  before the code is looked at and given back when it was right. All of them are keyed by
+  the typed address, never by whether an account exists, so an unknown address and a
+  registered one are limited, and answered, identically. They are separate from every
+  login bucket: asking for a code for an address never counts against signing in with it.
+  A third, strict limit lives on the code itself (PASSWORD_RESET_MAX_ATTEMPTS, in the
+  database; see recovery.py).
 """
 
 from typing import Annotated
@@ -104,6 +114,54 @@ class AuthThrottle:
                 ),
             ],
             message="Too many sign-in attempts.",
+        )
+
+    async def recovery_request(self, email: str) -> None:
+        """Count a request for a recovery code (also a resend). Refused: 429, nothing counted."""
+        account = email.strip().casefold()
+        await self._limiter.admit(
+            [
+                Bucket(
+                    "recovery-request:ip",
+                    self._requester,
+                    settings.RATE_LIMIT_RECOVERY_REQUEST_IP_LIMIT,
+                    settings.RATE_LIMIT_RECOVERY_REQUEST_IP_WINDOW_SECONDS,
+                ),
+                Bucket(
+                    "recovery-request:account",
+                    account,
+                    settings.RATE_LIMIT_RECOVERY_REQUEST_ACCOUNT_LIMIT,
+                    settings.RATE_LIMIT_RECOVERY_REQUEST_ACCOUNT_WINDOW_SECONDS,
+                ),
+                Bucket(
+                    "recovery-request:cooldown",
+                    account,
+                    1,
+                    settings.RATE_LIMIT_RECOVERY_RESEND_COOLDOWN_SECONDS,
+                ),
+            ],
+            message="A recovery code was requested recently.",
+        )
+
+    async def recovery_confirm(self, email: str) -> Admission:
+        """Count an attempt to use a code. Refund it if the code was right."""
+        account = email.strip().casefold()
+        return await self._limiter.admit(
+            [
+                Bucket(
+                    "recovery-confirm:ip",
+                    self._requester,
+                    settings.RATE_LIMIT_RECOVERY_CONFIRM_IP_LIMIT,
+                    settings.RATE_LIMIT_RECOVERY_CONFIRM_IP_WINDOW_SECONDS,
+                ),
+                Bucket(
+                    "recovery-confirm:account",
+                    account,
+                    settings.RATE_LIMIT_RECOVERY_CONFIRM_ACCOUNT_LIMIT,
+                    settings.RATE_LIMIT_RECOVERY_CONFIRM_ACCOUNT_WINDOW_SECONDS,
+                ),
+            ],
+            message="Too many attempts to use a recovery code.",
         )
 
     async def refresh_user(self, verified_user_id: UUID) -> None:

@@ -10,7 +10,8 @@ the user. Every reference to `users` was audited (tests/test_account_deletion.py
 if a new one appears without a decision here).
 
 Deleted with the account (it owns them):
-  * the profile row, nutrition goals and preferences; refresh sessions;
+  * the profile row, nutrition goals and preferences; refresh sessions; the account's
+    outstanding password-recovery code (a keyed hash, never the code);
   * workouts, their sets, pending-write receipts and plan snapshots;
   * readiness logs and body measurements;
   * programs, days, exercises-in-days and template-save receipts (a coach's own
@@ -56,7 +57,9 @@ them, so deletion neither deadlocks with them nor lets them slip a row in behind
   2. the account's connections, in id order (the first lock accepting an offer,
      publishing and feedback take);
   3. the account's "which program is active" lock (program activation and acceptance);
-  4. the user row. Anything still inserting a row for this user (a login, a write)
+  4. the user row (and a check that the credentials this request was authorized with
+     are still the account's: a password recovery that committed meanwhile refuses it).
+     Anything still inserting a row for this user (a login, a write)
      either committed before this point and is removed by the cascade, or is refused
      afterwards by the foreign key (callers turn that into a plain 401), so nothing
      can be left behind or bring the account back.
@@ -70,15 +73,13 @@ from sqlalchemy import delete, or_, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dberrors import sqlstate_of
+from app.core.dberrors import RETRYABLE_SQLSTATES, sqlstate_of
 from app.core.exceptions import ForbiddenError, ServiceUnavailableError, UnauthorizedError
 from app.domains.auth.service import lock_family, password_matches
 from app.domains.programs.service import lock_active_program
 from app.domains.users.ratelimit import AccountDeletionThrottle
 from app.models import CoachAthleteLink, CoachInvite, RefreshToken, User
 
-# Deadlock detected, serialization failure, lock wait timed out.
-_RETRYABLE = {"40P01", "40001", "55P03"}
 _ATTEMPTS = 3
 _LOCK_TIMEOUT = "5s"
 
@@ -97,20 +98,21 @@ async def delete_account(
     # Only wrong passwords stay counted.
     await attempt.refund()
 
-    user_id = user.id
+    # Read now: a rollback in the loop expires the object.
+    user_id, credential_version = user.id, user.credential_version
     for attempt_number in range(_ATTEMPTS):
         try:
-            await _erase(db, user_id)
+            await _erase(db, user_id, credential_version)
             return
         except DBAPIError as error:
             await db.rollback()
-            if sqlstate_of(error) not in _RETRYABLE:
+            if sqlstate_of(error) not in RETRYABLE_SQLSTATES:
                 raise
             if attempt_number == _ATTEMPTS - 1:
                 raise ServiceUnavailableError(_NOT_DELETED, retry_after=5) from None
 
 
-async def _erase(db: AsyncSession, user_id: UUID) -> None:
+async def _erase(db: AsyncSession, user_id: UUID, credential_version: int) -> None:
     await db.execute(text(f"SET LOCAL lock_timeout = '{_LOCK_TIMEOUT}'"))
 
     # 1. Sessions: wait for any refresh or logout of this account to finish.
@@ -136,8 +138,13 @@ async def _erase(db: AsyncSession, user_id: UUID) -> None:
     # 3. Programs.
     await lock_active_program(db, user_id)
 
-    # 4. The user row, last. A repeated or racing request finds nothing here.
-    if await db.scalar(select(User.id).where(User.id == user_id).with_for_update()) is None:
+    # 4. The user row, last. A repeated or racing request finds nothing here. A password
+    # recovery that committed while this request waited for the lock has changed the
+    # credentials this request was authorized with: it is refused, nothing is deleted.
+    current = await db.scalar(
+        select(User.credential_version).where(User.id == user_id).with_for_update()
+    )
+    if current is None or current != credential_version:
         await db.rollback()
         raise UnauthorizedError("Invalid or expired access token")
 
