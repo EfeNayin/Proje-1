@@ -148,11 +148,28 @@ async def delete_keys_with_prefix(limiter: RateLimiter, prefix: str) -> None:
         await redis.delete(key)
 
 
+# The Redis timeout of the limiter that ordinary tests use. Production keeps its own short
+# value (RATE_LIMIT_REDIS_TIMEOUT_SECONDS, 0.5 s) and test_ratelimit.py pins that. Tests
+# built on this fixture check what is ADMITTED and what is refused against a healthy Redis;
+# bursts of concurrent bcrypt checks run on the event loop of the test process itself and,
+# on a busy machine, can keep it from reading Redis's answer within 0.5 s. The limiter then
+# (correctly) answers 503, and a test that expected 403/429 failed for a reason that has
+# nothing to do with admission. A Redis that is slow or gone is covered separately, by tests
+# that build their own limiter with a short timeout (test_ratelimit.TestRedisFailure,
+# test_account_deletion's "cannot answer" case).
+TEST_LIMITER_REDIS_TIMEOUT_SECONDS = 10.0
+
+
 @pytest.fixture
 async def rate_limiter() -> AsyncGenerator[RateLimiter, None]:
     """A real Redis-backed limiter with its own namespace, swapped in for the app's."""
     prefix = f"bt:rl:test:{uuid4().hex}"
-    limiter = RateLimiter.from_settings(rate_limit_test_url(), prefix)
+    limiter = RateLimiter(
+        rate_limit_test_url(),
+        key_prefix=prefix,
+        secret=settings.JWT_SECRET_KEY.encode(),
+        timeout_seconds=TEST_LIMITER_REDIS_TIMEOUT_SECONDS,
+    )
     app.dependency_overrides[get_rate_limiter] = lambda: limiter
     yield limiter
     try:

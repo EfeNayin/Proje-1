@@ -16,6 +16,7 @@ from uuid import uuid4
 import pytest
 from starlette.requests import Request
 
+from app.core.config import Settings, settings
 from app.core.exceptions import RateLimitedError, ServiceUnavailableError
 from app.core.ratelimit import (
     UNAVAILABLE_COOLDOWN_SECONDS,
@@ -24,7 +25,11 @@ from app.core.ratelimit import (
     format_wait,
     requester_address,
 )
-from tests.conftest import delete_keys_with_prefix, rate_limit_test_url
+from tests.conftest import (
+    TEST_LIMITER_REDIS_TIMEOUT_SECONDS,
+    delete_keys_with_prefix,
+    rate_limit_test_url,
+)
 
 
 def bucket(
@@ -319,6 +324,19 @@ class DeadRedis:
         )
 
 
+class TestTheTimeoutIsNotLoosenedForProduction:
+    """The fixture limiter waits long for Redis (see conftest); the application's must not."""
+
+    def test_the_applications_limiter_keeps_its_short_timeout(self) -> None:
+        default = Settings.model_fields["RATE_LIMIT_REDIS_TIMEOUT_SECONDS"].default
+        assert default == 0.5
+        assert RateLimiter.from_settings()._timeout == settings.RATE_LIMIT_REDIS_TIMEOUT_SECONDS
+        assert settings.RATE_LIMIT_REDIS_TIMEOUT_SECONDS < TEST_LIMITER_REDIS_TIMEOUT_SECONDS
+
+    async def test_the_fixture_limiter_is_the_patient_one(self, rate_limiter: RateLimiter) -> None:
+        assert rate_limiter._timeout == TEST_LIMITER_REDIS_TIMEOUT_SECONDS
+
+
 class TestRedisFailure:
     async def test_a_refused_connection_is_a_503_never_an_admission(self) -> None:
         limiter = DeadRedis.refusing_limiter()
@@ -330,6 +348,25 @@ class TestRedisFailure:
 
         assert failure.value.status_code == 503
         assert failure.value.headers == {"Retry-After": "10"}
+
+    async def test_an_event_loop_too_busy_to_read_redis_is_a_503_never_an_admission(self) -> None:
+        # What a burst of synchronous bcrypt checks does to the process that runs them: the
+        # loop cannot read Redis's answer in time. The limiter reports "unavailable" and the
+        # request is refused; it is never waved through. Built with the production timeout.
+        limiter = RateLimiter.from_settings(rate_limit_test_url(), f"bt:rl:test:{uuid4().hex}")
+        try:
+            pending = asyncio.ensure_future(limiter.admit([bucket(limit=5)], message="x"))
+            await asyncio.sleep(0)
+            # Blocking the loop is the point of this test.
+            time.sleep(settings.RATE_LIMIT_REDIS_TIMEOUT_SECONDS * 4)  # noqa: ASYNC251
+
+            with pytest.raises(ServiceUnavailableError) as failure:
+                await pending
+            assert failure.value.status_code == 503
+            assert failure.value.headers == {"Retry-After": "10"}
+        finally:
+            await delete_keys_with_prefix(limiter, limiter.key_prefix)
+            await limiter.aclose()
 
     async def test_a_redis_that_accepts_but_never_answers_is_cut_off_by_the_timeout(
         self,
