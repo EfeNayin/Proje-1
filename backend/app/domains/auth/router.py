@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.mailer import SmtpMailer, get_mailer
+from app.core.mailer import Mailer as MailTransport
+from app.core.mailer import get_mailer
 from app.domains.auth import recovery, recovery_email, service
 from app.domains.auth.schemas import (
     AuthResponse,
@@ -35,7 +36,7 @@ from app.domains.auth.throttle import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
-Mailer = Annotated[SmtpMailer, Depends(get_mailer)]
+Mailer = Annotated[MailTransport, Depends(get_mailer)]
 
 
 @router.post(

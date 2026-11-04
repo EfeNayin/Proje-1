@@ -6,8 +6,10 @@ değişirse diğeri de güncellenmeli, yoksa .env'deki değer sessizce
 göz ardı edilir (pydantic-settings tanımadığı alanı yok sayar).
 """
 
+from email.utils import parseaddr
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -108,11 +110,30 @@ class Settings(BaseSettings):
     PASSWORD_RESET_CODE_TTL_SECONDS: int = Field(default=900, ge=60, le=3600)
     PASSWORD_RESET_MAX_ATTEMPTS: int = Field(default=5, ge=1, le=10)
 
-    # ── Outgoing email (SMTP) ──
-    # Unset SMTP_HOST means "no delivery configured": recovery requests are still
-    # answered the same way but nothing is created or sent. Credentials stay here,
-    # on the backend. Outside development a host is required and the connection
-    # must be encrypted (see check_deployment_safety).
+    # ── Outgoing email ──
+    # MAIL_TRANSPORT names the one transport in use; nothing switches between them on
+    # failure. "smtp" talks SMTP (below); "resend" calls Resend's HTTPS API, which is how
+    # a host that blocks outbound SMTP ports (Render's free plan) can still send.
+    # Unset SMTP_HOST (smtp) or RESEND_API_KEY (resend) means "no delivery configured":
+    # recovery requests are still answered the same way but nothing is created or sent.
+    # Credentials stay here, on the backend. Outside development the selected transport
+    # must be fully configured (see check_deployment_safety).
+    MAIL_TRANSPORT: Literal["smtp", "resend"] = "smtp"
+    # The From address of every message. Falls back to SMTP_FROM so existing setups keep
+    # working; Resend requires an address on a domain verified in its dashboard.
+    MAIL_FROM: str | None = None
+
+    # ── Outgoing email: Resend (HTTPS API) ──
+    RESEND_API_KEY: SecretStr | None = None
+    # Not meant to be changed; tests and the local stack point it at a stub. Outside
+    # development it must be https.
+    RESEND_API_URL: str = "https://api.resend.com/emails"
+    # Applies to the whole request (connect, send, read), not to each step.
+    RESEND_TIMEOUT_SECONDS: float = Field(default=10, gt=0, le=60)
+    RESEND_MAX_CONCURRENT: int = Field(default=4, ge=1, le=32)
+    RESEND_MAX_PENDING: int = Field(default=100, ge=1, le=10_000)
+
+    # ── Outgoing email: SMTP ──
     SMTP_HOST: str | None = None
     SMTP_PORT: int = Field(default=587, ge=1, le=65535)
     # starttls: plain connect, then the server must upgrade (587). implicit: TLS from
@@ -139,6 +160,19 @@ class Settings(BaseSettings):
         return bool(self.SMTP_HOST)
 
     @property
+    def resend_configured(self) -> bool:
+        return self.RESEND_API_KEY is not None and bool(self.RESEND_API_KEY.get_secret_value())
+
+    @property
+    def mail_configured(self) -> bool:
+        """Whether the SELECTED transport has what it needs to deliver."""
+        return self.resend_configured if self.MAIL_TRANSPORT == "resend" else self.smtp_configured
+
+    @property
+    def mail_from(self) -> str:
+        return self.MAIL_FROM or self.SMTP_FROM
+
+    @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
 
@@ -147,29 +181,55 @@ class Settings(BaseSettings):
         return self.ENVIRONMENT == "development"
 
     def check_deployment_safety(self) -> None:
-        """Refuse to start a non-development environment with a guessable JWT key.
+        """Refuse to start a non-development environment that is unsafe or half-configured.
 
         backend/.env.example ships a placeholder key that is public in the
         repository, and a copied .env keeps it. Anyone who knows the key can
         sign tokens for any user, so outside development a short key is a
-        startup error. Raised as a plain error, never a pydantic one, so the
-        message cannot echo the secret or the other settings.
+        startup error; so is a mail transport that cannot deliver. Raised as a plain
+        error, never a pydantic one, so the message cannot echo a secret.
         """
-        if not self.is_development and not self.smtp_configured:
-            raise RuntimeError(
-                f"SMTP_HOST must be set when ENVIRONMENT is {self.ENVIRONMENT!r}: "
-                "password recovery cannot deliver codes without it."
-            )
-        if not self.is_development and self.SMTP_SECURITY == "none":
-            raise RuntimeError(
-                f"SMTP_SECURITY must be 'starttls' or 'implicit' when ENVIRONMENT is "
-                f"{self.ENVIRONMENT!r}: recovery codes must not cross the network in clear."
-            )
-        if not self.is_development and len(self.JWT_SECRET_KEY.encode()) < MIN_JWT_SECRET_BYTES:
+        if self.is_development:
+            return
+        environment = self.ENVIRONMENT
+        if len(self.JWT_SECRET_KEY.encode()) < MIN_JWT_SECRET_BYTES:
             raise RuntimeError(
                 f"JWT_SECRET_KEY must be at least {MIN_JWT_SECRET_BYTES} bytes when "
-                f"ENVIRONMENT is {self.ENVIRONMENT!r}. Generate one with: "
+                f"ENVIRONMENT is {environment!r}. Generate one with: "
                 'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        self._check_mail(environment)
+
+    def _check_mail(self, environment: str) -> None:
+        if self.MAIL_TRANSPORT == "resend":
+            if not self.resend_configured:
+                raise RuntimeError(
+                    f"RESEND_API_KEY must be set when MAIL_TRANSPORT is 'resend' and "
+                    f"ENVIRONMENT is {environment!r}: password recovery cannot deliver "
+                    "codes without it."
+                )
+            url = urlsplit(self.RESEND_API_URL)
+            if url.scheme != "https" or not url.hostname:
+                raise RuntimeError(
+                    f"RESEND_API_URL must be an https URL when ENVIRONMENT is {environment!r}."
+                )
+            address = parseaddr(self.mail_from)[1]
+            _, at, domain = address.rpartition("@")
+            if not at or not domain or domain.endswith(".invalid"):
+                raise RuntimeError(
+                    f"MAIL_FROM must be a real address on a domain verified with Resend when "
+                    f"ENVIRONMENT is {environment!r}."
+                )
+            return
+        if not self.smtp_configured:
+            raise RuntimeError(
+                f"SMTP_HOST must be set when ENVIRONMENT is {environment!r}: "
+                "password recovery cannot deliver codes without it."
+            )
+        if self.SMTP_SECURITY == "none":
+            raise RuntimeError(
+                f"SMTP_SECURITY must be 'starttls' or 'implicit' when ENVIRONMENT is "
+                f"{environment!r}: recovery codes must not cross the network in clear."
             )
 
 
