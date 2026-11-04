@@ -241,11 +241,12 @@ Native doğrulama ve e2e kutusu: `mobile/README.md`.
 
 ## Staging'e dağıtım (Render + Neon + Upstash + Resend, ücretsiz planlar)
 
-> **Durum: hazırlık. Hiçbir barındırılan servise dağıtım YAPILMADI ve hiçbir gerçek e-posta
-> gönderilmedi.** Aşağıdaki "yerel prova" gerçek Render/Neon/Upstash/Resend'e dokunmaz; yalnızca
-> aynı imajı, TLS'li PostgreSQL/Redis ve bir HTTPS Resend taklidiyle çalıştırır. Sağlayıcı
-> davranışı için tek kaynak 4 Kasım 2026'da okunan resmi dokümanlardır (aşağıda); hangi şeyin
-> neyle doğrulandığı en sondaki tabloda ayrılmıştır. Bu bir satın alma ya da yayın izni değildir.
+> **Durum (5 Kasım 2026): Neon ve Upstash gerçek servislere karşı doğrulandı ve staging
+> veritabanına şema kuruldu; Render'a dağıtım YAPILMADI ve hiçbir gerçek e-posta gönderilmedi.**
+> Ayrıntı ve kanıt: aşağıda "Barındırılan doğrulama (Neon + Upstash)". "Yerel prova" gerçek
+> servislere dokunmaz; yalnızca aynı imajı, TLS'li PostgreSQL/Redis ve bir HTTPS Resend taklidiyle
+> çalıştırır. Sağlayıcı davranışı için kaynak 4 Kasım 2026'da okunan resmi dokümanlardır; Resend,
+> Render ve istemci adresi hâlâ doğrulanmadı. Bu bir satın alma ya da yayın izni değildir.
 
 ### Parçalar
 
@@ -343,11 +344,18 @@ dondurulmuştur, imaja yalnız baseline migration okusun diye girer).
 
 1. **Önce dışarıdan, bilgisayarından** (geliştirme veritabanına DEĞİL, Neon staging'e): üretim imajını
    yerelde kur (`docker build --target production -t bodytrack-staging backend`), staging değerlerini
-   **Git dışındaki** bir env dosyasına yaz (örn. `~/secrets/bodytrack-staging.env`, mod 600) ve:
-   `docker run --rm --env-file ~/secrets/bodytrack-staging.env bodytrack-staging python -m app.preflight`
+   **Git dışındaki** bir env dosyasına yaz (`~/secrets/body-track-staging.env`, dizin 700, dosya 600;
+   `docker --env-file` **tırnağı değerin parçası sayar**, bu yüzden değerler tırnaksız yazılır). Sağlayıcıdan
+   kopyalanan dizeler olduğu gibi yapıştırılır; sürücü/`ssl` dönüşümü ayrı bir **çalışma dosyasına**
+   (`body-track-staging.runtime.env`, mod 600) yapılır: `postgresql://` → `postgresql+asyncpg://`,
+   `sslmode`/`channel_binding` silinir, `ssl=verify-full` eklenir (kullanıcı adı/parola kaçışına
+   dokunulmaz; `-pooler` ana makinesi ve `neon.tech` olmayan host reddedilir); Redis `redis://` →
+   `rediss://`, sorgu seçeneği yok, REST URL'si değil. Sonra:
+   `docker run --rm --env-file ~/secrets/body-track-staging.runtime.env bodytrack-staging python -m app.preflight`
    — kontroller geçmeden ilerleme. Sonra bir kez:
-   `docker run --rm --env-file … -e RUN_MIGRATIONS=false bodytrack-staging alembic upgrade head`
-   ve `… alembic check` (sıfır fark).
+   `docker run --rm --env-file … bodytrack-staging alembic upgrade head`
+   ve `… alembic check` (sıfır fark). (Çalışma dosyasındaki `RUN_MIGRATIONS=false` yalnız `start.sh`'i
+   etkiler; doğrudan `alembic` komutu her zaman çalışır.)
 2. **Dağıtımda** `RUN_MIGRATIONS=true` kalır: zaten uygulanmış migration'lar no-op, yenileri uygular;
    hata olursa konteyner çıkar, yeni sürüm sağlıklı olmaz ve önceki sürümün çalışmaya devam etmesi
    beklenir (Render davranışı — **barındırılan doğrulama adımı**).
@@ -412,13 +420,56 @@ bağlantıları değiştirmesi; backend günlüğünde parola, sır, kod veya ad
 düz `redis://`, `sslmode=` kopyası, yanlış veritabanı parolası ve güvenilmeyen CA'nın her biri açık bir
 mesajla sıfırdan farklı kodla çıkar, hiçbiri hizmet vermez ve parola çıktıya sızmaz.
 
-### Dağıtım sonrası doğrulanacaklar (sırayla; şimdiye dek hiçbiri yapılmadı)
+### Barındırılan doğrulama (Neon + Upstash) — 5 Kasım 2026
 
-1. `python -m app.preflight` (yukarıdaki `docker run …`) gerçek Neon + Upstash'e karşı: **sıralama/
-   büyük-küçük harf katlaması** (`lower('GÖĞÜS')`; Neon'un varsayılan collation'ı dokümanda doğrulanamadı,
-   şema `C.UTF-8` varsayar), dört uzantının kurulabilirliği (Neon'un desteklediği uzantılar listesinde var),
-   TLS, **Lua betiklerinin Upstash'te** çalışması (TTL, iade) ve ilk `admit` süresinin 0,5 sn altında kalması.
-2. Staging'e `alembic upgrade head` (bilgisayardan) → `alembic check`.
+Üretim imajı (`--target production`), bilgisayardan, sahibin yeni `body-track` Neon (PostgreSQL 16,
+AWS Frankfurt) ve Upstash (Free, Frankfurt) örneklerine karşı. **Render, Resend ve gerçek e-posta bu
+turda yok.** Çıktılar URL/host/parola içermez.
+
+| Kontrol | Sonuç |
+|---|---|
+| Açılış güvenlik kontrolleri (`staging`, `resend`, `ssl=verify-full`, `rediss://`) | geçti |
+| Sunucu sürümü | PostgreSQL **16.15**, bağlanma ≈ 0,16–0,19 sn (uyanık hesapla) |
+| Veritabanı bağlantısı TLS (**istemci tarafı**) | TLS 1.3, `TLS_AES_256_GCM_SHA384`, sertifika zorunlu, host adı denetimli |
+| Collation | `datcollate/datctype = C.UTF-8 / C.UTF-8`; `lower('GÖĞÜS')='göğüs'`, `lower('INCLINE')='incline'` geçti (**Neon varsayılanı bu projede `C.UTF-8`**; önceki "doğrulanamadı" notu kapandı) |
+| Uzantılar | `citext`, `pgcrypto`, `unaccent`, `pg_trgm` kurulabilir; migration kurdu |
+| Yetki | rol `public` şemasında obje oluşturabiliyor (süper kullanıcı değil) |
+| Redis TLS + `PING` | geçti (≈ 0,32–0,43 sn **soğuk** bağlantı, TLS el sıkışması dahil) |
+| Sınırlayıcı Lua betikleri (Upstash'te) | limit aşımı reddi, anahtarda TTL (≈ 29,9 sn), iade geçti; ilk `admit` ≈ 0,05–0,16 sn (üretim zaman aşımı 0,5 sn, **değiştirilmedi**) |
+| Migration | `alembic upgrade head`: 20 adım, head `d3f8a6b1c294`; `alembic check` sıfır fark; ikinci `upgrade head` **no-op** (0 "Running upgrade") |
+| Şema ve seed | 20 uygulama tablosu + `alembic_version`, 61 indeks (3 GIN), 6 trigger, `immutable_unaccent`/`set_updated_at`, 17 kas grubu, 96 egzersiz, 194 egzersiz–kas bağı (102 primary), `gogus`→`Göğüs` aksan-duyarsız arama ve `citext` Türkçe katlama çalışıyor; kullanıcı/antrenman/set/token satırı **0**. Aynı zincirle kurulan yerel test veritabanıyla bu sorgu çıktıları **birebir aynı** |
+
+**Salt okunur / yazan ayrımı (dürüst):** veritabanı tarafındaki preflight yalnız `SELECT`/`SHOW` çalıştırır.
+**Redis probu yazar:** `bt:preflight:<rastgele>` önekli geçici bir anahtar oluşturur (30 sn TTL), iade eder ve
+siler. Temizlik doğrulandı: koşular sonunda `bt:preflight:*` ile eşleşen anahtar kalmadı; yalnız bu önek silinir.
+Şemayı yazan tek adım bilinçli `alembic upgrade head`'dir.
+
+**Preflight'ta bulunup düzeltilen gerçek bir hata:** ilk koşuda "database connection is TLS-encrypted"
+**başarısız** oldu. Kontrol PostgreSQL'in `pg_stat_ssl` görünümüne bakıyordu; Neon'un proxy'si TLS'i
+sonlandırıp işlem düğümüne kendi iç ağından (özel adres, `ssl=off`) bağlandığı için arka uç "şifresiz"
+görüyordu — oysa istemci bağlantısı TLS 1.3 ve sertifika/host doğrulamalıydı. TLS gevşetilmedi: kontrol
+artık **bu sürecin kontrol ettiği hattı** ölçer (oturum var mı, TLS 1.2/1.3, `CERT_REQUIRED`, host adı denetimi;
+biri eksikse başarısız). `pg_stat_ssl` yalnız bilgi satırıdır. Doğrulanamayan kısım: Neon proxy → işlem düğümü
+iç hattı sağlayıcının güven sınırıdır.
+
+**Hedefin kimliği:** yalnızca PG16, boş (kullanıcı ilişkisi/fonksiyon yok, yalnız `plpgsql`, ≈ 7,5 MB) olması
+yetmedi — veritabanı/rol adları (`yeahbuddy` / `yeahbuddy_owner`) Neon varsayılanı olmadığından sahip, `body-track`
+projesinde bu adları gördüğünü açıkça onayladı; ancak ondan sonra migration uygulandı.
+
+**Dar pay (sayı, yorum değil):** soğuk `PING` ≈ 0,32–0,43 sn ile 0,5 sn zaman aşımının altında ama yakın. Bu
+ölçüm bilgisayardan (Türkiye → Frankfurt) yapıldı; Render ↔ Upstash arası farklı olabilir. Zaman aşımı **artırılmadı**;
+barındırılan adımda ilk istekte 503 görülürse ayrıca değerlendirilir (aşağıda 7. madde).
+
+**Resend (sınırlı test yapılandırması):** `MAIL_FROM=BodyTrack <onboarding@resend.dev>` yalnızca Resend
+hesap sahibinin kendi e-posta adresine gönderebilir; rastgele kullanıcılara parola kurtarma e-postası
+**gönderemez**. Gönderim bu turda denenmedi; yalnız anahtarın yapılandırıldığı (`mail transport 'resend' is
+configured`) görüldü, anahtarın geçerliliği ve teslimat doğrulanmadı.
+
+### Dağıtım sonrası doğrulanacaklar (sırayla; 1. ve 2. madde Neon/Upstash için 5 Kasım 2026'da yapıldı)
+
+1. ~~`python -m app.preflight` gerçek Neon + Upstash'e karşı~~ — **yapıldı** (yukarıdaki tablo). Render'ın ağından
+   tekrar edilmeli (özellikle Redis süresi).
+2. ~~Staging'e `alembic upgrade head` → `alembic check`~~ — **yapıldı** (head `d3f8a6b1c294`, sıfır fark, tekrar = no-op).
 3. Render'da servisi oluştur, ilk dağıtımın günlüğünde `start: migrations are at head` ve uvicorn satırını gör;
    Render'ın `PORT`'unu ve **imajın son aşamasını** (production) kullandığını doğrula.
 4. `GET /health`, `GET /health/ready`; `/docs` 404.
@@ -450,18 +501,23 @@ mesajla sıfırdan farklı kodla çıkar, hiçbiri hizmet vermez ve parola çık
    **Frankfurt**, plan **Free**, *Health check path* `/health`, *Auto-deploy* kapalı → *Environment*
    bölümüne yukarıdaki tablodaki değişkenleri gir (`PORT` ve `FORWARDED_ALLOW_IPS` hariç) → *Create*.
 6. İlk dağıtım günlüğünü izle; "Dağıtım sonrası doğrulanacaklar" listesini sırayla yürüt.
-7. Bitince: Render ortam değişkenlerini ve Neon/Upstash/Resend anahtarlarını **döndür** (günlüklerde ya da
-   ekran görüntülerinde göründüyse zorunlu), kullanılmayan servisi askıya al.
+7. Bitince: kullanılmayan servisi askıya al. Anahtarları **körlemesine hepsini döndürme**; bir sır
+   günlükte, ekran görüntüsünde, sohbette ya da Git'te göründüyse, bir makine/hesap ele geçirildiyse,
+   birine paylaşıldıysa veya bir ekip üyesi ayrıldıysa döndür (Neon rol parolası, Upstash parolası,
+   Resend anahtarı, `JWT_SECRET_KEY` — sonuncusu tüm oturumları ve bekleyen kurtarma kodlarını
+   geçersiz kılar). Yalnız kurulum yapıldı diye döndürmek gereksiz kesinti üretir ve yeni sırların
+   da güvenli saklanması gerekir.
 
 ### Çözülmemiş / dürüstçe açık olanlar
 
-- **Neon collation:** `lower()` Türkçe harf katlaması için `C.UTF-8` gerekir; Neon dokümanından
-  varsayılanı doğrulayamadım. Preflight `GÖĞÜS` testini yapar; **başarısızsa şema bu veritabanında
-  güvenle kurulamaz** ve veritabanı farklı collation ile yeniden oluşturulmalıdır.
+- **Neon collation:** ~~doğrulanamadı~~ → bu `body-track` projesinde `C.UTF-8 / C.UTF-8` olarak ölçüldü
+  ve `GÖĞÜS` testi geçti (5 Kasım 2026). Başka bir Neon projesi/veritabanı için aynı preflight yeniden koşulmalı;
+  başarısızsa şema orada güvenle kurulamaz.
 - **İstemci adresi:** Render'ın başlık sözleşmesi resmî olarak bulunamadı; varsayılan "herkes tek kova".
 - **Resend alan adı** sahipliği gerekir; yoksa gerçek kullanıcılara e-posta yok.
-- **Upstash'te Lua** yalnız dokümandan biliniyor; gerçek servisteki davranış (TLS gecikmesi, komut
-  sayımı) ancak barındırılan adımda görülür.
+- **Upstash'te Lua:** betikler gerçek serviste çalıştı (aşım reddi, TTL, iade; ilk `admit` ≈ 0,06 sn).
+  Hâlâ bilinmeyen: `EVAL` başına kaç komut sayıldığı (500 000/ay kotası) — Upstash panelindeki kullanım
+  sayacı birkaç gerçek istekten sonra karşılaştırılmalı — ve Render'dan gecikme.
 - **Render'ın son aşamayı kurduğu** ve `render.yaml` anahtarları Render'a karşı denenmedi.
 - Gönderim **dayanıklı değil** (outbox yok): süreç yanıttan hemen sonra uyursa/yeniden başlarsa e-posta
   gitmez; Render ücretsiz örneği her an yeniden başlatılabilir. Kullanıcı yeni kod ister.
