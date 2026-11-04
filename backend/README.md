@@ -30,10 +30,10 @@ uvicorn app.main:app --reload
 ```
 app/
 ├── main.py            # FastAPI uygulaması, router'ları bağlar
-├── core/              # config, database, security, exceptions
+├── core/              # config, database, security, exceptions, mailer (SMTP)
 ├── models/            # SQLAlchemy modelleri (13 tablo — bkz. CLAUDE.md)
 └── domains/
-    ├── auth/          # register, login, refresh (rotasyon)
+    ├── auth/          # register, login, refresh (rotasyon), parola kurtarma (kod + oturum geçersiz kılma)
     ├── users/         # GET/PATCH /users/me
     ├── exercises/     # egzersiz kataloğu (arama/filtre)
     ├── workouts/      # antrenman + set CRUD, başlangıç plan anlık görüntüsü
@@ -46,6 +46,13 @@ app/
 
 Domain yapısının kaynağı `app/domains/` klasörüdür; en güncel durum için oraya
 bakın — bu liste değişiklik olduğunda elle güncellenmelidir.
+
+Parola kurtarma (kod ömrü/entropi/sınırlar, oturum geçersiz kılma, SMTP ayarları ve yayın
+öncesi gerekenler) kök README'deki "Parola kurtarma" bölümündedir. Yerel geliştirmede e-posta
+için `SMTP_HOST` ayarlanmazsa kod hiç üretilmez; kodu görmek için yerel bir test SMTP kutusu
+(`SMTP_SECURITY=none`, yalnızca development) kullan: testler ve E2E bunun için
+`tests/support/smtp_sink.py` içindeki, yalnızca standart kütüphaneyle yazılmış küçük
+alıcıyı kullanır. Gerçek SMTP bilgilerini `.env.example`'a ya da Git'e yazma.
 
 ## Geliştirme komutları
 ```bash

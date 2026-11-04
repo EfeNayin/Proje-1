@@ -167,6 +167,36 @@ silme sürerken hesap değişimi ve gecikmiş yanıtlar. Bunlar `tests/account-d
 (gerçek token deposu, API istemcisi ve oturum denetleyicisi; yalnız Keychain ve ağ sahte) ve backend
 testleriyle kapsanır.
 
+### Parola kurtarma (native)
+
+`e2e/scripts/recovery.sh` (önce `up.sh`; yığın artık yerel bir **test SMTP kutusu** da içerir:
+`127.0.0.1:8125` HTTP, backend ona `SMTP_SECURITY=none` ile bağlanır, dışarıya hiçbir şey
+gitmez) iki geçici hesap kurar: parolasını "unutan" **FORGETFUL** (iki cihazda oturum açmış) ve
+ilgisiz bir **BYSTANDER**. `e2e/flows/password-recovery.yaml` gerçek dokunuşlarla şunları yapar:
+Forgot password? > boş adres (cihazda reddedilir) > adres > "If an account exists..." (hesabın
+varlığı hakkında bir şey söylemez) > eşleşmeyen tekrar uyarısı > **yanlış kod** (reddedilir, form
+korunur) > kutudan okunan **gerçek kod** (`flows/helpers/read-recovery-code.js`, kutunun HTTP
+API'si; üretim koduna test kancası yok) > yeni parola > "Password updated" > giriş ekranında
+"Your password was changed" bildirimi > **eski parola reddedilir** > yeni parola ile giriş.
+Akıştan sonra script API, veritabanı ve kutuyla bağımsız kanıt toplar: kod e-postası ve **tek**
+"parola değişti" bildirimi gelmiştir; bildirim parolayı/kodu içermez; başkasına e-posta gitmemiştir;
+iki cihazın eski access ve refresh token'ları reddedilir; kullanılmış kod tekrar denenince reddedilir
+ve hiçbir şeyi değiştirmez; hesabı olmayan adres, hesabı olan (henüz istek almamış) bir adresle
+**aynı durum ve gövdeyi** alır (taze istekte `202`, bekleme süresi içinde `429`) ve ona e-posta
+gitmez; ilgisiz hesap hâlâ kendi parolasıyla girer, token'ı geçerlidir ve `credential_version`'ı
+değişmemiştir.
+
+Klavye notları (akış bunlara göre yazıldı): sayı tuş takımında dönüş tuşu yoktur ve `hideKeyboard`
+onu kapatamaz; kod girildikten sonra ekran başlığına dokunmak klavyeyi kapatır. Klavye alttaki
+alanları örter: tekrar alanına dokunmak yerine yeni parola alanındaki **Next** tuşu kullanılır.
+Betik her koşuda yeni hesaplar üretir; yığını kapatmadan art arda çalıştırılabilir (koşu 9 ve 10
+ayrı ayrı geçti).
+
+Native'de **denenmeyenler:** ağ kopması/zaman aşımı, 429/503 yanıtlarının ekranda görünümü, yeniden
+gönderim bekleme sayacının native davranışı ve sıfırlama sürerken hesap değişimi. Bunlar
+`tests/password-recovery.test.cjs` (gerçek kurtarma deposu ve oturum dönemi korumaları, sahte ağ) ve
+backend testleriyle kapsanır. **Gerçek bir e-posta sağlayıcısıyla teslimat hiçbir yerde doğrulanmadı.**
+
 ## Daha fazla bilgi
 
 - [Expo documentation](https://docs.expo.dev/)

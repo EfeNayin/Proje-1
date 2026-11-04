@@ -79,6 +79,10 @@ anahtarı da değişir ve sayaçlar bir kez sıfırlanır.) Aşılınca `429` d�
 | Yenileme | hesap | 30 / 10 dk | yalnız **imzası doğrulanmış** refresh token'dan |
 | Davet kodu (önizleme+kabul) | giriş yapmış hesap | 10 / 10 dk | yalnız hiçbir koda uymayan denemeler |
 | Davet kodu | istemci adresi | 30 / 10 dk | yalnız hiçbir koda uymayan denemeler |
+| Parola kurtarma: kod isteği | istemci adresi | 15 / 1 saat | her istek |
+| Parola kurtarma: kod isteği | yazılan e-posta | 5 / 1 saat + 60 sn bekleme | her istek (hesap var mı bakılmaz) |
+| Parola kurtarma: kod girişi | istemci adresi | 30 / 15 dk | her deneme |
+| Parola kurtarma: kod girişi | yazılan e-posta | 10 / 15 dk | her deneme; başarılı sıfırlamada iade |
 
 Gerekçeler:
 - **Yalnız adrese güvenilmez:** ortak NAT/CGNAT arkasındaki herkes tek adrestir, saldırgan
@@ -159,6 +163,79 @@ Bir **oturum**, bir girişin ürettiği refresh token zinciridir: her `refresh` 
   ve beklenmeden gönderilir. Yerel temizlik (`localClear`) ile sunucu iptalinin onayı (`revocation`:
   `confirmed`/`unconfirmed`/`none`) ayrı şeylerdir: istek başarısız olursa token cihazdan silinmiş
   olur ama sunucuda süresi dolana kadar (14 gün) geçerli kalır; arka planda yeniden deneme yoktur.
+
+## Parola kurtarma
+
+Giriş ekranındaki **Forgot password?** → e-posta adresi → genel bir "istek alındı" yanıtı →
+e-postayla gelen tek kullanımlık kod → yeni parola + tekrarı → "Password updated" → normal
+giriş. Sıfırlama **otomatik giriş yapmaz**. Kod yalnız bu işe yarar: hiçbir API ucuna erişim
+yetkisi vermez. Kod: `app/domains/auth/recovery.py`, e-posta: `app/core/mailer.py`.
+
+**Uç noktalar** (kimlik doğrulaması yok, `extra="forbid"`):
+- `POST /auth/password-recovery/request` `{email}` → **her zaman aynı `202` gövdesi** (hesap
+  var, yok, silinmiş, geçersiz biçimde bile). E-posta, yanıt döndükten **sonra** arka planda
+  gönderilir; bu yüzden ne durum kodu ne süre hesabın varlığını ele verir (olmayan adres de
+  eşdeğer HMAC işini yapar).
+- `POST /auth/password-recovery/confirm` `{email, code, new_password}` → `204`. Yanlış, süresi
+  dolmuş, kullanılmış, yenisiyle değiştirilmiş, bilinmeyen adres, bozuk biçim: hepsi **aynı
+  sabit `400`** gövdesi ("That code is not valid, or it has expired or was already used..."). Parola kuralları
+  kayıttakiyle aynıdır (72 bayt bcrypt sınırı dahil, sessizce kesilmez, `422`); `422` yanıtlarında
+  girdi geri yansıtılmaz.
+
+**Kod:** 8 rakam, `secrets` ile üretilir (≈ 26,6 bit); ömrü **15 dk** (`PASSWORD_RESET_CODE_TTL_SECONDS`);
+bir koda en fazla **5 yanlış deneme** (`PASSWORD_RESET_MAX_ATTEMPTS`) — deneme hakkı karşılaştırmadan
+**önce, veritabanında atomik** harcanır, yani paralel işçiler de limiti aşamaz. Hesap başına **tek bekleyen
+kod** vardır: yeni istek eskisini geçersiz kılar (yeniden gönderim = yeni kod isteği; her zaman
+"son gelen kod geçerli"); başarılı sıfırlama kodu siler (tek kullanım). Veritabanında kodun
+kendisi tutulmaz: `HMAC-SHA256(JWT_SECRET_KEY'den türetilmiş alt anahtar, amaç ‖ challenge_id ‖
+user_id ‖ kod)` saklanır. 8 hanelik kod için salt'sız hızlı özet çevrimdışı saniyeler içinde
+kırılırdı; anahtar sunucuda olduğundan veritabanı sızıntısı tek başına kodu vermez. **Bilinen
+sonuç:** JWT anahtarı döndürülürse bekleyen kodlar da geçersizleşir (kullanıcı yeni kod ister).
+Kod; yanıtlarda, URL'de, doğrulama hatalarında, günlükte, ya da depoda **yer almaz**.
+
+**Sınırlar** (paylaşılan Redis; tablo yukarıda): kova anahtarı **yazılan e-postadır** (küçük
+harf), hesabın varlığı değil; bu yüzden olmayan adres de aynı `429`'u alır. Giriş kovalarından
+ayrıdır: kurtarma istekleri **normal girişi kilitlemez**. Redis çalışmazsa `503` (kod
+üretilmez/denenmez). Bilinen takas: biri bir adres için saatte 5 istek harcayıp o adrese kod
+isteyen asıl sahibi bir süre bekletebilir (kod gelmiş olsa da kullanılabilir); IP başına
+15/saat bunu sınırlar.
+
+**Oturumlar ve token'lar:** `users.credential_version` (varsayılan 0). Access ve refresh token'lar
+`cv` claim'ini taşır (yoksa 0 sayılır → mevcut hesaplar ve token'lar **ilk sıfırlamaya kadar**
+çalışır). Sıfırlama tek işlemde: parolayı değiştirir, `credential_version`'ı artırır, hesabın
+**tüm** refresh token'larını ve bekleyen kodu siler. Eski access token'lar, süreleri dolmadan,
+bir sonraki istekte `401` alır (zaman damgası değil sürüm karşılaştırılır, aynı saniye sınır
+hatası olmaz). Giriş ve yenileme kullanıcı satırını `FOR SHARE` kilitler; sıfırlama oturum
+ailelerini (sıralı) → kullanıcı satırını → kod satırını kilitler (hesap silmeyle aynı sıra);
+çakışmalarda en fazla 3 yeniden deneme, olmazsa `503` "Nothing was changed". Hesap silme
+kilit altında `credential_version`'ı yeniden doğrular. Silinmiş hesap için istek/onay
+hesabı **yeniden oluşturmaz**; başka hesaplar etkilenmez. Parola değişti bildirimi e-postası
+parolayı içermez; gönderilemese de tamamlanmış sıfırlama geri alınmaz.
+
+**E-posta teslimatı (yapılandırma):** tek küçük bağdaştırıcı, standart kütüphane `smtplib` (yeni
+bağımlılık yok). Sağlayıcı **seçilmedi**; `backend/.env.example` yalnızca yer tutucu içerir.
+`SMTP_SECURITY=starttls` (varsayılan; TLS **sunulmalı ve sertifika doğrulanmalı**, yoksa
+gönderilmez) | `implicit` | `none` (yalnız development, yerel test kutusu). `staging`/`production`
+`SMTP_HOST` olmadan ya da `none` ile **açılmaz**. Gerçek değerler yalnızca kendi
+`backend/.env`'ine girer. Zaman aşımı soket işlemi başınadır (en kötü durum ≈ 5 × `SMTP_TIMEOUT_SECONDS`);
+eşzamanlı gönderim (`SMTP_MAX_CONCURRENT`) ve bekleyen iş (`SMTP_MAX_PENDING`) sınırlıdır. `SMTP_HOST`
+boşsa kod üretilmez ve **hiçbir yerde** (yanıt, günlük) gösterilmez: üretim için geri düşüş yoktur.
+Günlüğe yalnız hata sınıfı yazılır. **Dayanıklılık yok:** gönderim süreç içi arka plan işidir;
+süreç yanıttan hemen sonra ölürse e-posta gitmez, yeniden deneme/outbox yoktur. Güvenli yol:
+kullanıcı "Send a new code" ile yeni kod ister (eskisini geçersiz kılar). E-postalar yalnız
+İngilizcedir. **Yayın öncesi yapılması gerekenler (yapılmadı):** bir SMTP sağlayıcısı ve gönderen
+alan adı seçmek, SPF/DKIM/DMARC kurmak, gerçek bir alıcıyla teslimatı doğrulamak.
+
+**Mobil:** `app/(auth)/forgot-password.tsx` (+ `src/auth/recovery*.ts`). Kod için yapıştırma/
+otomatik doldurma (`one-time-code`), parola göster/gizle, tekrar eşleşmesi, klavyeye duyarlı
+yerleşim, 60 sn yeniden gönderim sayacı, süresi dolmuş/geçersiz kod, deneme hakkı bitti, limit
+ve geçici hata durumları. Kod ve parolalar **yalnızca bileşen durumundadır** (depoda, SecureStore'da,
+günlükte yok; adım ekrandan gidince silinir); e-posta adresi tek paylaşılan değerdir. "Parola
+değişti" yalnızca `204` sonrası söylenir; ağ/5xx'te dürüstçe "onaylanamadı" denir. Hesap
+değişirse (oturum dönemi) gecikmiş yanıt atılır; kurtarma hiçbir oturum açmaz/kapatmaz.
+
+**Test:** gerçek PostgreSQL + Redis ve ayrı bir test SMTP kutusu (`backend/tests/support/smtp_sink.py`).
+Native doğrulama ve e2e kutusu: `mobile/README.md`.
 
 ## Faz planı (özet)
 
