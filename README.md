@@ -532,6 +532,84 @@ akışının 1'i); Expo Go ilk kurulum tanıtması ise çalıştı. Ekran görü
 - Yeni dağıtımın doğruladıkları bu yolculukla **sınırlı**. Birkaç başarılı istek ve sağlıklı `/health` genel yayın
   hazırlığını göstermez.
 
+### İlk iPhone test yapısı: Aures, TestFlight, staging (5 Kasım 2026)
+
+**Durum: yapılandırma doğrulandı; bulutta derleme ve imzalama için sahibin Apple oturumu gerekir. Hiçbir yapı
+henüz yüklenmedi, hiçbir tester'a dağıtılmadı, gerçek iPhone'da hiçbir şey denenmedi.** Bu bölüm üç şeyi ayırır:
+*yapılandırma doğrulaması* (aşağıda yapıldı), *bulut derlemesinin tamamlanması* (yapı durumu için proje günlüğüne,
+Adım 76'ya bak) ve *gerçek iPhone davranışı* (hiç yapılmadı).
+
+**Kimlik.** Görünen ad **Aures**, `slug` ve URL şeması `aures`, iOS paket kimliği `com.efenayin.aures`
+(`mobile/app.json`). *Aures* sahibin bilinçli seçimidir; aynı adı kullanan ilgisiz uygulamalar olduğu bilinerek
+korundu. **App Store adı uygunluğu ve marka taraması YAPILMADI.** `CFBundleDisplayName` (telefonda görünen ad)
+App Store Connect'teki *liste adından* bağımsızdır; Apple liste adını reddederse başka bir ad **sessizce
+seçilmeyecek**, karar sahibe döner. Dahili adlar (backend, veritabanı, migration, `bodytrack.*` depolama anahtarları,
+`package.json` adı `mobile`) bilerek değişmedi: depolama anahtarlarını değiştirmek kayıtlı oturumları düşürürdü.
+`mobile://` şemasına kodda, testlerde ve E2E akışlarında hiçbir başvuru yoktu (yalnız `app.json`).
+
+**Expo sahipliği.** Önceden `owner`/`projectId`/`eas.json` yoktu; korunacak bir ilişki bulunmadı. `eas init` ile
+kişisel hesapta **`@efe_nayn/aures`** (ID `751aebe3-68ef-4617-ac03-9060ce2d0d81`) oluşturuldu; `owner: efe_nayn` ve
+`extra.eas.projectId` `app.json`'a yazıldı. Sahibin ikinci bir Expo hesabı (`efenayns-team`) de var; **kullanılmadı** —
+projeyi ekibe taşımak istenirse ayrı bir karar. `eas init` ayrıca EAS panelindeki proje ikonunu uygulamanın
+**şablon** ikonundan ayarladı (aşağıya bak).
+
+**Derleme profili `testflight-staging`** (`mobile/eas.json`): `distribution: "store"`, `autoIncrement: true`,
+`cli.appVersionSource: "remote"` (derleme numarasını EAS tutar ve her derlemede artırır; `version` `1.0.0`; ilk numarayı EAS belirler, **bu işte henüz bir derleme olmadı**) ve
+`env.EXPO_PUBLIC_API_URL=https://proje-1-t6lh.onrender.com` **açıkça verilir** (yerel, Git dışı `.env` buluta gitmez
+ve gerekmez). `EXPO_PUBLIC_*` değerleri pakete düz metin girer ve `eas.json` depoda durur: yalnız herkese açık
+adres vardır, **sır yoktur**. Bu profil App Store Connect'e **yüklemez** (yükleme ayrı `eas submit` adımıdır;
+bu işte yapılmadı); OTA güncelleme, abonelik, bildirim, analitik SDK'sı eklenmedi.
+
+**Buluta ne gider (kanıtlandı).** EAS, `.easignore` varsa **tüm `.gitignore` dosyalarının yerine** onu okur ve
+yalnız Git deposu kökünden. Bu yüzden kökteki `.easignore` mevcut kuralları aynen tekrarlar ve ayrıca `backend/`,
+`render.yaml`, `docker-compose.yml`, `mobile/e2e/`, `mobile/tests/`, kökteki `*.md`/`*.txt`, tüm `.env*`,
+`.claude/` ve `.git`'i dışlar (kabuk bir klonun `.git`'i dışlanan backend kaynağını ve notları da taşırdı).
+`eas build:inspect --platform ios --stage archive --profile testflight-staging --output <boş dizin>` ile arşiv
+**yerelde** üretilip incelendi: 192 dosya, **hepsi Git'te izlenen dosya**; `backend/`, `e2e`, `tests` yalnız **boş
+dizin iskeleti**; `.env`, dump, `*.sql`, anahtar/sertifika, `AGENTS.md`, Unicode hazırlık metni, kanıt dosyası
+**yok**. `cli.requireCommit` **kullanılmadı**: kirli çalışma ağacında (sizin commit'lenmesini istemediğiniz
+`docker-compose.yml` değişikliği ve izlenmeyen iki dosya) derlemeyi tümden engeller; bu dosyalar zaten
+`.easignore` ile dışlanır. Derlemenin kaynağı, EAS'in kaydettiği Git commit'i ve temiz `mobile/` ile
+tanımlanır. Her derlemeden önce yeniden denetle: `git status --short mobile .easignore` boş olmalı.
+
+**ATS (App Transport Security).** Çözümlenen yapılandırmada `NSAllowsArbitraryLoads: true` (+ `localhost`
+istisnası) çıktı; bu açık metin HTTP'ye izin verir. API HTTPS olduğundan `app.json`'da `ios.infoPlist.
+NSAppTransportSecurity = {NSAllowsArbitraryLoads: false}` açıkça verildi ve yeniden çözümlenerek doğrulandı.
+Expo Go bundan etkilenmez; ileride bir *geliştirme istemcisi* yapısı yerel HTTP'ye bağlanacaksa ayrıca istisna ister.
+
+**Cihaz desteği.** Yalnız iPhone (`supportsTablet: false`, dikey yön). iPad'de uygulama yüklenebilir ama iPhone
+uyumluluk modunda çalışır; **tasarlanmadı ve denenmedi**. Android bu yapıda yok. Minimum iOS sürümü ve gerçek
+cihaz uyumluluğu SDK 57 varsayılanına bırakıldı; **doğrulanmadı**.
+
+**İzinler.** Kamera, mikrofon, konum, kişiler, fotoğraf, bildirim, arka plan modu **yok** (ilgili paketler
+bağımlılıklarda yok). Tek `NS*UsageDescription`: `NSFaceIDUsageDescription` — `expo-secure-store` eklentisinin
+varsayılanı; kodda biyometrik/`requireAuthentication` kullanımı **yok** (0 eşleşme), yani yalnız bir izin metni.
+Gerekirse yapılandırmadan çıkarılabilir; **şimdi değiştirilmedi** (App Store incelemesi sorabilir).
+
+**Görseller (şablon, onaylı DEĞİL).** `icon.png` (1024×1024, alfa yok) Expo'nun **varsayılan şablon ikonudur**
+(mavi "A" şekli), `splash-icon.png` şablon açılış ızgarasıdır; `react-logo*`, `partial-react-logo` ve
+Android ikonları şablondan kalmadır (kullanılmıyor), `login/hercules-bronze.jpg`'in **kaynağı/lisansı
+doğrulanmadı** (kodda yalnız bir testte geçiyor). Marka görseli **uydurulmadı**; Aures ikonu, açılış ekranı ve
+mağaza görselleri sahibin işidir. Şablon ikon TestFlight'ta görünür; mağaza incelemesine gitmeden değişmelidir.
+
+**Kontroller (yalnız yapılandırma/kaynak; native derleme değil):** `tsc --noEmit` 0 hata, `npm run lint` 0 uyarı,
+`node --test tests/*.test.cjs` **712/712 geçti**, `expo config` (public + introspect) beklenen kimliği verdi,
+`expo-doctor` **20/21** geçti. Başarısız tek kontrol: SDK 57 paketlerinde **yama sürümü kayması** (örn. `expo`
+57.0.20, beklenen 57.0.31; 15 paket). Simülatörde doğrulanan kilit dosyasını değiştirmemek için **yükseltilmedi**;
+mağaza yapısı öncesi ayrı bir iş olarak (`npx expo install --check`) ele alınmalı. Plan: ücretsiz Expo planı;
+ücretli yükseltme gerekmedi. `eas-cli` 27.4.1 `npx` ile (kalıcı kurulum yok).
+
+**Mağaza/gizlilik için YAPILMAYANLAR:** gizlilik politikası ve destek URL'si; App Privacy ("nutrition label")
+beyanı (e-posta, kullanıcı kimliği, kilo/antrenman/sağlık-fitness verisi toplanıyor); **ihracat uyumluluğu**
+(`ITSAppUsesNonExemptEncryption` ayarlanmadı: bu sahibin hukuki beyanıdır, App Store Connect her yapıda soracaktır);
+yaş derecelendirmesi; mağaza adı/marka taraması; gerçek ikon ve görseller. Uygulama içi **hesap silme** vardır
+(Apple şartı) ve simülatörde doğrulandı.
+
+**Hâlâ açık yayın engelleri (bu yapı bunları KAPATMAZ):** Render güvenilir istemci IP'si/proxy doğrulaması;
+doğrulanmış gönderen alan adı ve gerçek kurtarma e-postası teslimi (`onboarding@resend.dev` yalnız Resend hesap
+sahibine gönderir); ücretsiz katmanda soğuk başlangıç (≈ 1 dk + Neon uyanması; mobil bunu ağ zaman aşımı gibi
+görebilir); fiziksel cihaz testi (Keychain, VoiceOver, Dynamic Type, hücresel ağ); mağaza/gizlilik gereksinimleri.
+
 ### Dağıtım sonrası doğrulanacaklar (sırayla; 1. ve 2. madde Neon/Upstash için 5 Kasım 2026'da yapıldı)
 
 1. ~~`python -m app.preflight` gerçek Neon + Upstash'e karşı~~ — **yapıldı** (yukarıdaki tablo). Render'ın ağından

@@ -64,3 +64,7 @@ app-example
 # Project notes and agent instruction files.
 /*.md
 /*.txt
+# Agent configuration and the repository history (a shallow clone still carries every
+# committed file's objects, including the excluded backend source and notes).
+.claude/
+.git

@@ -1,8 +1,7 @@
 {
   "cli": {
     "version": ">= 18.0.0",
-    "appVersionSource": "remote",
-    "requireCommit": true
+    "appVersionSource": "remote"
   },
   "build": {
     "testflight-staging": {
