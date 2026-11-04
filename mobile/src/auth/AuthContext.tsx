@@ -23,6 +23,8 @@ import { programPreparationStore } from "../coaching/programPreparationSession";
 import { receivedFeedbackStore } from "../coaching/receivedFeedbackSession";
 import { workoutFeedbackStore } from "../coaching/workoutFeedbackSession";
 import { dailyCheckinStore } from "../readiness/dailyCheckinSession";
+import { clearPasswordChangedNotice } from "./passwordChangedNotice";
+import { recoveryStore } from "./recoverySession";
 import { createSessionController } from "./sessionController";
 
 type AuthStatus = "loading" | "signedIn" | "signedOut" | "unavailable";
@@ -65,10 +67,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           programPreparationStore.reset();
           dailyCheckinStore.reset();
           accountDeletionStore.reset();
+          recoveryStore.reset();
         },
         apply: (view) => {
           // Whoever signs in next is not told about the account that was deleted.
-          if (view.status === "signedIn") clearAccountDeletedNotice();
+          if (view.status === "signedIn") {
+            clearAccountDeletedNotice();
+            clearPasswordChangedNotice();
+          }
           setUser(view.user);
           setStatus(view.status);
         },

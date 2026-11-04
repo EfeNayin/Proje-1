@@ -549,7 +549,7 @@ test('the Profile screen offers it under Account, and the route is registered', 
 
 test('the sign-in screen can say the account was deleted, and the notice is cleared on sign-in', () => {
   assert.match(read('app/(auth)/login.tsx'), /Your account has been deleted/);
-  assert.match(read('src/auth/AuthContext.tsx'), /if \(view\.status === "signedIn"\) clearAccountDeletedNotice\(\)/);
+  assert.match(read('src/auth/AuthContext.tsx'), /if \(view\.status === "signedIn"\) \{\s*clearAccountDeletedNotice\(\)/);
   assert.match(read('src/auth/AuthContext.tsx'), /accountDeletionStore\.reset\(\)/);
 });
 

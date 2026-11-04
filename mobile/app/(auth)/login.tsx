@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -17,6 +17,8 @@ import { clearAccountDeletedNotice, useAccountDeletedNotice } from "../../src/ac
 import { useAuth } from "../../src/auth/AuthContext";
 import { authStyles as styles } from "../../src/auth/authStyles";
 import { createLoginSubmitter } from "../../src/auth/loginSubmit";
+import { clearPasswordChangedNotice, usePasswordChangedNotice } from "../../src/auth/passwordChangedNotice";
+import { recoveryStore } from "../../src/auth/recoverySession";
 import { light } from "../../src/lightTheme";
 
 // The notice is good news, not an error: same layout as the error line, its own colour.
@@ -25,6 +27,8 @@ const noticeText = [styles.errorText, { color: light.text }];
 export default function LoginScreen() {
   const { signIn } = useAuth();
   const accountDeleted = useAccountDeletedNotice();
+  const passwordChanged = usePasswordChangedNotice();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const [email, setEmail] = useState("");
@@ -79,6 +83,23 @@ export default function LoginScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Dismiss"
                 onPress={clearAccountDeletedNotice}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={18} color={light.textSecondary} />
+              </Pressable>
+            </View>
+          ) : null}
+
+          {passwordChanged ? (
+            <View style={styles.errorRow}>
+              <Ionicons name="checkmark-circle-outline" size={18} color={light.positive} accessible={false} />
+              <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={noticeText}>
+                Your password was changed. Sign in with your new password.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss"
+                onPress={clearPasswordChangedNotice}
                 hitSlop={8}
               >
                 <Ionicons name="close" size={18} color={light.textSecondary} />
@@ -145,6 +166,20 @@ export default function LoginScreen() {
               </Pressable>
             </View>
           </View>
+
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel="Forgot password?"
+            testID="login-forgot"
+            style={[styles.linkButton, { alignSelf: "flex-end", marginTop: -8 }]}
+            onPress={() => {
+              // The address typed here carries over; the password never does.
+              recoveryStore.setEmail(email.trim());
+              router.push("/forgot-password");
+            }}
+          >
+            <Text style={styles.link}>Forgot password?</Text>
+          </Pressable>
 
           {error ? (
             <View style={styles.errorRow}>

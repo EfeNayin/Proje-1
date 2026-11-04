@@ -149,3 +149,44 @@ export function deleteAccount(password: string): Promise<void> {
     timeoutMs: DELETE_ACCOUNT_TIMEOUT_MS,
   });
 }
+
+export type RecoveryAccepted = {
+  message: string;
+  /** Deployment constants, the same for every address. */
+  code_valid_minutes: number;
+  resend_after_seconds: number;
+};
+
+const RECOVERY_TIMEOUT_MS = 30_000;
+
+/**
+ * Asks for a password reset code by email. Anonymous. The answer is the same whether or
+ * not the address has an account, so a success says nothing about the address. A repeat
+ * request replaces the previous code (the server's resend rule).
+ */
+export function requestPasswordRecovery(email: string): Promise<RecoveryAccepted> {
+  return apiRequest<RecoveryAccepted>("/auth/password-recovery/request", {
+    method: "POST",
+    body: { email },
+    anonymous: true,
+    timeoutMs: RECOVERY_TIMEOUT_MS,
+  });
+}
+
+/**
+ * Sets a new password with the emailed code. Anonymous and signs nobody in: it resolves
+ * on 204 and returns no tokens. The code and the password travel only in this JSON body.
+ * Status 0 (no answer) means the password may or may not have changed.
+ */
+export function confirmPasswordRecovery(input: {
+  email: string;
+  code: string;
+  newPassword: string;
+}): Promise<void> {
+  return apiRequest<void>("/auth/password-recovery/confirm", {
+    method: "POST",
+    body: { email: input.email, code: input.code, new_password: input.newPassword },
+    anonymous: true,
+    timeoutMs: RECOVERY_TIMEOUT_MS,
+  });
+}
