@@ -1,0 +1,16 @@
+{
+  "cli": {
+    "version": ">= 18.0.0",
+    "appVersionSource": "remote",
+    "requireCommit": true
+  },
+  "build": {
+    "testflight-staging": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://proje-1-t6lh.onrender.com"
+      }
+    }
+  }
+}
