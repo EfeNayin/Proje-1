@@ -38,3 +38,43 @@ CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --
 #   docker compose exec backend pytest
 FROM base AS dev
 RUN pip install --no-cache-dir -r requirements-dev.txt
+
+
+# ── Üretim / staging imajı ──
+# Render gibi platformlar Dockerfile'ın SON aşamasını kurar (hedef seçilemez), bu yüzden
+# bu aşama dosyanın sonunda durmalı. base/dev hedefleri (compose, E2E) açıkça seçilir.
+#
+# base'den farkı: kaynak ağacını kopyalamaz — yalnızca çalışma zamanının gereken yollarını
+# (app, alembic, alembic.ini ve baseline migration'ın okuduğu tek SQL dosyası). tests/,
+# .env, dump'lar ve araç önbellekleri imaja HİÇ girmez; pytest/ruff/mypy de yok. Root
+# olmayan kullanıcıyla çalışır, --reload ve bind mount yoktur.
+FROM python:3.12-slim AS production
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8000
+
+WORKDIR /app
+
+RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin bodytrack
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini ./
+# alembic/versions/e272543ef2bb (baseline) bu dosyayı yoldan okur: eksik olursa migration kırılır.
+COPY db/schema_v1.sql ./db/schema_v1.sql
+COPY deploy/start.sh ./deploy/start.sh
+
+USER bodytrack
+
+EXPOSE 8000
+
+# Liveness: süreç cevap veriyor mu (veritabanı/Redis'e dokunmaz; bkz. /health/ready).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT', '8000'), timeout=4)"
+
+# Önce şema (RUN_MIGRATIONS=false ile kapatılabilir), sonra tek işçili uvicorn.
+CMD ["sh", "/app/deploy/start.sh"]
