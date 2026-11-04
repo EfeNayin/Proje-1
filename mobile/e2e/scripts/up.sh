@@ -16,7 +16,7 @@ docker info >/dev/null 2>&1 || die "Docker is not running"
 [ ! -e "$RUN_DIR/run-id" ] || die "a run already exists in $RUN_DIR; run scripts/down.sh first"
 [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT")" ] \
   || die "containers of project $PROJECT exist but no run is recorded; inspect them and remove them yourself"
-for port in "$API_PORT" "$METRO_PORT"; do
+for port in "$API_PORT" "$METRO_PORT" "$MAIL_PORT"; do
   ! lsof -iTCP:"$port" -sTCP:LISTEN -n -P >/dev/null 2>&1 || die "port $port is in use; set E2E_API_PORT / E2E_METRO_PORT"
 done
 
@@ -28,6 +28,7 @@ umask 077
   echo "E2E_DB_PASSWORD=$(openssl rand -hex 16)"
   echo "E2E_JWT_SECRET=$(openssl rand -hex 32)"
   echo "E2E_API_PORT=$API_PORT"
+  echo "E2E_MAIL_PORT=$MAIL_PORT"
 } > "$RUN_DIR/compose.env"
 echo "$RUN_ID" > "$RUN_DIR/run-id"
 mkdir -p "$RUN_DIR/artifacts"
@@ -80,4 +81,5 @@ for _ in $(seq 1 90); do
   sleep 2
 done
 [ "$(curl -fsS "http://localhost:$METRO_PORT/status" 2>/dev/null || true)" = "packager-status:running" ] || die "Metro did not start (log: $RUN_DIR/metro.log)"
+curl -fsS "http://127.0.0.1:$MAIL_PORT/health" >/dev/null || die "test mail inbox is not answering on $MAIL_PORT"
 echo "e2e: ready. Run: e2e/scripts/run.sh"

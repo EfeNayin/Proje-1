@@ -58,8 +58,11 @@ test('e2e stack: no host database port, secrets injected per run, no env_file fa
   assert.match(compose, /JWT_SECRET_KEY: \$\{E2E_JWT_SECRET:\?/);
   assert.doesNotMatch(compose, /env_file/);
   const ports = compose.match(/^\s+ports:\n(\s+- .*\n)+/gm) ?? [];
-  assert.equal(ports.length, 1, 'only the backend publishes a port');
-  assert.match(ports[0], /127\.0\.0\.1:/);
+  // The backend, and the test mail inbox's read-only view; never the database or Redis.
+  assert.equal(ports.length, 2, 'only the backend and the test inbox publish a port');
+  for (const published of ports) assert.match(published, /127\.0\.0\.1:/);
+  assert.match(compose, /^  mail:$/m);
+  assert.match(compose, /SMTP_SECURITY: none/);
 });
 
 test('e2e run: the API endpoint is process-scoped, the committed env files are untouched', () => {

@@ -51,6 +51,12 @@ services:
       JWT_SECRET_KEY: ${E2E_JWT_SECRET:?}
       NCBI_API_KEY: ""
       NCBI_EMAIL: ""
+      # Password recovery mails go to the test inbox below, never to a real server.
+      # Unencrypted SMTP is accepted only because ENVIRONMENT is development.
+      SMTP_HOST: mail
+      SMTP_PORT: "1025"
+      SMTP_SECURITY: none
+      SMTP_FROM: "BodyTrack E2E <e2e@example.invalid>"
     ports:
       - "127.0.0.1:${E2E_API_PORT:-8100}:8000"
     depends_on:
@@ -58,3 +64,23 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mail:
+        condition: service_healthy
+
+  # An isolated SMTP inbox (backend/tests/support/smtp_sink.py, standard library only):
+  # accepts anything, keeps it in memory, delivers nothing anywhere. Its read-only HTTP
+  # view is how the native recovery flow fetches the code the app emailed.
+  mail:
+    build:
+      context: ../../backend
+      target: base
+    labels:
+      com.bodytrack.e2e.run: ${E2E_RUN_ID:?}
+    command: ["python", "-m", "tests.support.smtp_sink", "--smtp-port", "1025", "--http-port", "8025"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8025/health', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:${E2E_MAIL_PORT:-8125}:8025"

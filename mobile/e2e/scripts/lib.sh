@@ -14,6 +14,7 @@ SIM_NAME="BodyTrack-E2E"
 
 API_PORT="${E2E_API_PORT:-8100}"
 METRO_PORT="${E2E_METRO_PORT:-8091}"
+MAIL_PORT="${E2E_MAIL_PORT:-8125}"
 
 # Maestro needs Java 17+. Use whatever the environment already provides, else a
 # Homebrew keg-only OpenJDK; nothing in the shell profile is touched.
