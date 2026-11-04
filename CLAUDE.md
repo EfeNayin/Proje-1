@@ -125,8 +125,7 @@ Mobil (mobile/, Expo SDK 57, TypeScript strict sıfır hata):
   hedefleri
 - app/(app)/coaching/ + src/coaching/: antrenör–sporcu ekranları ve store'ları
   (My Athletes/My Coaches, salt okunur antrenman, egzersiz geçmişi paneli,
-  program teklifleri, geri bildirim). Ekran etkileşimiyle DOĞRULANMADI: yalnızca
-  sahte API'li store testleri ve canlı API kontrolleri var (bkz. log Adım 45-47)
+  program teklifleri, geri bildirim). İzin, geri bildirim ve program güncelleme akışları izole simülatörde Maestro ile native doğrulandı (bkz. log Adım 71; hesaplar tek simülatörde sırayla; fiziksel cihaz, VoiceOver, Dynamic Type ve eşzamanlı iki cihaz denenmedi)
 
 Çalışan akış: kayıt → canlı antrenman loglama (set set, dinlenme sayacı,
 başlık düzenleme, set düzeltme/silme, şablondan başlatma) → program/şablon

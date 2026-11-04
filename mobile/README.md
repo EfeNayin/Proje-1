@@ -125,13 +125,37 @@ yanıt/depolama yarışları native'de denenmez (üretim koduna test kancası ek
 ### Sporcuya özel program akışı (native)
 
 `e2e/scripts/revisions.sh` (önce `up.sh`) aynı izole yığında bağlı bir koç ve sporcu için
-`e2e/flows/program-revisions.yaml`'ı çalıştırır: koç kendi programından sporcuya özel taslak
-hazırlar, taslağın düzenleyicide alıcı bandıyla açıldığını ve etkinleştirilemediğini görür,
-sunucunun önizlemesini okuyup 1. sürümü açıkça yayımlar; sporcu programı alır, kabulün etkisini
-okur ve ekler (kopya pasif, mevcut aktif programı değişmez). Hesaplar ve bağlantı API ile
-kurulur (fixture); hazırlama, yayımlama ve kabul ekranda yapılır. 2. sürüm, etkin kopyanın
-devralınması ve çalışan antrenmanın değişmemesi native'de **değil**, canlı API ile ve backend
-testleriyle doğrulanır.
+`e2e/flows/program-revisions.yaml`'ı çalıştırır. Hesaplar, bağlantı, koçun programı ve sporcunun
+kendi aktif programı ("Athlete Own") API ile kurulur (fixture); aşağıdakilerin hepsi ekranda
+gerçek dokunuşlarla yapılır, tek simülatörde hesaplar sırayla (eşzamanlı iki cihaz **değil**):
+
+1. Koç kendi programından sporcuya özel taslak hazırlar (düzenleyicide alıcı bandı, etkinleştirme
+   yok), sunucunun önizlemesini okur, **1. sürümü** açıkça yayımlar.
+2. Sporcu programı alır, kabulün etkisini okur ve ekler: kopya pasiftir, **farklı bir aktif programı
+   ("Athlete Own") varken** o aktif kalır.
+3. Sporcu 1. sürümün kopyasını aktif yapar ve ondan **bir antrenman başlatır** ("Starting plan: Push
+   Day"); antrenman açık kalır.
+4. Koç taslakta bir reçeteyi değiştirir (Max reps 8 → 12), önizler ve **2. sürümü** yayımlar
+   (1. sürüm "Accepted", 2. sürüm "Waiting for answer").
+5. Sporcu 2. sürümü okur ("kopyan aktif; bunu eklersen yenisi aktif olur, eskisi kapatılır, silinmez"
+   açıklaması ve yeni 6–12 tekrar reçetesi görünür), ekler ("Added, and it is now your active
+   program…"); Programs sekmesinde iki "Coach Base" kopyası ve "Athlete Own" listelenir, yalnız yenisi
+   aktif.
+6. Sporcu açık kalan antrenmanı sürdürür, 3 set girer ve bitirir; sonra **aktif (2. sürüm) kopyadan**
+   ikinci bir antrenman başlatıp bitirir.
+
+Akıştan sonra script **bağımsız, salt okunur veritabanı kanıtı** toplar (native UI kanıtı **değildir**;
+uygulama reçetenin içeriğini antrenman ekranında göstermediği için burada gerekir): ilk antrenmanın
+saklı başlangıç planı hâlâ 8 max tekrar, ikincisininki 12; yayımlanmış sürümler değişmemiş (1: 8,
+2: 12, ikisi de kabul edilmiş, yalnız 2. sürüm aktif bir kopyanın yerini almış); iki ayrı kopya var;
+sporcunun programları: kendi programı (pasif), 1. sürüm kopyası (pasif, hâlâ 8), 2. sürüm kopyası
+(tek aktif, 12).
+
+Native'de **denenmeyenler:** reddetme, "superseded" (yerine yenisi gelmiş) sürümü açıp yanıtlamaya
+çalışma, eski önizlemeyle gönderme, sürüm çakışması ve **2. sürüm gelirken sporcunun başka bir
+programının aktif olması** (1. sürümdeki "başka program aktif" durumu native'dir). Bunlar backend
+testleriyle ve mobil store testleriyle kapsanır. Her iki kopya da "Coach Base" adını taşır; ayırt
+eden tek şey "Active program" etiketidir (ürün gözlemi, değiştirilmedi).
 
 ### "Neden gelişemiyorum?" ve günlük check-in akışı (native)
 
@@ -167,6 +191,49 @@ silme sürerken hesap değişimi ve gecikmiş yanıtlar. Bunlar `tests/account-d
 (gerçek token deposu, API istemcisi ve oturum denetleyicisi; yalnız Keychain ve ağ sahte) ve backend
 testleriyle kapsanır.
 
+### Koç–sporcu izin ve geri bildirim akışı (native)
+
+`e2e/scripts/coaching.sh` (önce `up.sh`) yeni bir koç ("Colt") ve sporcu ("Avery") kurar; sporcunun
+bilinen değerli **bitmiş** bir antrenmanı ("Avery Push Fixture": ısınma 40×10, 80×8 RIR 2, 82,5×6
+RIR 1) ve **bitmemiş** bir antrenmanı ("Avery Open Session") vardır. Bağlantının kendisi dahil her
+şey `e2e/flows/coaching-permissions.yaml` ile ekranda yapılır; davet kodu Maestro içinde kopyala/
+yapıştır ile koçun ekranından sporcunun alanına gider, script onu dosyaya yazmaz ve artifact'lar
+sonradan temizlenir (sonda "kod/parola kalan metin dosyası: 0" yazar). Tek simülatör, hesaplar
+sırayla: **eşzamanlı iki cihaz testi değildir** ve aynı anda iptal edilen oturumlar bu akışla
+doğrulanmaz.
+
+Akış: koç davet üretir → sporcu önizler (kimden geldiği görünür) ve açıkça kabul eder → paylaşım
+**kapalı** başlar; koç "unavailable" görür, bitmiş ve bitmemiş antrenman adı, sayı, "Latest" gibi
+hiçbir özel bilgi görünmez → sporcu paylaşımı (onay isteyen) açar → koç doğru bitmiş antrenmanı salt
+okunur setleriyle görür, bitmemiş antrenman listede yoktur, düzenleme/silme/"Log set" kontrolü yoktur
+→ koç **geri bildirim yazar** (kaydetmeden önce onay) → sporcu kendi antrenmanında "Coach feedback"
+kartında okur (yazar adı/kullanıcı adı, "Written …"; antrenman kaydından ayrı) → koç **düzenler**
+(metnin sonuna ek cümle) → sporcu yeniler ve düzenlemeyi ("Edited …") görür → sporcu paylaşımı kapatır
+→ koç normal gezinmeyle yeniden girince erişim ve özetler yoktur, **sporcu aldığı geri bildirimi
+korur** → koç bağlantıyı onayla bitirir → sporcu tarafında koç yok, geri bildirim yine duruyor.
+
+Akıştan sonra script **bağımsız kanıt** toplar (native UI kanıtı değildir): veritabanında tek bağlantı ve
+bitmiş; paylaşım kapalı; tek geri bildirim satırı, sürüm 2, saklanan metin yazılanla **birebir**; bitmemiş
+antrenman hâlâ bitmemiş ve geri bildirimsiz; API'de sporcu geri bildirimi bağlantı bittikten sonra da okur
+ve yazar yalnız ad/kullanıcı adıyla görünür (e-posta, parola, hash yok); koç listede sporcuyu görmez,
+antrenman listesi/detayı/geri bildirimi için `404` alır, geri bildirimi düzenleyemez/silemez/yenisini
+ekleyemez (`404`); sporcu koç uçlarını kullanamaz; bu çağrıların hiçbiri geri bildirimi değiştirmemiştir.
+
+Bu akışla bulunup **düzeltilen gerçek hatalar** (ekran görüntüsü incelemesiyle; erişilebilirlik
+ağacında "görünür" olmak engelsiz olmak demek değildir): (1) davet önizlemesinde klavye "Connect"
+kararını örtüyordu → önizleme gelince klavye kapanır; (2) geri bildirim yazarken Save/Cancel/karakter
+sayacı klavyenin altında kalıyordu → klavye açılınca ve içerik büyüyünce form sona kaydırılır;
+(3) Training ekranındaki **"Start from a template" sayfasında** üst `Pressable` erişilebilir öğe
+olduğundan tüm sayfa tek öğe ("Start from a template, Program, Şablon") oluyor, şablonlar tek tek
+seçilemiyordu (VoiceOver ve Maestro) → iki kapsayıcı `accessible={false}`, her şablon satırı kendi
+`accessibilityLabel`'ına sahip. Aynı kalıp `workout/[id].tsx` içindeki "Save as template" sayfasında da
+var; orada **yeniden üretilmedi, dokunulmadı** (açık iş).
+
+Native'de **denenmeyenler:** sürüm çakışması (409) ve "Keep my text and review" / "Use the latest"
+akışı (yalnız backend ve mobil store testleri), sınır uzunluğunda (2000) metin, silme, ağ kopması,
+yazarlar arası izolasyonun ekranda gösterimi (yalnız bağımsız API/DB kontrolü ve backend testleri),
+fiziksel cihaz, VoiceOver, Dynamic Type.
+
 ### Parola kurtarma (native)
 
 `e2e/scripts/recovery.sh` (önce `up.sh`; yığın artık yerel bir **test SMTP kutusu** da içerir:
@@ -187,10 +254,14 @@ gitmez; ilgisiz hesap hâlâ kendi parolasıyla girer, token'ı geçerlidir ve `
 değişmemiştir.
 
 Klavye notları (akış bunlara göre yazıldı): sayı tuş takımında dönüş tuşu yoktur ve `hideKeyboard`
-onu kapatamaz; kod girildikten sonra ekran başlığına dokunmak klavyeyi kapatır. Klavye alttaki
-alanları örter: tekrar alanına dokunmak yerine yeni parola alanındaki **Next** tuşu kullanılır.
-Betik her koşuda yeni hesaplar üretir; yığını kapatmadan art arda çalıştırılabilir (koşu 9 ve 10
-ayrı ayrı geçti).
+onu kapatamaz; kod girildikten sonra ekran başlığına dokunmak klavyeyi kapatır. **Tekrar alanı**
+(Confirm new password) klavye yeni parola alanındayken klavyenin altında kalır (iOS'ta olağan
+davranış); akış iki yolu da dener: (a) formu elle **sürükleme** (`keyboardDismissMode="on-drag"`:
+klavye kapanır, alan tamamen görünür olur, doğrudan dokunulup yazılır; yazılanın o alana girdiği
+"eşleşmiyor" satırından kanıtlanır) ve (b) yeni parola alanındaki **Next** tuşu. Bu bir hata değil,
+davranış olarak belgelendi; düzeltme gerekmedi. Not: iOS güvenli alanı yeniden odaklanınca ilk tuşta
+içeriği siler, bu yüzden akış tekrar alanına yazdıktan sonra parolayı baştan yazar. Betik her koşuda
+yeni hesaplar üretir; yığını kapatmadan art arda çalıştırılabilir.
 
 Native'de **denenmeyenler:** ağ kopması/zaman aşımı, 429/503 yanıtlarının ekranda görünümü, yeniden
 gönderim bekleme sayacının native davranışı ve sıfırlama sürerken hesap değişimi. Bunlar
