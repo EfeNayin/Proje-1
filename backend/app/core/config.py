@@ -9,7 +9,7 @@ göz ardı edilir (pydantic-settings tanımadığı alanı yok sayar).
 from email.utils import parseaddr
 from functools import lru_cache
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "bodytrack"
     POSTGRES_PASSWORD: str = "bodytrack"
     POSTGRES_DB: str = "bodytrack"
+    # Connection pool of this process. The defaults are SQLAlchemy's own; a small hosted
+    # database (Neon free: 0.25 CU, ~97 usable connections) wants a smaller pool, and its
+    # compute suspends when idle, so a connection can be dead long before it is used
+    # (pool_pre_ping catches that; DB_POOL_RECYCLE_SECONDS retires old ones before it has to).
+    DB_POOL_SIZE: int = Field(default=5, ge=1, le=50)
+    DB_MAX_OVERFLOW: int = Field(default=10, ge=0, le=50)
+    DB_POOL_RECYCLE_SECONDS: int = Field(default=-1, ge=-1)
 
     # ── Redis ──
     REDIS_URL: str = "redis://redis:6379/0"
@@ -148,6 +155,12 @@ class Settings(BaseSettings):
     SMTP_MAX_CONCURRENT: int = Field(default=4, ge=1, le=32)
     SMTP_MAX_PENDING: int = Field(default=100, ge=1, le=10_000)
 
+    # ── Reverse proxy ──
+    # uvicorn reads this variable itself (the peers whose X-Forwarded-For it believes).
+    # It is declared here only so a wildcard can be refused outside development; the
+    # client-address model is in README.md ("Hız sınırları").
+    FORWARDED_ALLOW_IPS: str | None = None
+
     # ── NCBI E-utilities (PubMed) ──
     # Both optional. An API key raises NCBI's per-IP limit from 3 to 10
     # requests/second; it lives only here on the backend, never in the mobile
@@ -186,8 +199,10 @@ class Settings(BaseSettings):
         backend/.env.example ships a placeholder key that is public in the
         repository, and a copied .env keeps it. Anyone who knows the key can
         sign tokens for any user, so outside development a short key is a
-        startup error; so is a mail transport that cannot deliver. Raised as a plain
-        error, never a pydantic one, so the message cannot echo a secret.
+        startup error; so are a mail transport that cannot deliver, and database,
+        Redis or proxy settings that would send credentials in clear or skip
+        certificate checks. Raised as a plain error, never a pydantic one, so the
+        message cannot echo a secret or a connection string.
         """
         if self.is_development:
             return
@@ -199,6 +214,15 @@ class Settings(BaseSettings):
                 'python -c "import secrets; print(secrets.token_urlsafe(48))"'
             )
         self._check_mail(environment)
+        self._check_database_url(environment)
+        self._check_redis_url(environment)
+        allowed = [part.strip() for part in (self.FORWARDED_ALLOW_IPS or "").split(",")]
+        if "*" in allowed:
+            raise RuntimeError(
+                f"FORWARDED_ALLOW_IPS must list the proxy addresses, not '*', when "
+                f"ENVIRONMENT is {environment!r}: a wildcard would let any caller choose "
+                "the address its rate limits are counted under."
+            )
 
     def _check_mail(self, environment: str) -> None:
         if self.MAIL_TRANSPORT == "resend":
@@ -230,6 +254,36 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 f"SMTP_SECURITY must be 'starttls' or 'implicit' when ENVIRONMENT is "
                 f"{environment!r}: recovery codes must not cross the network in clear."
+            )
+
+    def _check_database_url(self, environment: str) -> None:
+        query = dict(parse_qsl(urlsplit(self.DATABASE_URL).query))
+        libpq_only = sorted({"sslmode", "channel_binding", "sslrootcert"} & query.keys())
+        if libpq_only:
+            raise RuntimeError(
+                f"DATABASE_URL uses libpq parameter(s) {', '.join(libpq_only)}, which asyncpg "
+                "does not read. Drop them and add ssl=verify-full to the query string."
+            )
+        if query.get("ssl") != "verify-full":
+            raise RuntimeError(
+                f"DATABASE_URL must end with ?ssl=verify-full when ENVIRONMENT is "
+                f"{environment!r}: the database connection must be encrypted and the "
+                "server's certificate and hostname verified."
+            )
+
+    def _check_redis_url(self, environment: str) -> None:
+        url = urlsplit(self.REDIS_URL)
+        if url.scheme != "rediss":
+            raise RuntimeError(
+                f"REDIS_URL must use rediss:// (TLS) when ENVIRONMENT is {environment!r}: "
+                "its password must not cross the network in clear."
+            )
+        options = dict(parse_qsl(url.query))
+        weakened = sorted({"ssl_cert_reqs", "ssl_check_hostname"} & options.keys())
+        if weakened:
+            raise RuntimeError(
+                f"REDIS_URL must not set {', '.join(weakened)} when ENVIRONMENT is "
+                f"{environment!r}: certificate and hostname checks are always on."
             )
 
 

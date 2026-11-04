@@ -44,6 +44,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 from fastapi import Depends, Request
 from redis.asyncio import Redis
@@ -123,6 +124,18 @@ def format_wait(seconds: int) -> str:
     return f"{math.ceil(seconds / 3600)} hours"
 
 
+def _tls_options(url: str) -> dict[str, Any]:
+    """Certificate AND hostname checks for rediss:// (redis-py checks only the chain by default).
+
+    Without the hostname check any certificate from a trusted authority would be accepted
+    for any host, which defeats the point of encrypting the connection to a hosted Redis.
+    The URL itself may not weaken this outside development (config.check_deployment_safety).
+    """
+    if urlsplit(url).scheme != "rediss":
+        return {}
+    return {"ssl_cert_reqs": "required", "ssl_check_hostname": True}
+
+
 class Admission:
     """The result of an admitted request, so a caller can take the count back."""
 
@@ -192,6 +205,7 @@ class RateLimiter:
                 socket_connect_timeout=self._timeout,
                 socket_timeout=self._timeout,
                 retry_on_timeout=False,
+                **_tls_options(self._url),
             )
             self._admit = self._client.register_script(_ADMIT_SCRIPT)
             self._refund = self._client.register_script(_REFUND_SCRIPT)

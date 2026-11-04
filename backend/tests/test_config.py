@@ -20,7 +20,8 @@ LONG_KEY = "k" * MIN_JWT_SECRET_BYTES
 def make_settings(**overrides: object) -> Settings:
     """Settings built only from the arguments, ignoring the process's .env file."""
     values: dict[str, object] = {
-        "DATABASE_URL": "postgresql+asyncpg://user:pw@db/app",
+        "DATABASE_URL": "postgresql+asyncpg://user:pw@db/app?ssl=verify-full",
+        "REDIS_URL": "rediss://default:pw@redis.example.test:6379",
         "JWT_SECRET_KEY": LONG_KEY,
         "SMTP_HOST": "smtp.example.test",
         **overrides,

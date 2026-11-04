@@ -8,17 +8,21 @@ Or through Docker Compose:
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.database import get_db
 from app.core.dberrors import references_missing_user
 from app.core.exceptions import AppError
-from app.core.ratelimit import close_rate_limiter
+from app.core.ratelimit import Limiter, close_rate_limiter
+from app.core.readiness import is_ready
 from app.domains.analytics.router import router as analytics_router
 from app.domains.auth.router import router as auth_router
 from app.domains.body.router import router as body_router
@@ -44,9 +48,11 @@ app = FastAPI(
     title="BodyTrack API",
     description="Hypertrophy-focused training platform",
     version="0.1.0",
-    # Interactive docs are a development aid; keep them off in production.
-    docs_url=None if settings.is_production else "/docs",
-    redoc_url=None if settings.is_production else "/redoc",
+    # Interactive docs are a development aid; keep them off anywhere but development
+    # (a hosted staging service is reachable by anyone who has its address).
+    docs_url="/docs" if settings.is_development else None,
+    redoc_url="/redoc" if settings.is_development else None,
+    openapi_url="/openapi.json" if settings.is_development else None,
 )
 
 
@@ -108,3 +114,20 @@ app.include_router(workouts_router, prefix=API_PREFIX)
 @app.get("/health", tags=["meta"], summary="Liveness probe")
 async def health() -> dict[str, str]:
     return {"status": "ok", "environment": settings.ENVIRONMENT}
+
+
+@app.get(
+    "/health/ready",
+    tags=["meta"],
+    summary="Readiness probe (database and Redis)",
+    responses={503: {"description": "A dependency did not answer in time"}},
+)
+async def ready(
+    response: Response, db: Annotated[AsyncSession, Depends(get_db)], limiter: Limiter
+) -> dict[str, str]:
+    """200 when both the database and Redis answer, 503 otherwise. No detail either way."""
+    response.headers["Cache-Control"] = "no-store"
+    if await is_ready(db, limiter):
+        return {"status": "ready"}
+    response.status_code = 503
+    return {"status": "unavailable"}
