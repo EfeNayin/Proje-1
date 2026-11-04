@@ -451,12 +451,21 @@ export default function TrainingHome() {
         animationType="slide"
         onRequestClose={() => setSheetVisible(false)}
       >
-        <Pressable style={styles.sheetBackdrop} onPress={() => setSheetVisible(false)}>
+        {/* Neither Pressable is an accessibility element itself: an accessible parent
+            swallows its children on iOS, which turned the whole sheet into one element
+            ("Start from a template, <program>, <template>") with no template to choose. */}
+        <Pressable
+          accessible={false}
+          style={styles.sheetBackdrop}
+          onPress={() => setSheetVisible(false)}
+        >
           {/* A Pressable with its own onPress, even a no-op, is what keeps a
               tap inside the sheet from also being read as a tap on the
               backdrop behind it. */}
           <Pressable
+            accessible={false}
             accessibilityViewIsModal
+            onAccessibilityEscape={() => setSheetVisible(false)}
             style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}
             onPress={() => {}}
           >
@@ -468,6 +477,7 @@ export default function TrainingHome() {
               <Pressable
                 key={template.id}
                 accessibilityRole="button"
+                accessibilityLabel={template.name}
                 style={({ pressed }) => [styles.sheetRow, pressed && styles.sheetRowPressed]}
                 onPress={() => {
                   setSheetVisible(false);

@@ -10,9 +10,10 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -96,6 +97,26 @@ function AthleteWorkout({
     }, [userId, linkId, workoutId]),
   );
 
+  // The only text field on this screen is the feedback box, at the bottom. The scroll view
+  // keeps the box itself above the keyboard, but not the Cancel/Save row below it, which
+  // stayed hidden under the keyboard with no visible way to finish. While the keyboard is
+  // up, the end of the content is kept in view: when it appears and when the text grows.
+  const scrollRef = useRef<ScrollView>(null);
+  const keyboardUp = useRef(false);
+  useEffect(() => {
+    const shown = Keyboard.addListener("keyboardDidShow", () => {
+      keyboardUp.current = true;
+      scrollRef.current?.scrollToEnd({ animated: true });
+    });
+    const hidden = Keyboard.addListener("keyboardDidHide", () => {
+      keyboardUp.current = false;
+    });
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
+
   const padding = { paddingBottom: insets.bottom + 24 };
 
   if (denied) {
@@ -143,8 +164,12 @@ function AthleteWorkout({
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={styles.screen}
       contentContainerStyle={[styles.content, padding]}
+      onContentSizeChange={() => {
+        if (keyboardUp.current) scrollRef.current?.scrollToEnd({ animated: false });
+      }}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
       automaticallyAdjustKeyboardInsets

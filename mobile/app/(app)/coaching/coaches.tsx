@@ -19,6 +19,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -99,8 +100,14 @@ function MyCoaches({ userId }: { userId: string | null }) {
     // answer is about a code that is no longer there: showing it, with a
     // Connect button, would pair the wrong coach with the visible text.
     if (typed.current !== looked) return;
-    if (outcome.kind === "failed") setError(outcome.message);
-    else setPreviewed({ code: looked, preview: outcome.preview });
+    if (outcome.kind === "failed") {
+      setError(outcome.message);
+      return;
+    }
+    // The code is in; what comes next is a decision about the preview. Leaving the keyboard
+    // up would cover the lower part of it, including the Connect button.
+    Keyboard.dismiss();
+    setPreviewed({ code: looked, preview: outcome.preview });
   };
 
   const accept = async () => {
@@ -110,6 +117,7 @@ function MyCoaches({ userId }: { userId: string | null }) {
     if (outcome.kind === "ignored" || outcome.kind === "stale") return;
     if (outcome.kind === "done") {
       setNotice(`You are now connected to ${personName(outcome.connection.person)}.`);
+      Keyboard.dismiss();
       setPreviewed(null);
       setCode("");
       return;

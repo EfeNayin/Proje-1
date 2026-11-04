@@ -973,3 +973,27 @@ test('wiring: the feedback store closes when the athlete view changes or loses a
   assert.match(session, /workoutFeedbackStore\.close\(\)/);
   assert.match(session, /revoke\("not_shared"\)/);
 });
+
+test('wiring: the coach screen scrolls the feedback form clear of the keyboard (found natively: Save/Cancel were covered)', () => {
+  const screen = read('app/(app)/coaching/athlete/[linkId]/workout/[workoutId].tsx');
+  assert.match(screen, /addListener\("keyboardDidShow"/);
+  assert.match(screen, /scrollRef\.current\?\.scrollToEnd/);
+  assert.match(screen, /onContentSizeChange=/);
+  assert.match(screen, /ref=\{scrollRef\}/);
+});
+
+test('wiring: the invite preview closes the keyboard so the decision is not covered (found natively)', () => {
+  const screen = read('app/(app)/coaching/coaches.tsx');
+  const lookUp = screen.slice(screen.indexOf('const lookUp'), screen.indexOf('const accept'));
+  assert.match(lookUp, /Keyboard\.dismiss\(\);\s*setPreviewed\(/);
+});
+
+test('wiring: the Start-from-a-template sheet exposes each template as its own element (found natively)', () => {
+  const screen = read('app/(app)/(tabs)/index.tsx');
+  const sheet = screen.slice(screen.indexOf('<Modal'), screen.indexOf('</Modal>'));
+  // An accessible parent swallows its children on iOS: both wrappers must opt out, and each row
+  // carries its own name (the chevron glyph would otherwise be read as part of it).
+  assert.match(sheet, /<Pressable\s+accessible=\{false\}\s+style=\{styles\.sheetBackdrop\}/);
+  assert.match(sheet, /accessible=\{false\}\s+accessibilityViewIsModal/);
+  assert.match(sheet, /accessibilityLabel=\{template\.name\}/);
+});

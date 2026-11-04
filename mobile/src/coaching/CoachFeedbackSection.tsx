@@ -162,6 +162,7 @@ function Body({
       <View style={styles.block}>
         <TextInput
           accessibilityLabel="Feedback text"
+          testID="coach-feedback-input"
           multiline
           value={state.draft}
           onChangeText={(text) => store.setDraft(text)}
