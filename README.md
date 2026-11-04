@@ -119,7 +119,8 @@ paylaşılan kovadır. Bir ters proxy arkasına geçilirse: proxy backend'e ula�
 gelen `X-Forwarded-For`'u ezmeli ve `FORWARDED_ALLOW_IPS` yalnız proxy'nin adresi olmalıdır;
 aksi halde ya tüm kullanıcılar proxy'nin adresinde birleşir ya da başlık sahte olabilir.
 IPv6 istemciler /64 bloğuna göre gruplanır. Bu bölüm bir proxy kurmaz, ağ açılımını
-değiştirmez.
+değiştirmez. Render arkasında ne olduğu, `FORWARDED_ALLOW_IPS`'in neden `*` olamayacağı ve uvicorn'un
+başlığı nasıl okuduğu "Staging'e dağıtım" bölümünde.
 
 **Redis çalışmazsa:** karar verilemediğinde istek **geçirilmez** ve işlem-başına sayaç gibi
 bir yedeğe de düşülmez: `503` + `Retry-After: 10` döner ("The service is temporarily
@@ -212,8 +213,9 @@ kilit altında `credential_version`'ı yeniden doğrular. Silinmiş hesap için 
 hesabı **yeniden oluşturmaz**; başka hesaplar etkilenmez. Parola değişti bildirimi e-postası
 parolayı içermez; gönderilemese de tamamlanmış sıfırlama geri alınmaz.
 
-**E-posta teslimatı (yapılandırma):** tek küçük bağdaştırıcı, standart kütüphane `smtplib` (yeni
-bağımlılık yok). Sağlayıcı **seçilmedi**; `backend/.env.example` yalnızca yer tutucu içerir.
+**E-posta teslimatı (yapılandırma):** iki küçük taşıyıcı, `MAIL_TRANSPORT` ile **açıkça** seçilir (`smtp`
+varsayılan | `resend`); biri diğerine otomatik geçmez. Resend (HTTPS) için bkz. "Staging'e dağıtım". Aşağıdaki SMTP ayrıntıları `smtp` içindir: standart
+kütüphane `smtplib` (yeni bağımlılık yok). Sağlayıcı **seçilmedi**; `backend/.env.example` yalnızca yer tutucu içerir.
 `SMTP_SECURITY=starttls` (varsayılan; TLS **sunulmalı ve sertifika doğrulanmalı**, yoksa
 gönderilmez) | `implicit` | `none` (yalnız development, yerel test kutusu). `staging`/`production`
 `SMTP_HOST` olmadan ya da `none` ile **açılmaz**. Gerçek değerler yalnızca kendi
@@ -236,6 +238,233 @@ değişirse (oturum dönemi) gecikmiş yanıt atılır; kurtarma hiçbir oturum 
 
 **Test:** gerçek PostgreSQL + Redis ve ayrı bir test SMTP kutusu (`backend/tests/support/smtp_sink.py`).
 Native doğrulama ve e2e kutusu: `mobile/README.md`.
+
+## Staging'e dağıtım (Render + Neon + Upstash + Resend, ücretsiz planlar)
+
+> **Durum: hazırlık. Hiçbir barındırılan servise dağıtım YAPILMADI ve hiçbir gerçek e-posta
+> gönderilmedi.** Aşağıdaki "yerel prova" gerçek Render/Neon/Upstash/Resend'e dokunmaz; yalnızca
+> aynı imajı, TLS'li PostgreSQL/Redis ve bir HTTPS Resend taklidiyle çalıştırır. Sağlayıcı
+> davranışı için tek kaynak 4 Kasım 2026'da okunan resmi dokümanlardır (aşağıda); hangi şeyin
+> neyle doğrulandığı en sondaki tabloda ayrılmıştır. Bu bir satın alma ya da yayın izni değildir.
+
+### Parçalar
+
+| Parça | Dosya | Not |
+|---|---|---|
+| Üretim imajı | `backend/Dockerfile`, **son aşama** `production` | Render Dockerfile'ın son aşamasını kurar (hedef seçilemiyor), bu yüzden `production` dosyanın sonundadır. `base`/`dev` hedefleri (compose, E2E) açıkça seçilir ve **değişmedi**. Kaynak ağacını kopyalamaz: yalnız `app/`, `alembic/`, `alembic.ini`, `db/schema_v1.sql` (baseline migration bunu yoldan okur), `deploy/start.sh`. `tests/`, `.env`, dump, araç yok; root olmayan kullanıcı (uid 10001); `--reload`/bind mount yok. |
+| Giriş noktası | `backend/deploy/start.sh` | `RUN_MIGRATIONS` (`true` varsayılan \| `false`, başka değer hata) → `alembic upgrade head`, sonra **tek işçili** `uvicorn` `${PORT:-8000}` üzerinde. Migration başarısızsa konteyner **hizmet vermeden** çıkar. |
+| Gizli dosyalar | `backend/.dockerignore` | `.env*`, anahtar/sertifika, dump ve `*.sql` (yalnız `db/schema_v1.sql` hariç) build bağlamına girmez; `production` aşaması zaten açık yol listesiyle kopyalar. (Eskiden `.dockerignore` yoktu ve `COPY . .` `backend/.env`'i imajın içine alıyordu.) |
+| Blueprint (isteğe bağlı) | `render.yaml` | Panelden elle girmenin eşi. Sırlar `sync: false` (panelde yazılır), `JWT_SECRET_KEY` Render üretir. **Render'a karşı doğrulanmadı.** |
+| Hazırlık denetimi | `python -m app.preflight` | Salt okunur; gerçek servislere karşı koşulur (aşağıda). |
+| Yerel prova | `backend/deploy/local-staging/` | `bash …/run.sh up \| verify \| down`. |
+
+### Ortam değişkenleri (adlar `backend/.env.example` ile aynı)
+
+Hepsi **Render panelinde: servis → Environment** (veya Blueprint ilk uygulanırken sorulur). Hiçbiri
+mobil pakete, depoya, `render.yaml`'a ya da bir `.env` dosyasına girmez. Parola/anahtar içerenleri
+günlüğe, ekran görüntüsüne ve sohbete yapıştırma.
+
+| Değişken | Değer | Gizli? |
+|---|---|---|
+| `ENVIRONMENT` | `staging` | hayır |
+| `DATABASE_URL` | `postgresql+asyncpg://KULLANICI:PAROLA@HOST/VERITABANI?ssl=verify-full` (Neon, **doğrudan** host, `-pooler` değil) | **evet** |
+| `REDIS_URL` | `rediss://default:TOKEN@HOST:6379` (Upstash, TLS) | **evet** |
+| `JWT_SECRET_KEY` | ≥ 32 bayt rastgele (Blueprint üretir; elle: `python -c "import secrets; print(secrets.token_urlsafe(48))"`). Değiştirmek tüm oturumları ve bekleyen kurtarma kodlarını geçersiz kılar | **evet** |
+| `MAIL_TRANSPORT` | `resend` | hayır |
+| `RESEND_API_KEY` | Resend panelinden | **evet** |
+| `MAIL_FROM` | Resend'de **doğrulanmış alan adında** bir adres, örn. `BodyTrack <no-reply@alanadin.com>` | hayır |
+| `PASSWORD_WORK_WORKERS` / `PASSWORD_WORK_MAX_QUEUED` | `2` / `16` (küçük örnek; bkz. bcrypt notu) | hayır |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_RECYCLE_SECONDS` | `3` / `2` / `1800` | hayır |
+| `RUN_MIGRATIONS` | `true` (veya elle yönetim için `false`) | hayır |
+| `PORT` | **ayarlama** — Render atar (varsayılan 10000), `start.sh` bunu dinler | hayır |
+| `FORWARDED_ALLOW_IPS` | **boş bırak** (aşağıdaki proxy bölümüne bak); `*` staging/production'da açılışı reddettirir | hayır |
+
+**Açılış güvenlik kontrolleri** (`staging`/`production`'da hata verip hiç başlamaz; mesajlar sırrı yinelemez):
+JWT anahtarı ≥ 32 bayt; seçilen taşıyıcı tam yapılandırılmış (`resend`: anahtar, **https** URL, gerçek
+gönderen adresi — `*.invalid` ve `@`'sız adres reddedilir; `smtp`: ana makine ve `starttls`/`implicit`);
+`DATABASE_URL` sonu **`?ssl=verify-full`** (libpq'nin `sslmode`/`channel_binding`/`sslrootcert`'i
+asyncpg'de geçmez, açık bir mesajla reddedilir); `REDIS_URL` **`rediss://`** ve URL'de
+`ssl_cert_reqs`/`ssl_check_hostname` yok; `FORWARDED_ALLOW_IPS` içinde `*` yok. Staging'de
+`/docs`, `/redoc` ve `/openapi.json` de kapalıdır (yalnız development'ta açık).
+
+### Bulunan ve düzeltilen uyumluluk sorunları (yerel provada)
+
+1. **asyncpg `ssl=verify-full` = "CA dosyası yok" hatası.** asyncpg bu düz dizeyi görünce sistem
+   CA'larını değil `~/.postgresql/root.crt`'yi arar; yoksa bağlanmaz (`ClientConfigurationError`).
+   `app/core/dburl.py`: `verify-full` gerçek bir `ssl.SSLContext`'e çevrilir (sistem CA'ları veya
+   `SSL_CERT_FILE`, zincir **ve ana makine adı** zorunlu). Uygulama, Alembic ve preflight aynı
+   fonksiyondan geçer. Neon sertifikası herkese açık bir otoriteden (Let's Encrypt/ISRG Root X1; Neon
+   dokümanı) olduğundan Debian CA deposu yeter (imajda var).
+2. **redis-py 5.2 `rediss://` ana makine adını DOĞRULAMIYOR** (`ssl_check_hostname` varsayılanı
+   `False`; yalnız zincir kontrol edilir). `ratelimit.py` artık `rediss://` için
+   `ssl_cert_reqs=required` + `ssl_check_hostname=True` verir ve URL bunu gevşetemez (açılış reddeder).
+3. **Alembic `.ini` içinde `%`:** URL'deki `%` (URL-kodlu parola) ConfigParser'da enterpolasyon sayılırdı;
+   `env.py` kaçırır.
+
+### Ücretsiz plan sınırları (resmî dokümanlar, 4 Kasım 2026)
+
+- **Render (web servisi):** 15 dk gelen trafik yoksa uyur, uyanma ≈ 1 dk; çalışma alanı başına ayda
+  **750** ücretsiz örnek saati (bitince tümü ay sonuna kadar askıya alınır); geçici dosya sistemi
+  (yeniden dağıtım/yeniden başlatma/uyku siler; kalıcı disk yok); **SSH/panel kabuğu yok**;
+  tek örnek; Render istediği an yeniden başlatabilir; **giden 25, 465 ve 587 portları kapalı** (bu
+  yüzden SMTP yerine Resend/HTTPS). Önceden-dağıtım (pre-deploy) komutu sayfada anılmıyor: **varsayılma**,
+  migration bu yüzden konteyner açılışında koşar. Ücretsiz Render PostgreSQL kullanılmıyor (30 gün sonra
+  süresi dolar, yedek yok).
+- **Neon (ücretsiz):** proje başına 1 GB; ayda 100 CU-saat; 5 dk işlemsizlikte **otomatik askıya alma**
+  (kapatılamaz; ilk bağlantı bir uyanma gecikmesi taşır); geçmiş penceresi **yalnız 6 saat** ve 1 GB
+  değişiklik (bu bir yedek **değildir**); ayda 5 GB çıkış; 0,25 CU'da `max_connections` 104 (97'si
+  uygulamaya), bu yüzden havuz küçük tutulur. Pooler (`-pooler`, PgBouncer işlem modu) **kullanılmaz**:
+  oturum durumu/oturum seviyesinde advisory lock desteklenmez ve migration doğrudan bağlantı ister
+  (kod yalnız işlem-seviyesi `pg_advisory_xact_lock` kullanır; yine de doğrudan host seçildi).
+- **Upstash Redis (ücretsiz):** ayda **500 000 komut**, 250–256 MB (sayfa iki değer veriyor), ayda 10 GB
+  bant, saniyede 10 000 komut, 1 veritabanı; TLS her zaman açık, `rediss://default:TOKEN@HOST:PORT`. Lua
+  (`EVAL`/`EVALSHA`/`SCRIPT LOAD`) dokümanda destekli; `EVAL`'ın tek komut mu sayıldığı sayfada **yok**.
+  Sınırlayıcı kayıt/giriş/yenileme/kurtarma başına 1–2 betik çağırır (reddedilen ve iade edilen de);
+  `PING` faturalanmaz (readiness bunu kullanır). Aylık kota dolunca sınırlayıcı Redis'e ulaşamaz ve
+  **fail-closed 503** verir: giriş/kayıt durur.
+- **Resend (ücretsiz):** günde **100**, ayda 3 000 e-posta; istek sınırı saniyede 10 (ekip geneli);
+  kota aşımı `429 daily_quota_exceeded`/`monthly_quota_exceeded`. **Alan adı doğrulanmadan yalnız kendi
+  e-posta adresine test gönderilebilir** ("testing mode"); başkalarına göndermek için sahibi olduğun bir
+  alan adını doğrulayıp `MAIL_FROM`'u o alanda kullanmak gerekir (SPF/DKIM DNS kayıtları). Paylaşılan/
+  herkese açık alan adı kabul edilmez. **Alan adın yoksa kurtarma e-postası yalnız senin adresine gider.**
+
+### Kalıcılık ve yedek
+
+Veritabanı yalnız Neon'dadır; Render diski geçicidir. Neon ücretsiz planda 6 saatlik geçmiş penceresinden
+başka yedek yoktur ve proje bitince/kota dolunca bu yetmez. Gerçek bir yedek için doğrudan bağlantıyla
+kendi bilgisayarından `pg_dump` al (dump dosyası **Git dışında** tutulur; `.gitignore` `*.dump`/`*.backup`/`*.sql.gz`'i, `.dockerignore`
+bunlara ek `*.sql`'i dışlar). Redis'teki sayaçlar kalıcılığa güvenilmeden tasarlandı: kaybolurlarsa
+sınırlar sıfırlanır, başka veri kaybolmaz. Kurtarma kodları ve oturumlar PostgreSQL'dedir.
+
+### Migration prosedürü (ücretsiz planla uyumlu)
+
+Panel kabuğu ve önceden-dağıtım işi **varsayılmaz**. Şema yalnız Alembic'ten gelir (`schema_v1.sql`
+dondurulmuştur, imaja yalnız baseline migration okusun diye girer).
+
+1. **Önce dışarıdan, bilgisayarından** (geliştirme veritabanına DEĞİL, Neon staging'e): üretim imajını
+   yerelde kur (`docker build --target production -t bodytrack-staging backend`), staging değerlerini
+   **Git dışındaki** bir env dosyasına yaz (örn. `~/secrets/bodytrack-staging.env`, mod 600) ve:
+   `docker run --rm --env-file ~/secrets/bodytrack-staging.env bodytrack-staging python -m app.preflight`
+   — kontroller geçmeden ilerleme. Sonra bir kez:
+   `docker run --rm --env-file … -e RUN_MIGRATIONS=false bodytrack-staging alembic upgrade head`
+   ve `… alembic check` (sıfır fark).
+2. **Dağıtımda** `RUN_MIGRATIONS=true` kalır: zaten uygulanmış migration'lar no-op, yenileri uygular;
+   hata olursa konteyner çıkar, yeni sürüm sağlıklı olmaz ve önceki sürümün çalışmaya devam etmesi
+   beklenir (Render davranışı — **barındırılan doğrulama adımı**).
+3. **Geriye uyumluluk kuralı:** yeni sürüm migration'ı uygularken eski kod hâlâ çalışıyor olabilir. Her
+   migration bir önceki sürümle de uyumlu olmalı (önce ekle, sonra kullan, en son sil). Kolon eklemek
+   güvenli; kolon silmek/yeniden adlandırmak iki dağıtıma bölünür.
+4. Migration'ı elle yönetmek istersen `RUN_MIGRATIONS=false` yap ve 1. adımı her sürümde tekrarla.
+5. Geliştirme veritabanına hiçbir adım dokunmaz; yerel provada kendi Postgres'i vardır.
+
+### Ağ, istemci adresi ve sağlık
+
+- **Render'dan okunabilen resmî bilgi:** yük dengeleyici TLS'i sonlandırır ve isteği servise HTTP ile
+  iletir; her web servisi `0.0.0.0:$PORT` dinlemelidir (varsayılan 10000). **İstemci adresi başlıkları
+  (`X-Forwarded-For`, `True-Client-IP`) ve proxy adres aralıkları için resmî bir sözleşme bulamadım.**
+  Topluluk raporları: Render gelen `X-Forwarded-For`'u silmez, **ekler** (yani sahte değer ekleyebilirsin);
+  önünde Cloudflare olduğu söyleniyor. Bunlar resmî değil, doğrulanmadı.
+- **Bu yüzden varsayılan korunur:** uygulama başlıkları hiç okumaz (`requester_address`); uvicorn yalnız
+  `FORWARDED_ALLOW_IPS`'teki eşten gelen başlığı işler (varsayılan `127.0.0.1`, yani hiç). Sonuç: Render
+  arkasında **tüm kullanıcılar proxy'nin adresinde birleşir** ve adres kovaları (giriş 40/10 dk, kayıt
+  20/saat, …) **herkes için tek paylaşılan kova** olur. Bu güvenli yöndedir (sahtecilikle kova seçilemez,
+  hesap-bazlı tahmin sınırı sürer) ama birkaç kullanıcılık staging için bile "bir kişinin denemeleri
+  herkesi kilitleyebilir" demektir; test ederken sınırlara dikkat et ya da bu ortamda `RATE_LIMIT_*_IP_LIMIT`
+  değerlerini bilerek yükselt.
+- **`FORWARDED_ALLOW_IPS=*` asla:** uvicorn `*` ile `X-Forwarded-For`'un **en soldaki** değerini alır ve
+  bu değeri istemci seçer. Bu yüzden `staging`/`production` `*` ile açılmaz. Adres listesi verilirse uvicorn
+  zinciri **sağdan sola** gezer ve güvenilir olmayan ilk değeri istemci sayar (`ProxyHeadersMiddleware`,
+  uvicorn 0.32.1 kaynağı okundu); proxy'nin eklediği değer güvenilir değilse istemci olarak o seçilir.
+- **Kullanıcı başına adresi açmak için (barındırılan adım, yapılmadı):** (1) dağıtımdan sonra farklı
+  ağlardan (Wi‑Fi, hücresel) birkaç istek at ve Render günlüğünde uvicorn erişim satırındaki eş adresine
+  bak: sabit bir özel aralık mı? (2) Ancak o **kesin** adres/aralık Render tarafından belgelenmiş veya
+  tekrar tekrar gözlenmişse `FORWARDED_ALLOW_IPS` olarak yaz (joker yok). (3) Dışarıdan `X-Forwarded-For:
+  1.2.3.4` ekleyerek istek at ve kovanın bu değere göre **seçilmediğini** doğrula (örn. 6 yanlış girişten
+  sonra başka bir sahte değerle 429 almaya devam ediyorsun). Seçilebiliyorsa geri al.
+- **Canlılık ≠ hazırlık.** `GET /health` yalnız süreç cevap veriyor mu (veritabanı/Redis'e dokunmaz) —
+  **Render `healthCheckPath`'i ve çalışma izleyicileri bunu kullanmalı.** `GET /health/ready` Neon'a
+  `SELECT 1` ve Upstash'e `PING` atar (her biri 4 sn ile sınırlı), yanıtı **5 sn önbelleğe alır** ve
+  eşzamanlı çağıranlar tek kontrolü paylaşır; gövde yalnız `{"status":"ready"}` / `{"status":"unavailable"}`
+  (503), ayrıntı yok. Platform sondasına bağlamak Neon'u 7/24 uyanık tutar ve Upstash kotasını yer; **yapma**.
+  Servisi uyanık tutmak için **yapay trafik eklenmedi** ve eklenmemeli (Render 15 dk sonra uyur; ilk istek
+  ≈ 1 dk + Neon uyanması sürer, mobil uygulama bunu ağ zaman aşımı gibi görebilir).
+- **Çok küçük CPU:** ücretsiz örnek bir CPU'nun küçük bir kesrini alır; bcrypt (~0,2 sn tam çekirdekte)
+  orada çok daha yavaş olabilir. Bu yüzden `PASSWORD_WORK_WORKERS=2`, kuyruk 16 (dolunca 503 + Retry-After).
+  Gerçek giriş gecikmesi barındırılan adımda ölçülmeli.
+- **Redis zaman aşımı korundu (0,5 sn).** Render ↔ Upstash arası bölge farkı veya soğuk TLS el sıkışması bunu
+  aşarsa sınırlayıcı fail-closed `503` verir. Aynı bölgeyi seç (Frankfurt/eu-central-1); yaşanırsa zaman
+  aşımını **bilinçli** yükseltmek `RATE_LIMIT_REDIS_TIMEOUT_SECONDS` (en çok 5) ile mümkündür ama güvenlik
+  değerlendirmesi ister.
+
+### Yerel prova (barındırılan doğrulama DEĞİL)
+
+`bash backend/deploy/local-staging/run.sh up` (betik çalıştırılabilir bit taşımaz; depo genelinde `core.fileMode` kapalı) üretim imajını `ENVIRONMENT=staging`, `PORT=10000`, TLS'li
+PostgreSQL 16 (`verify-full`) ve TLS'li Redis 7 (ana makine adı denetimli) ile çalıştırır; Resend yerine
+`tests/support/resend_stub.py` (HTTPS, atılabilir CA) vardır. `run.sh verify` şunları denetler ve hepsi
+geçti (4 Kasım 2026): root olmayan süreç, `--reload` yok, imajda `tests`/`.env`/`.git` yok, `PORT`'a
+dinleme; `/health`, `/health/ready` ve kapalı `/docs`; açılışta migration'ın head'e gelmesi ve `alembic
+check` sıfır fark; kayıt/giriş; **TLS Redis üzerinden Lua sınırlayıcı** (5 yanlış sonra 429 + `Retry-After`);
+kurtarma akışı (kod Resend taklidine HTTPS ile gelir, sıfırlama, eski parola ve eski refresh token ölü);
+sağlayıcı 429 verirken bile genel yanıt; **Redis düşünce** `/health/ready` 503 (gövdede ayrıntı yok),
+giriş 503 (geçirilmez), canlılık 200, dönünce toparlanma; **veritabanı düşünce** aynısı ve havuzun ölü
+bağlantıları değiştirmesi; backend günlüğünde parola, sır, kod veya adres yok. Ayrıca: boş bir veritabanında
+`python -m app.preflight` + elle `alembic upgrade head` + `alembic check`; bozuk `RUN_MIGRATIONS`,
+düz `redis://`, `sslmode=` kopyası, yanlış veritabanı parolası ve güvenilmeyen CA'nın her biri açık bir
+mesajla sıfırdan farklı kodla çıkar, hiçbiri hizmet vermez ve parola çıktıya sızmaz.
+
+### Dağıtım sonrası doğrulanacaklar (sırayla; şimdiye dek hiçbiri yapılmadı)
+
+1. `python -m app.preflight` (yukarıdaki `docker run …`) gerçek Neon + Upstash'e karşı: **sıralama/
+   büyük-küçük harf katlaması** (`lower('GÖĞÜS')`; Neon'un varsayılan collation'ı dokümanda doğrulanamadı,
+   şema `C.UTF-8` varsayar), dört uzantının kurulabilirliği (Neon'un desteklediği uzantılar listesinde var),
+   TLS, **Lua betiklerinin Upstash'te** çalışması (TTL, iade) ve ilk `admit` süresinin 0,5 sn altında kalması.
+2. Staging'e `alembic upgrade head` (bilgisayardan) → `alembic check`.
+3. Render'da servisi oluştur, ilk dağıtımın günlüğünde `start: migrations are at head` ve uvicorn satırını gör;
+   Render'ın `PORT`'unu ve **imajın son aşamasını** (production) kullandığını doğrula.
+4. `GET /health`, `GET /health/ready`; `/docs` 404.
+5. Kayıt + giriş + yenileme (telefonun staging adresine bakacak bir `EXPO_PUBLIC_API_URL` build'i **bu işin
+   kapsamı dışı**; önce `curl` ile).
+6. Resend: alan adı doğrulandıktan sonra bir kurtarma kodu iste → e-posta gelsin, sıfırla; ardından
+   (kontrollü) sağlayıcı reddi/kota durumunda uygulamanın genel yanıt verdiğini gözle.
+7. Soğuk başlangıç: 15 dk bekle, ilk isteğin süresini ve (Neon askıdaysa) bağlantı gecikmesini ölç; ilk
+   Redis isteğinde 0,5 sn zaman aşımı 503 üretiyor mu?
+8. Proxy/istemci adresi (yukarıdaki üç adım); birleşik kovanın kullanılabilirliğini gör.
+9. bcrypt gecikmesi (tek giriş süresi) ve 503 (meşgul) eşiği.
+10. Başarısız migration'da önceki sürümün hizmette kaldığını, bir deneme dağıtımıyla (zararsız bir
+    hatalı migration ile **staging'de**) doğrula.
+
+### Sahip için pano kurulum listesi (sırayla)
+
+1. **Neon:** hesap → proje (bölge: AWS Frankfurt, eu-central-1; Postgres 16) → veritabanı + rol.
+   Bağlantı dizesinde **doğrudan host'u** seç: host adında `-pooler` geçmemeli (pooler kapalı olmalı). Bağlantı dizesini al; `postgresql://`
+   → `postgresql+asyncpg://` yap, `?sslmode=…&channel_binding=…` kısmını sil, yerine `?ssl=verify-full`
+   yaz. Bunu yalnız bir parola yöneticisine/Render ortamına koy.
+2. **Upstash:** hesap → Redis veritabanı (**aynı bölge**, eu-central-1, ücretsiz plan, TLS) → *Connect*
+   → TCP: `rediss://default:TOKEN@HOST:PORT` biçimini oluştur.
+3. **Resend:** hesap → *Domains* → sahibi olduğun alan adını ekle ve DNS kayıtlarını (SPF/DKIM) gir →
+   doğrulanana kadar bekle → *API Keys* → anahtar oluştur (seçenek varsa yalnız gönderim yetkisiyle). (Alan adı yoksa: bu adım atlanır,
+   kurtarma e-postası yalnız kendi adresine gider.)
+4. **Bilgisayardan:** yukarıdaki `preflight` ve `alembic upgrade head` (Migration prosedürü, 1. adım).
+5. **Render:** *New → Web Service* (veya Blueprint) → bu GitHub deposu, dal: staging için seçtiğin dal →
+   *Runtime: Docker*, *Dockerfile path* `./backend/Dockerfile`, *Docker context* `./backend`, bölge
+   **Frankfurt**, plan **Free**, *Health check path* `/health`, *Auto-deploy* kapalı → *Environment*
+   bölümüne yukarıdaki tablodaki değişkenleri gir (`PORT` ve `FORWARDED_ALLOW_IPS` hariç) → *Create*.
+6. İlk dağıtım günlüğünü izle; "Dağıtım sonrası doğrulanacaklar" listesini sırayla yürüt.
+7. Bitince: Render ortam değişkenlerini ve Neon/Upstash/Resend anahtarlarını **döndür** (günlüklerde ya da
+   ekran görüntülerinde göründüyse zorunlu), kullanılmayan servisi askıya al.
+
+### Çözülmemiş / dürüstçe açık olanlar
+
+- **Neon collation:** `lower()` Türkçe harf katlaması için `C.UTF-8` gerekir; Neon dokümanından
+  varsayılanı doğrulayamadım. Preflight `GÖĞÜS` testini yapar; **başarısızsa şema bu veritabanında
+  güvenle kurulamaz** ve veritabanı farklı collation ile yeniden oluşturulmalıdır.
+- **İstemci adresi:** Render'ın başlık sözleşmesi resmî olarak bulunamadı; varsayılan "herkes tek kova".
+- **Resend alan adı** sahipliği gerekir; yoksa gerçek kullanıcılara e-posta yok.
+- **Upstash'te Lua** yalnız dokümandan biliniyor; gerçek servisteki davranış (TLS gecikmesi, komut
+  sayımı) ancak barındırılan adımda görülür.
+- **Render'ın son aşamayı kurduğu** ve `render.yaml` anahtarları Render'a karşı denenmedi.
+- Gönderim **dayanıklı değil** (outbox yok): süreç yanıttan hemen sonra uyursa/yeniden başlarsa e-posta
+  gitmez; Render ücretsiz örneği her an yeniden başlatılabilir. Kullanıcı yeni kod ister.
 
 ## Faz planı (özet)
 

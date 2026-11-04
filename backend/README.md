@@ -30,7 +30,9 @@ uvicorn app.main:app --reload
 ```
 app/
 ├── main.py            # FastAPI uygulaması, router'ları bağlar
-├── core/              # config, database, security, exceptions, mailer (SMTP)
+├── core/              # config, database (+dburl: doğrulanmış TLS), security, exceptions, ratelimit,
+│                      # passwordwork (bcrypt iş parçacığı havuzu), mailer (SMTP + Resend/HTTPS), readiness
+├── preflight.py       # `python -m app.preflight`: barındırılan Postgres/Redis için salt okunur uyumluluk denetimi
 ├── models/            # SQLAlchemy modelleri (13 tablo — bkz. CLAUDE.md)
 └── domains/
     ├── auth/          # register, login, refresh (rotasyon), parola kurtarma (kod + oturum geçersiz kılma)
@@ -52,7 +54,18 @@ Parola kurtarma (kod ömrü/entropi/sınırlar, oturum geçersiz kılma, SMTP ay
 için `SMTP_HOST` ayarlanmazsa kod hiç üretilmez; kodu görmek için yerel bir test SMTP kutusu
 (`SMTP_SECURITY=none`, yalnızca development) kullan: testler ve E2E bunun için
 `tests/support/smtp_sink.py` içindeki, yalnızca standart kütüphaneyle yazılmış küçük
-alıcıyı kullanır. Gerçek SMTP bilgilerini `.env.example`'a ya da Git'e yazma.
+alıcıyı kullanır. Gerçek SMTP bilgilerini `.env.example`'a ya da Git'e yazma. Taşıyıcı `MAIL_TRANSPORT` ile açıkça seçilir
+(`smtp` varsayılan | `resend`); Resend testleri gerçek ağa çıkmaz: `httpx.MockTransport`, süreç içi
+`tests/support/resend_stub.py` ve atılabilir bir CA ile TLS (`tests/support/tls.py`).
+
+## Dağıtım (staging) dosyaları
+
+`Dockerfile`'ın **son aşaması** `production` Render gibi platformların kurduğu imajdır (root olmayan
+kullanıcı, `--reload` yok, `tests/` ve `.env` yok); `base` ve `dev` hedefleri compose ve E2E içindir.
+`deploy/start.sh` (`RUN_MIGRATIONS`, `PORT`), `.dockerignore`, `deploy/local-staging/` (TLS'li yerel
+prova), ortam değişkenleri, ücretsiz plan sınırları, migration prosedürü ve barındırılan doğrulama
+adımları kök README'de: "Staging'e dağıtım". `docker compose exec backend ruff check .` bu klasörleri de
+kapsar ve temiz olmalıdır.
 
 ## Geliştirme komutları
 ```bash
