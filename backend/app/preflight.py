@@ -8,7 +8,8 @@ first deploy and after changing a provider setting. It answers, in plain lines, 
 questions that only the real services can answer:
 
   * the settings pass the deployment safety checks;
-  * the database connection is TLS, the server's version, the collation behaviour the
+  * the database connection is TLS (judged on THIS client's side of the connection: version,
+    certificate required, hostname checked), the server's version, the collation behaviour the
     schema depends on (Turkish case folding), the extensions the baseline migration
     needs, and whether this role may create objects;
   * Redis answers, over TLS, and the limiter's real Lua scripts behave (a second request
@@ -22,9 +23,11 @@ failed.
 
 import asyncio
 import secrets
+import ssl
 import sys
 import time
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -38,6 +41,8 @@ from app.core.ratelimit import Bucket, RateLimiter
 REQUIRED_EXTENSIONS = ("citext", "pgcrypto", "unaccent", "pg_trgm")
 CONNECT_TIMEOUT_SECONDS = 60  # a suspended hosted database needs a moment to wake up
 
+ACCEPTED_TLS_VERSIONS = ("TLSv1.2", "TLSv1.3")
+
 failures = 0
 
 
@@ -46,6 +51,40 @@ def report(ok: bool, name: str, detail: str = "") -> None:
     if not ok:
         failures += 1
     print(f"{'ok  ' if ok else 'FAIL'} {name}" + (f": {detail}" if detail else ""))
+
+
+def client_tls(driver_connection: Any) -> ssl.SSLObject | None:
+    """The TLS session of an open asyncpg connection, None when it is not encrypted.
+
+    asyncpg 0.30 has no public accessor for it; the transport is read defensively, so a
+    future rename shows up as "not encrypted" (a loud failure), never as a silent pass.
+    """
+    transport = getattr(driver_connection, "_transport", None)
+    session = transport.get_extra_info("ssl_object") if transport is not None else None
+    return session if isinstance(session, ssl.SSLObject) else None
+
+
+def judge_client_tls(session: ssl.SSLObject | None) -> tuple[bool, str]:
+    """Is the leg between this process and the database encrypted AND verified?
+
+    This is the leg the application controls. PostgreSQL's own `pg_stat_ssl` describes
+    the connection its backend received, which behind a provider proxy that terminates TLS
+    (Neon) is the proxy's internal hop and reads "not encrypted" even though the client
+    connection is TLS 1.3 with a verified certificate; it is therefore reported as
+    information only (see check_database).
+    """
+    if session is None:
+        return False, "no TLS session on this client's connection"
+    version = session.version()
+    context = session.context
+    verified = context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
+    ok = version in ACCEPTED_TLS_VERSIONS and verified
+    cipher = (session.cipher() or ("unknown",))[0]
+    return ok, (
+        f"{version}, {cipher}, certificate "
+        f"{'required' if context.verify_mode == ssl.CERT_REQUIRED else 'NOT required'}, hostname "
+        f"{'checked' if context.check_hostname else 'NOT checked'}"
+    )
 
 
 async def guarded(name: str, check: Callable[[], Awaitable[None]]) -> None:
@@ -69,10 +108,18 @@ async def check_database() -> None:
             version = (await conn.execute(text("SHOW server_version"))).scalar_one()
             report(True, "database connect", f"server {version}, {time.monotonic() - started:.2f}s")
 
-            tls = (
+            ok, detail = judge_client_tls(
+                client_tls((await conn.get_raw_connection()).driver_connection)
+            )
+            report(ok, "database connection is TLS-encrypted and verified (client side)", detail)
+            backend_tls = (
                 await conn.execute(text("SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()"))
             ).scalar_one_or_none()
-            report(tls is True, "database connection is TLS-encrypted")
+            print(
+                f"info postgres backend's own view of its connection: ssl={backend_tls} "
+                "(behind a provider proxy this is the proxy-to-compute hop, which this "
+                "client cannot verify)"
+            )
 
             collation = (
                 await conn.execute(

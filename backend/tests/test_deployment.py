@@ -200,6 +200,76 @@ class TestVerifiedTlsForPostgres:
         assert make_url(rendered).password == "p@ss%word"
 
 
+class TestPreflightTlsVerdict:
+    """The preflight judges TLS on this client's side of the database connection.
+
+    Found against a real Neon project: its proxy terminates TLS, so the PostgreSQL backend's
+    own `pg_stat_ssl` said "not encrypted" for a TLS 1.3, certificate- and hostname-verified
+    client connection. The verdict must follow what this process controls, and must still
+    fail for anything weaker.
+    """
+
+    @staticmethod
+    def session(version: str | None, *, mode: Any = None, hostname: bool = True) -> Any:
+        import ssl
+        from types import SimpleNamespace
+
+        context = SimpleNamespace(
+            verify_mode=ssl.CERT_REQUIRED if mode is None else mode, check_hostname=hostname
+        )
+        return SimpleNamespace(
+            version=lambda: version, context=context, cipher=lambda: ("TLS_AES_256_GCM_SHA384",)
+        )
+
+    @pytest.mark.parametrize("version", ["TLSv1.2", "TLSv1.3"])
+    def test_a_verified_modern_session_passes(self, version: str) -> None:
+        from app.preflight import judge_client_tls
+
+        ok, detail = judge_client_tls(self.session(version))
+
+        assert ok and version in detail and "certificate required" in detail
+
+    def test_no_tls_session_fails(self) -> None:
+        from app.preflight import judge_client_tls
+
+        assert judge_client_tls(None)[0] is False
+
+    def test_an_old_protocol_fails(self) -> None:
+        from app.preflight import judge_client_tls
+
+        assert judge_client_tls(self.session("TLSv1.1"))[0] is False
+
+    def test_an_unverified_certificate_fails(self) -> None:
+        import ssl
+
+        from app.preflight import judge_client_tls
+
+        ok, detail = judge_client_tls(self.session("TLSv1.3", mode=ssl.CERT_NONE))
+
+        assert ok is False and "NOT required" in detail
+
+    def test_an_unchecked_hostname_fails(self) -> None:
+        from app.preflight import judge_client_tls
+
+        ok, detail = judge_client_tls(self.session("TLSv1.3", hostname=False))
+
+        assert ok is False and "NOT checked" in detail
+
+    async def test_a_plain_asyncpg_connection_reads_as_not_encrypted(self) -> None:
+        """Also pins that asyncpg still exposes the transport the preflight reads."""
+        import asyncpg  # type: ignore[import-untyped]
+
+        from app.preflight import client_tls
+        from tests.conftest import TEST_DB_NAME, _asyncpg_kwargs
+
+        connection = await asyncpg.connect(**_asyncpg_kwargs(TEST_DB_NAME))
+        try:
+            assert getattr(connection, "_transport", None) is not None
+            assert client_tls(connection) is None
+        finally:
+            await connection.close()
+
+
 # ── a complete staging environment boots, with its documentation closed ──
 
 
