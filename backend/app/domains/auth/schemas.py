@@ -49,6 +49,52 @@ Username = Annotated[
 
 Password = Annotated[str, Field(min_length=8, max_length=72, examples=["s3cret-passphrase"])]
 
+# ── Phone number (optional, unverified contact information) ──
+# Stored as E.164: "+", the country calling code, the subscriber number, digits only, at
+# most 15 of them (ITU-T E.164). The rule is structural. It does NOT know which numbers
+# exist, what length a country uses, or whether the number is reachable (that needs a
+# numbering-plan library and, for the last one, a verification flow, neither of which
+# exists here), so it is contact information the owner typed, never proof of anything.
+# The mobile client applies the same rule (mobile/src/account/phoneNumber.ts); keep the two
+# in step, and the shared cases in tests/test_phone_number.py and
+# mobile/tests/phone-number.test.cjs.
+PHONE_INPUT_MAX_LENGTH = 40
+_PHONE_MIN_DIGITS = 8
+_PHONE_MAX_DIGITS = 15
+_PHONE_SEPARATORS = " \t-.()"
+PHONE_COUNTRY_CODE_HINT = (
+    "Start with the country code, for example +90 532 123 45 67. "
+    "Spaces, hyphens, dots and parentheses are allowed."
+)
+
+
+def normalize_phone_number(value: str) -> str | None:
+    """"+90 (532) 123-45-67" -> "+905321234567"; blank -> None; anything else -> ValueError.
+
+    Messages never contain the value: validation errors reach logs and clients.
+    """
+    text = value.strip()
+    if not text:
+        return None
+    if text.startswith("00"):  # the international call prefix many countries dial instead of +
+        text = "+" + text[2:]
+    if not text.startswith("+"):
+        raise ValueError(f"Phone number needs an explicit country code. {PHONE_COUNTRY_CODE_HINT}")
+    digits = "".join(character for character in text[1:] if character not in _PHONE_SEPARATORS)
+    # ASCII digits only: str.isdigit() also accepts other scripts' digits and superscripts.
+    if not digits or any(character not in "0123456789" for character in digits):
+        raise ValueError(
+            f"Phone number may contain only digits after the +. {PHONE_COUNTRY_CODE_HINT}"
+        )
+    if digits[0] == "0":
+        raise ValueError(f"A country code never starts with 0. {PHONE_COUNTRY_CODE_HINT}")
+    if not _PHONE_MIN_DIGITS <= len(digits) <= _PHONE_MAX_DIGITS:
+        raise ValueError(
+            f"Phone number must have {_PHONE_MIN_DIGITS} to {_PHONE_MAX_DIGITS} digits "
+            "including the country code."
+        )
+    return "+" + digits
+
 
 def _fits_bcrypt(value: str) -> str:
     if len(value.encode("utf-8")) > BCRYPT_MAX_BYTES:
@@ -80,6 +126,10 @@ class RegisterRequest(BaseModel):
     password: Password
     first_name: str | None = Field(default=None, max_length=100)
 
+    # Optional and unverified. Omitted, null and blank all mean "none", so older clients
+    # (which never send it) keep working; anything else is normalized to E.164 or refused.
+    phone_number: str | None = Field(default=None, max_length=PHONE_INPUT_MAX_LENGTH)
+
     # Clients should send the device's timezone. The default keeps signup
     # working if they do not, and matches the current primary market.
     timezone: str = Field(default="Europe/Istanbul", examples=["Europe/Istanbul"])
@@ -101,6 +151,11 @@ class RegisterRequest(BaseModel):
     @classmethod
     def timezone_is_known(cls, value: str) -> str:
         return validate_timezone(value)
+
+    @field_validator("phone_number")
+    @classmethod
+    def phone_number_is_normalized(cls, value: str | None) -> str | None:
+        return None if value is None else normalize_phone_number(value)
 
 
 class LoginRequest(BaseModel):
@@ -159,6 +214,9 @@ class UserProfile(BaseModel):
     username: str
     first_name: str | None
     last_name: str | None
+    # Private contact information of the account owner: it appears only in the owner's own
+    # profile (this model is never used for anyone else) and nowhere in coach or athlete views.
+    phone_number: str | None
     bio: str | None
     is_private: bool
     weight_unit: str

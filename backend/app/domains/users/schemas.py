@@ -9,12 +9,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # Re-exported so callers have a single obvious place to import the profile
 # shape from, even though it is defined alongside the auth responses.
 from app.domains.auth.schemas import (
+    PHONE_INPUT_MAX_LENGTH,
     ActivityLevel,
     Gender,
     NutritionGoalKind,
     SupportedLocale,
     Username,
     UserProfile,
+    normalize_phone_number,
     validate_timezone,
 )
 
@@ -37,6 +39,9 @@ class UserUpdate(BaseModel):
 
     first_name: str | None = Field(default=None, max_length=100)
     last_name: str | None = Field(default=None, max_length=100)
+    # Contact information, unverified. Unlike the NOT NULL columns it CAN be cleared: an
+    # explicit null or a blank string removes it, an omitted field leaves it alone.
+    phone_number: str | None = Field(default=None, max_length=PHONE_INPUT_MAX_LENGTH)
     username: Username | None = None
     bio: str | None = Field(default=None, max_length=1000)
     is_private: bool | None = None
@@ -76,6 +81,13 @@ class UserUpdate(BaseModel):
     def timezone_is_known(cls, value: str | None) -> str | None:
         # None means "leave unchanged" and must skip validation.
         return value if value is None else validate_timezone(value)
+
+    @field_validator("phone_number")
+    @classmethod
+    def phone_number_is_normalized(cls, value: str | None) -> str | None:
+        # None (explicit null) and blank both clear it; the service tells "omitted" apart
+        # through model_fields_set.
+        return None if value is None else normalize_phone_number(value)
 
 class DeleteAccountRequest(BaseModel):
     """The current password, nothing else.

@@ -66,6 +66,12 @@ class User(Base):
     last_name: Mapped[str | None] = mapped_column(Text)
     bio: Mapped[str | None] = mapped_column(Text)
 
+    # Optional contact information the owner typed, E.164 ("+905321234567"). UNVERIFIED:
+    # nothing sends to it, signs in with it or recovers with it, it is not unique (two
+    # accounts may share a family phone) and it is never shown to anyone but the owner.
+    # Nullable so every existing account and every older client stays valid.
+    phone_number: Mapped[str | None] = mapped_column(Text)
+
     # Privacy defaults to private: social features are opt-in.
     is_private: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
@@ -161,6 +167,9 @@ class User(Base):
         ),
         CheckConstraint(
             "nutrition_goal IN ('cut','maintain','bulk')", name="users_nutrition_goal_check"
+        ),
+        CheckConstraint(
+            "phone_number ~ '^\\+[1-9][0-9]{7,14}$'", name="users_phone_number_check"
         ),
         CheckConstraint("calorie_goal BETWEEN 800 AND 8000", name="users_calorie_goal_check"),
         CheckConstraint(
