@@ -185,7 +185,8 @@ test('the login form releases its guard after a rate limit and lets the user try
 });
 
 test('the register form shows the retry wording and stays usable', async () => {
-  const { createRegisterSubmitter } = load('src/auth/registerSubmit.ts', {});
+  const phone = load('src/account/phoneNumber.ts', {});
+  const { createRegisterSubmitter } = load('src/auth/registerSubmit.ts', { '../account/phoneNumber': phone });
   let calls = 0;
   const submit = createRegisterSubmitter(async () => {
     calls += 1;

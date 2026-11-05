@@ -39,23 +39,67 @@ test('sign-in: heading kept, the identifier is email, password manager props unc
   assert.match(source, /<Link href="\/register" asChild>/);
 });
 
-test('registration: same fields, optional one labelled, autofill props and payload unchanged', () => {
+test('registration: heading and button read "Create Account", fields, autofill props and payload', () => {
   const source = register();
   assert.match(source, /accessibilityLabel="Email"/);
   assert.match(source, /accessibilityLabel="Username"/);
   assert.match(source, /accessibilityLabel="First name, optional"/);
+  assert.match(source, /accessibilityLabel="Phone number, optional"/);
   assert.match(source, /accessibilityLabel="Password"/);
   assert.match(source, /\(optional\)/);
   for (const prop of [
     'autoComplete="username-new"', 'textContentType="username"', 'autoComplete="given-name"',
     'textContentType="givenName"', 'autoComplete="new-password"', 'textContentType="newPassword"',
-    'placeholder="Letters, numbers, _"', 'placeholder="At least 8 characters"',
+    'autoComplete="tel"', 'textContentType="telephoneNumber"', 'keyboardType="phone-pad"',
+    'placeholder="At least 8 characters"',
   ]) assert.ok(source.includes(prop), prop);
   assert.match(source, /createRegisterSubmitter\(signUp,/);
-  assert.match(source, /email,\s*username,\s*password,\s*firstName,\s*timezone: Localization\.getCalendars\(\)\[0\]\?\.timeZone \?\? undefined/);
+  assert.match(
+    source,
+    /email,\s*username,\s*password,\s*firstName,\s*phoneNumber,\s*timezone: Localization\.getCalendars\(\)\[0\]\?\.timeZone \?\? undefined/,
+  );
   assert.match(source, /<Link href="\/login" asChild>/);
   // Nothing the backend does not support.
   assert.doesNotMatch(source, /terms|account type|verif(y|ication)|Confirm password/i);
+});
+
+test('registration: "Create Account" is the heading, the visible button text and its accessibility label', () => {
+  const source = register();
+  assert.match(source, /accessibilityRole="header" style=\{styles\.title\}>\s*Create Account\s*<\/Text>/);
+  assert.match(source, /accessibilityLabel="Create Account"/);
+  assert.match(source, /<Text style=\{styles\.buttonText\}>Create Account<\/Text>/);
+  assert.doesNotMatch(source, /Create account/);
+});
+
+test('registration: the username field has a label but no placeholder', () => {
+  const source = register();
+  const username = source.slice(source.indexOf('accessibilityLabel="Username"'));
+  const field = username.slice(0, username.indexOf('/>'));
+  assert.doesNotMatch(field, /placeholder/);
+  assert.doesNotMatch(source, /Letters, numbers, _/);
+  assert.match(source, /<Text style=\{styles\.label\}>Username<\/Text>/);
+});
+
+test('registration: the phone field sits between first name and password, and stays out of the way', () => {
+  const source = register();
+  const at = (needle) => source.indexOf(needle);
+  assert.ok(at('accessibilityLabel="First name, optional"') < at('accessibilityLabel="Phone number, optional"'));
+  assert.ok(at('accessibilityLabel="Phone number, optional"') < at('accessibilityLabel="Password"'));
+  assert.match(source, /Phone number <Text style=\{styles\.optional\}>\(optional\)<\/Text>/);
+  // Focus chain: first name -> phone -> password.
+  assert.match(source, /phoneRef\.current\?\.focus\(\)/);
+  assert.match(source, /passwordRef\.current\?\.focus\(\)/);
+  // No placeholder that would suggest a country.
+  const phone = source.slice(at('accessibilityLabel="Phone number, optional"'));
+  assert.doesNotMatch(phone.slice(0, phone.indexOf('/>')), /placeholder/);
+});
+
+test('registration: stable test ids for native flows, so no flow depends on placeholder text', () => {
+  const source = register();
+  for (const id of [
+    'register-email', 'register-username', 'register-first-name', 'register-phone',
+    'register-password', 'register-submit',
+  ]) assert.ok(source.includes(`testID="${id}"`), id);
 });
 
 test('auth screens: errors stay near the form, values stay, duplicate submits are blocked', () => {

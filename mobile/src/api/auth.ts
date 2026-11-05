@@ -22,6 +22,8 @@ export type UserProfile = {
   username: string;
   first_name: string | null;
   last_name: string | null;
+  /** The owner's own contact number (E.164), unverified; never shown to anyone else. */
+  phone_number: string | null;
   bio: string | null;
   is_private: boolean;
   weight_unit: "kg" | "lb";
@@ -69,6 +71,7 @@ export type RegisterInput = {
   username: string;
   password: string;
   first_name?: string;
+  phone_number?: string;
   timezone?: string;
   locale?: string;
 };

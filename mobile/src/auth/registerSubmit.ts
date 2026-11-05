@@ -8,6 +8,7 @@
  * busy === false and fire two sign-up requests.
  */
 
+import { phoneNumberError, phoneNumberForRequest } from "../account/phoneNumber";
 import type { RegisterInput } from "../api/auth";
 
 export type RegisterFields = {
@@ -15,6 +16,8 @@ export type RegisterFields = {
   username: string;
   password: string;
   firstName: string;
+  /** Optional and unverified; blank is fine. Typed as the person wrote it. */
+  phoneNumber?: string;
   timezone?: string;
 };
 
@@ -29,7 +32,8 @@ export type RegisterOutcome =
  * does nothing when tapped gives the user no idea what is wrong.
  */
 export function validateRegister(
-  fields: Pick<RegisterFields, "email" | "username" | "password">,
+  fields: Pick<RegisterFields, "email" | "username" | "password"> &
+    Partial<Pick<RegisterFields, "phoneNumber">>,
 ): string | null {
   const username = fields.username.trim();
   if (!fields.email.trim().includes("@")) return "Enter a valid email address.";
@@ -37,6 +41,10 @@ export function validateRegister(
   if (!/^[a-zA-Z0-9_]+$/.test(username)) {
     return "Username can only contain letters, numbers and underscores.";
   }
+  // Blank is valid. Checked before the password so the field above the button that is
+  // wrong is the one named, in the order they appear on screen.
+  const phoneProblem = phoneNumberError(fields.phoneNumber ?? "");
+  if (phoneProblem) return phoneProblem;
   if (fields.password.length < 8) return "Password must be at least 8 characters.";
   return null;
 }
@@ -47,6 +55,8 @@ export function buildRegisterInput(fields: RegisterFields): RegisterInput {
     username: fields.username.trim().toLowerCase(),
     password: fields.password,
     first_name: fields.firstName.trim() || undefined,
+    // Only when typed, and as the normalized E.164 value the server would store.
+    phone_number: phoneNumberForRequest(fields.phoneNumber ?? ""),
     // Sent at signup because it cannot be reconstructed later, and weekly
     // volume is sliced in the user's local week: a Monday 01:00 session in
     // Istanbul is Sunday 22:00 UTC and would otherwise land in the wrong week.

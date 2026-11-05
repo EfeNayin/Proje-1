@@ -12,9 +12,10 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,6 +24,11 @@ import {
   View,
 } from "react-native";
 
+import {
+  parsePhoneNumber,
+  PHONE_INPUT_MAX_LENGTH,
+  phoneNumberError,
+} from "../../../src/account/phoneNumber";
 import type { Gender, UserUpdateInput } from "../../../src/api/auth";
 import { updateMe } from "../../../src/api/auth";
 import * as bodyApi from "../../../src/api/body";
@@ -39,7 +45,7 @@ import {
   type WeightUnit,
 } from "../../../src/units/weight";
 
-type Field = "weight" | "height" | "dob" | "gender" | "goal" | null;
+type Field = "weight" | "height" | "dob" | "gender" | "goal" | "phone" | null;
 
 const GENDER_OPTIONS: { value: Gender; label: string }[] = [
   { value: "male", label: "Male" },
@@ -172,6 +178,7 @@ export default function PersonalDetailsScreen() {
   const [weightDraft, setWeightDraft] = useState("");
   const [heightDraft, setHeightDraft] = useState("");
   const [goalDraft, setGoalDraft] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState("");
   const [dobDay, setDobDay] = useState("");
   const [dobMonth, setDobMonth] = useState("");
   const [dobYear, setDobYear] = useState("");
@@ -195,6 +202,22 @@ export default function PersonalDetailsScreen() {
     return () => { cancelled = true; };
   }, []);
 
+  // The phone row is the last row of the card: on a small screen the keyboard would cover its
+  // input, the save/cancel buttons and the error under it. While it is being edited the
+  // screen scrolls to the end (also when the keyboard finishes opening and when an error
+  // appears), which, with the keyboard inset below, keeps all of it above the keyboard.
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (editing !== "phone") return;
+    const reveal = () => scrollRef.current?.scrollToEnd({ animated: true });
+    const frame = requestAnimationFrame(reveal);
+    const subscription = Keyboard.addListener("keyboardDidShow", reveal);
+    return () => {
+      cancelAnimationFrame(frame);
+      subscription.remove();
+    };
+  }, [editing, error]);
+
   if (!user) return null;
 
   const unit: WeightUnit = user.weight_unit;
@@ -207,6 +230,7 @@ export default function PersonalDetailsScreen() {
       );
     }
     if (field === "height") setHeightDraft(user.height_cm ?? "");
+    if (field === "phone") setPhoneDraft(user.phone_number ?? "");
     if (field === "goal") {
       setGoalDraft(user.goal_weight_kg ? formatWeightValue(Number(user.goal_weight_kg), unit) : "");
     }
@@ -275,6 +299,19 @@ export default function PersonalDetailsScreen() {
     await savePatch({ goal_weight_kg: parsedKg });
   };
 
+  // Blank removes the number (an explicit null: omitting the field would leave it as it is);
+  // anything else is checked here with the server's own rule and sent normalized, so a
+  // mistake is named next to the field instead of after a round trip.
+  const savePhone = async () => {
+    const problem = phoneNumberError(phoneDraft);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    const parsed = parsePhoneNumber(phoneDraft);
+    await savePatch({ phone_number: parsed.kind === "valid" ? parsed.value : null });
+  };
+
   const saveDob = async () => {
     const iso = buildIsoDate(dobDay, dobMonth, dobYear);
     if (!iso) {
@@ -286,9 +323,13 @@ export default function PersonalDetailsScreen() {
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={styles.screen}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
+      // iOS: add the keyboard's height as bottom inset so the end of the content can be
+      // scrolled above it.
+      automaticallyAdjustKeyboardInsets
     >
       <View style={styles.goalCard}>
         <View style={styles.goalText}>
@@ -326,7 +367,7 @@ export default function PersonalDetailsScreen() {
         )}
       </View>
 
-      {error ? (
+      {error && editing !== "phone" ? (
         <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
           {error}
         </Text>
@@ -430,7 +471,6 @@ export default function PersonalDetailsScreen() {
           value={genderLabel(user.gender)}
           editing={editing === "gender"}
           onPress={() => startEditing("gender")}
-          last
         >
           <View style={styles.genderOptions}>
             {GENDER_OPTIONS.map((option) => (
@@ -463,6 +503,46 @@ export default function PersonalDetailsScreen() {
               <Ionicons name="close" size={22} color={light.textSecondary} />
             </Pressable>
           </View>
+        </Row>
+
+        <Row
+          label="Phone number"
+          value={user.phone_number ?? "—"}
+          editing={editing === "phone"}
+          onPress={() => startEditing("phone")}
+          last
+        >
+          <View style={[styles.inlineForm, styles.fullWidth]}>
+            <TextInput
+              style={styles.inlineInput}
+              value={phoneDraft}
+              onChangeText={setPhoneDraft}
+              testID="personal-phone-input"
+              accessibilityLabel="Phone number"
+              accessibilityHint="Include the country code. Leave empty and save to remove it."
+              keyboardType="phone-pad"
+              textContentType="telephoneNumber"
+              autoComplete="tel"
+              autoCorrect={false}
+              maxLength={PHONE_INPUT_MAX_LENGTH}
+              autoFocus
+              selectTextOnFocus
+            />
+            <EditActions saving={saving} onCancel={cancelEditing} onSave={() => void savePhone()} />
+          </View>
+          <Text style={styles.fieldHint}>
+            Only you can see this. Include the country code, e.g. +90 532 123 45 67. Leave it empty
+            and save to remove it.
+          </Text>
+          {error ? (
+            <Text
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              style={[styles.error, styles.rowError]}
+            >
+              {error}
+            </Text>
+          ) : null}
         </Row>
       </View>
 
@@ -522,6 +602,12 @@ const styles = StyleSheet.create({
   changeLink: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
 
   error: { color: light.danger, fontSize: 14, lineHeight: 20, marginBottom: 16 },
+  // The editing row is a wrapping flex container, which sizes itself to its widest child's
+  // unwrapped width: without an explicit full width a long sentence pushes the input and the
+  // save/cancel buttons out of the card on a narrow screen.
+  fullWidth: { width: "100%" },
+  fieldHint: { width: "100%", color: light.textSecondary, fontSize: 13, lineHeight: 18 },
+  rowError: { width: "100%", marginBottom: 0 },
 
   card: {
     backgroundColor: light.surface,

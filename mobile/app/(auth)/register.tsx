@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { PHONE_INPUT_MAX_LENGTH } from "../../src/account/phoneNumber";
 import { useAuth } from "../../src/auth/AuthContext";
 import { authStyles as styles } from "../../src/auth/authStyles";
 import { createRegisterSubmitter } from "../../src/auth/registerSubmit";
@@ -26,6 +27,7 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [firstName, setFirstName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +36,7 @@ export default function RegisterScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const usernameRef = useRef<TextInput>(null);
   const firstNameRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
 
   const submit = useMemo(
@@ -51,6 +54,7 @@ export default function RegisterScreen() {
       username,
       password,
       firstName,
+      phoneNumber,
       timezone: Localization.getCalendars()[0]?.timeZone ?? undefined,
     });
     if (outcome.kind === "ignored") return; // the running request owns the busy state
@@ -82,13 +86,14 @@ export default function RegisterScreen() {
           ]}
         >
           <Text accessibilityRole="header" style={styles.title}>
-            Create account
+            Create Account
           </Text>
 
           <View style={styles.field}>
             <Text style={styles.label}>Email</Text>
             <TextInput
               style={styles.input}
+              testID="register-email"
               accessibilityLabel="Email"
               placeholder="name@example.com"
               placeholderTextColor={light.textSecondary}
@@ -110,9 +115,8 @@ export default function RegisterScreen() {
             <TextInput
               ref={usernameRef}
               style={styles.input}
+              testID="register-username"
               accessibilityLabel="Username"
-              placeholder="Letters, numbers, _"
-              placeholderTextColor={light.textSecondary}
               value={username}
               onChangeText={setUsername}
               autoCapitalize="none"
@@ -132,11 +136,38 @@ export default function RegisterScreen() {
             <TextInput
               ref={firstNameRef}
               style={styles.input}
+              testID="register-first-name"
               accessibilityLabel="First name, optional"
               value={firstName}
               onChangeText={setFirstName}
               textContentType="givenName"
               autoComplete="given-name"
+              returnKeyType="next"
+              onSubmitEditing={() => phoneRef.current?.focus()}
+              selectionColor={light.text}
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>
+              Phone number <Text style={styles.optional}>(optional)</Text>
+            </Text>
+            <TextInput
+              ref={phoneRef}
+              style={styles.input}
+              testID="register-phone"
+              accessibilityLabel="Phone number, optional"
+              accessibilityHint="Include the country code, for example plus 90"
+              value={phoneNumber}
+              onChangeText={setPhoneNumber}
+              keyboardType="phone-pad"
+              textContentType="telephoneNumber"
+              autoComplete="tel"
+              autoCorrect={false}
+              maxLength={PHONE_INPUT_MAX_LENGTH}
+              // The phone pad has no return key on every iOS version (newer ones float a Next
+              // button over it); where there is one it moves on to Password, and otherwise the
+              // Password field stays in reach to tap.
               returnKeyType="next"
               onSubmitEditing={() => passwordRef.current?.focus()}
               selectionColor={light.text}
@@ -149,6 +180,7 @@ export default function RegisterScreen() {
               <TextInput
                 ref={passwordRef}
                 style={[styles.input, styles.passwordInput]}
+                testID="register-password"
                 accessibilityLabel="Password"
                 placeholder="At least 8 characters"
                 placeholderTextColor={light.textSecondary}
@@ -189,7 +221,8 @@ export default function RegisterScreen() {
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Create account"
+            testID="register-submit"
+            accessibilityLabel="Create Account"
             accessibilityState={{ busy, disabled: busy }}
             style={({ pressed }) => [
               styles.button,
@@ -202,7 +235,7 @@ export default function RegisterScreen() {
             {busy ? (
               <ActivityIndicator color={light.onPrimary} />
             ) : (
-              <Text style={styles.buttonText}>Create account</Text>
+              <Text style={styles.buttonText}>Create Account</Text>
             )}
           </Pressable>
 
