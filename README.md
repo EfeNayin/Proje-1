@@ -212,7 +212,8 @@ Parola konteynerin kendi ortamından gelir, komut satırında görünmez. Dump d
 5. Depoyu klonla ve doğru dalı al:
    ```bash
    cd ~ && git clone https://github.com/EfeNayin/Proje-1.git && cd Proje-1
-   git switch feat/registration-phone-number && git rev-parse HEAD     # b47ff4c5cf61251b77234934ed1aa6ab8cd73daa
+   git switch feat/registration-phone-number
+   git rev-parse HEAD && git ls-remote origin refs/heads/feat/registration-phone-number   # iki karma aynı olmalı (dalın ucu sonradan ilerleyebilir)
    ```
 6. Özel paketten (şifresini çözdükten sonra, kaynak dizinin **dışında**) sahip değişikliklerini uygula ve yapılandırmayı yerleştir:
    ```bash
