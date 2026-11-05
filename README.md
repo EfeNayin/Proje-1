@@ -165,6 +165,95 @@ Bir **oturum**, bir girişin ürettiği refresh token zinciridir: her `refresh` 
   `confirmed`/`unconfirmed`/`none`) ayrı şeylerdir: istek başarısız olursa token cihazdan silinmiş
   olur ama sunucuda süresi dolana kadar (14 gün) geçerli kalır; arka planda yeniden deneme yoktur.
 
+## Windows 11 + WSL2 geliştirme ortamına taşıma (hazırlık — 5 Kasım 2026)
+
+Bu bölüm taşıma **planıdır**. Windows tarafı henüz kurulmadı ve aşağıdaki kontroller orada **geçene kadar taşıma tamamlanmış sayılmaz**; o zamana dek Mac'teki proje ve veritabanı olduğu gibi kalır.
+
+### Neyin nereden geleceği
+
+| Ne | Nereden | Not |
+|---|---|---|
+| Kaynak kod (tüm dallar uzakta) | `git clone` (GitHub) | Dal `feat/registration-phone-number`; Mac'te `git rev-list --left-right --count HEAD...@{u}` → `0 0` doğrulandı |
+| Commit'lenmemiş sahip değişiklikleri | özel transfer paketi (`uncommitted/*.patch`) | `docker-compose.yml` (db'nin 5432'yi host'a açan `ports` satırı kaldırıldı) ve `mobile/app.json` (`ITSAppUsesNonExemptEncryption: false`). **Commit'lenmedi**; `git apply` ile yeniden uygulanır |
+| Kök `AGENTS.md`, hazırlık metni | özel transfer paketi | Git'e eklenmez |
+| Ortam yapılandırması (`.env`'ler, staging sırları) | özel transfer paketi, **kaynaktan ayrı ve şifreli** kanalla | Git'e girmez; Keychain **kopyalanmaz** |
+| Yerel PostgreSQL verisi | taze `pg_dump` (aşağıda) | Yalnız Docker sağlıklıyken alınır. Eylül'deki dump güncel yedek **değildir** |
+| `node_modules`, venv, simülatör, önbellek, `Docker.raw`, volume dosyaları | **taşınmaz** | Hedefte yeniden kurulur |
+
+Hosted staging'i kullanmak (mobil → `EXPO_PUBLIC_API_URL=https://proje-1-t6lh.onrender.com`) için **staging sırlarına gerek yoktur**; onlar yalnız staging veritabanını yönetmek içindir. Staging'e Windows'tan da migration/sıfırlama yapılmaz.
+
+### Mac'te, taşımadan önce (yerel veritabanı gerekiyorsa)
+
+Docker Desktop sağlıklı ve yeterli boş disk varken (veritabanı küçüktür; yine de önce `df -h /` bak):
+
+```bash
+docker compose ps                      # db healthy mi?
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > ~/bodytrack-local-$(date +%Y%m%d).dump
+docker compose exec -T db sh -c 'pg_restore --list' < ~/bodytrack-local-*.dump | head   # arşiv okunabiliyor mu
+```
+
+Parola konteynerin kendi ortamından gelir, komut satırında görünmez. Dump dosyası Git dışında kalır (`*.dump` `.gitignore`'dadır) ve sırlarla birlikte aynı şifreli kanalla taşınır.
+
+### Windows'ta sırayla
+
+1. Windows 11'de yönetici PowerShell: `wsl --install -d Ubuntu-24.04`, yeniden başlat. Ubuntu'da kullanıcıyı oluştur.
+2. Docker Desktop'u kur; *Settings → General → Use the WSL 2 based engine*, *Resources → WSL integration → Ubuntu-24.04* açık olsun.
+3. Editör: VS Code + *WSL* uzantısı; projeyi Ubuntu içinde `code .` ile aç. **Depoyu Windows diskinde (`/mnt/c/...`) değil, WSL Linux dosya sisteminde (`~/Proje-1`) tut** (hız, dosya izleme, Docker bind mount'ları).
+4. Ubuntu'da araçlar:
+   ```bash
+   sudo apt update && sudo apt install -y git build-essential curl ca-certificates
+   git config --global core.autocrlf input      # Mac ile aynı; 'true' YAPMA
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash   # sonra yeni terminal
+   nvm install 24 && nvm alias default 24
+   ```
+   - **Node:** Mac'te `v24.14.0` / npm `11.9.0` kullanıldı. Bağımlılıkların gerektirdiği: React Native 0.86.3 ve Metro 0.84.5 → `^20.19.4 || ^22.13.0 || ^24.3.0 || >=25`. Yani **24.x (≥24.3) önerilir**; 22.13+ de karşılar.
+   - **Python:** backend Docker içinde `python:3.12-slim` ile çalışır ve testler konteynerde koşar; **ana makinede Python gerekmez**. (Mac'in 3.13.5'i backend tarafından kullanılmıyor.) Yine de yerelde venv istenirse `3.12` kullan.
+   - **Java/Maestro:** yalnız iOS E2E içindir; Windows'ta kurulmaz (aşağı bak).
+5. Depoyu klonla ve doğru dalı al:
+   ```bash
+   cd ~ && git clone https://github.com/EfeNayin/Proje-1.git && cd Proje-1
+   git switch feat/registration-phone-number && git rev-parse HEAD     # b47ff4c5cf61251b77234934ed1aa6ab8cd73daa
+   ```
+6. Özel paketten (şifresini çözdükten sonra, kaynak dizinin **dışında**) sahip değişikliklerini uygula ve yapılandırmayı yerleştir:
+   ```bash
+   git apply /yol/uncommitted/docker-compose.yml.patch /yol/uncommitted/mobile-app.json.patch
+   git status --short        # yalnız docker-compose.yml ve mobile/app.json 'M' olmalı; commit'leme
+   cp /yol/uncommitted/AGENTS.md .                  # Git'e eklenmez (untracked kalır)
+   ```
+   `backend/.env` için **önerilen**: `cp backend/.env.example backend/.env`, `JWT_SECRET_KEY`'i yeniden üret (yukarıdaki komut) — yeni yerel veritabanı için eski geliştirme sırrını taşımaya gerek yok. Eski dosyayı kullanmak istersen paketten `chmod 600` ile koy. `mobile/.env` yalnız `EXPO_PUBLIC_API_URL` içerir.
+7. Kontroller (aşağıdaki liste) → geçerse yerel DB'yi geri yükle.
+
+### Hedefte geçmesi gereken kontroller
+
+| # | Kontrol | Komut | Beklenen |
+|---|---|---|---|
+| 1 | Bağımlılık kurulumu | `cd mobile && npm ci` | hatasız; `package-lock.json` değişmez (`git status`) |
+| 2 | Mobil testler | `node --test tests/*.test.cjs` | Mac'te son koşu **729/729** |
+| 3 | Tip denetimi | `npx tsc --noEmit` | 0 hata |
+| 4 | Lint | `npm run lint` | 0 hata, **0 uyarı** |
+| 5 | Yerel backend | `docker compose up --build -d` sonra `curl -fsS localhost:8000/health` | `{"status":"ok",...}`; `docker compose ps` db/redis healthy |
+| 6 | Backend testleri | `docker compose exec backend pytest` | Mac'te son tam koşu **1247 geçti**; `ruff check .` ve `mypy app` temiz |
+| 7 | Şema | `docker compose exec backend alembic check` | "No new upgrade operations" |
+| 8 | DB geri yükleme, **ayrı yerel veritabanına** (hosted'a asla) | `docker compose exec -T db sh -c 'createdb -U "$POSTGRES_USER" bodytrack_restore && pg_restore -U "$POSTGRES_USER" -d bodytrack_restore --no-owner' < ~/bodytrack-local-….dump` | hatasız; `users`, `workouts`, `sets` satır sayıları Mac'tekiyle eşleşir; `alembic_version` = head. Doğrulamadan sonra bunu asıl geliştirme veritabanı yapmak istersen, yalnız bu **yeni Windows ortamında** (Mac'te asla) backend'i başlatmadan önce `docker compose down -v && docker compose up -d db` ile boş veritabanına geri yükle |
+
+### Windows'a uyarlanacak/uyarlanamayacak noktalar (envanter)
+
+- **macOS'a özgü, Windows'ta çalışmaz:** `mobile/e2e/scripts/*.sh` (`xcrun simctl`, Homebrew yolu `/opt/homebrew/opt/openjdk@*`, `~/.maestro`, `~/.cache/bodytrack-e2e`) ve Maestro ile iOS Simülatörü doğrulamaları. **iOS Simülatörü yalnız macOS'ta vardır; bu betikler Windows'ta (WSL dahil) denenmedi ve çalışacağı iddia edilmez.** `backend/deploy/local-staging/run.sh` Linux/bash tabanlıdır ama WSL'de denenmedi.
+- **Çalıştırma izni:** izlenen `.sh` dosyaları Git'te `100644` (Mac'te `core.fileMode=false`); klonda `+x` olmaz → `bash dosya.sh` ile çalıştır. Docker imajı `sh /app/deploy/start.sh` kullandığı için etkilenmez.
+- **Satır sonları:** `.gitattributes` yok. İzlenen 53 dosyada (32 `.py`, 10 `.ts`, 5 `.tsx`, `.json`, `.ini`, `.mako`, `.sql`, `.cjs`) CRLF var, **hiçbir `.sh`/Dockerfile/`.yml`'de yok**. Python ve TypeScript bunları sorunsuz okur. Windows tarafında `core.autocrlf=true` açma (gereksiz diff üretir); `.gitattributes` ile toplu normalleştirme **bu taşımada yapılmadı** (yüzlerce satırlık gürültülü diff olur).
+- **Kimlik korunur:** Expo `owner: efe_nayn`, `projectId: 751aebe3-68ef-4617-ac03-9060ce2d0d81`, slug/şema `aures`, iOS paket kimliği `com.efenayin.aures`, ad `Aures` değişmeden gelir; imzalama ilişkisi Apple hesabında ve EAS'te durur, Windows'a dosya olarak taşınacak bir sertifika yoktur. `eas login` ile aynı Expo hesabına girilir.
+
+### iPhone'da test etmenin dört yolu (hangisi Windows'ta ne yapar)
+
+| Yol | Windows'ta | Durum |
+|---|---|---|
+| **Expo Go, fiziksel iPhone** | Metro WSL2'de çalışır; telefon aynı ağdan ona bağlanır | WSL2 NAT'ı telefonu engelleyebilir: `%UserProfile%\.wslconfig` içinde `[wsl2] networkingMode=mirrored` (Win 11 22H2+) veya `npx expo start --tunnel` (ek paket ister). **Hedefte denenmedi.** Hosted staging'e bağlanmak için `mobile/.env`'e URL yeter |
+| **EAS development build (fiziksel iPhone)** | `eas build` bulutta çalışır, Mac gerekmez | **Bugün yok:** `eas.json`'da yalnız `testflight-staging` profili var; `development` profili ve `expo-dev-client` bağımlılığı eklenmedi (bu görevde bağımlılık değiştirilmedi). Apple Developer hesabı, cihaz kaydı ve telefonda Developer Mode gerekir |
+| **TestFlight** | `eas build --profile testflight-staging` bulutta; `eas submit` | Profil var. 5 Kasım itibarıyla imzalama **sahibin etkileşimli Apple girişi** yüzünden bekliyor. `ITSAppUsesNonExemptEncryption` kararı sahipte (yerel `app.json` değişikliği) |
+| **Uzak iOS simülatörü** | tarayıcı/CLI üzerinden | 5 Kasım 2026'da doğrulandı: Expo **EAS Simulator = sınırlı erişimli ön izleme**, planlara dahil değil, bekleme listesi ([docs](https://docs.expo.dev/preview/simulators/introduction.md)), fiyat yayımlanmamış, Maestro desteği doğrulanmadı (agent-device/Argent/Appium belgelenmiş). **Appetize** (3. taraf): Free $0 (30 dk/ay, 3 dk oturum), Starter $59/ay yıllık faturalı (500 dk), Premium $319/ay ([fiyat sayfası](https://appetize.io/pricing)); simülatör derlemesi için `eas.json`'da `ios.simulator: true` profili gerekir (bugün yok). **Hiçbir abonelik satın alınmadı ve önerilmiyor**; önce bekleme listesi/ücretsiz katman denenebilir |
+
+**Önemli sınır:** Maestro ile yapılan yerel iOS Simülatörü klavye/dokunma doğrulaması Windows'ta yeniden üretilemez; yarım kalan klavye görevi için bir Mac, fiziksel iPhone veya yukarıdaki uzak simülatörlerden biri gerekir (bkz. `PROJE_1_CODEX_INCELEME.md` Adım 78 kontrol noktası).
+
 ## Parola kurtarma
 
 Giriş ekranındaki **Forgot password?** → e-posta adresi → genel bir "istek alındı" yanıtı →
