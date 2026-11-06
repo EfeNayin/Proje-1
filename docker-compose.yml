@@ -24,8 +24,6 @@ services:
       # DİKKAT: collation'ı sonradan değiştirmek tüm veritabanını
       # dump/restore etmek demektir; bu satır o yüzden burada.
       POSTGRES_INITDB_ARGS: "--locale=C.UTF-8"
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       # NOT: db burada boş başlar. Tabloları + seed verisini (17 kas grubu,
