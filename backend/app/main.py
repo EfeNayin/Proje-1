@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,6 +55,27 @@ app = FastAPI(
     redoc_url="/redoc" if settings.is_development else None,
     openapi_url="/openapi.json" if settings.is_development else None,
 )
+
+
+def add_dev_cors(target: FastAPI, origins: list[str]) -> None:
+    """Let a local browser preview (Expo web) call the API from exactly these origins.
+
+    Installed only for explicitly configured loopback origins; Settings.check_cors
+    refuses anything else at startup. Bearer tokens travel in the Authorization
+    header, so cookies/credentials stay disallowed.
+    """
+    if not origins:
+        return
+    target.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
+        allow_credentials=False,
+    )
+
+
+add_dev_cors(app, settings.cors_origins)
 
 
 @app.exception_handler(AppError)

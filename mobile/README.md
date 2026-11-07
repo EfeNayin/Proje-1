@@ -45,6 +45,26 @@ Testler `node --test` ile çalışan `.cjs` dosyalarıdır; `tests/` klasöründ
 yer alır ve gerçek React render/hook davranışını test eder — telefon
 üzerindeki form/klavye etkileşiminin yerini tutmaz.
 
+## Tarayıcı önizlemesi (yalnızca geliştirme)
+
+UI geliştirirken telefon yerine masaüstü tarayıcıda açmak için (iPhone klavye/dokunma
+doğrulamasının yerini **tutmaz**):
+
+1. `backend/.env` içine `CORS_ALLOWED_ORIGINS=http://localhost:8081` ekle ve backend'i
+   yeniden oluştur (`env_file` yalnızca oluşturulurken okunur):
+   `docker compose up -d --no-deps backend`. Yalnızca `http://localhost[:port]` /
+   `http://127.0.0.1[:port]` kabul edilir; `*`, başka adresler ve staging/production'da
+   dolu değer backend'i başlatmaz.
+2. `EXPO_PUBLIC_API_URL=http://localhost:8000 npx expo start --web --port 8081`
+   (başka bir Metro zaten 8081'deyse başka port seç ve onu da `CORS_ALLOWED_ORIGINS`'e yaz).
+3. Tarayıcıda `http://localhost:8081`.
+
+Oturum belirteçleri **yalnızca bellekte** tutulur (`src/dev/webSecureStore.ts`;
+`metro.config.js` bunu yalnızca web platformunda `expo-secure-store` yerine koyar).
+localStorage/cookie kullanılmaz, bu yüzden sayfayı yenilemek oturumu kapatır — beklenen
+davranış. iOS/Android paketleri gerçek SecureStore'u kullanmaya devam eder; üretim
+(`__DEV__` kapalı) web çıktısında gölge depo çalışmayı reddeder.
+
 Bu proje `Expo ~57` üzerine kuruludur (bkz. `package.json`); versiyona özgü
 API farklılıkları için `AGENTS.md` dosyasındaki notu izleyin.
 

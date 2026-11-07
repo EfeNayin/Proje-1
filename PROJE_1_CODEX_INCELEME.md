@@ -42,6 +42,19 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 79: Windows tarayıcısında geliştirme önizlemesi — 7 Kasım 2026
+
+**Sorun:** Expo web önizlemesi (`http://localhost:8081`) oturum kontrolünde "Unable to connect" gösteriyordu. **Kök neden depolamaydı, CORS değil:** `expo-secure-store` web'de boş bir `{}` modülü; `getValueWithKeyAsync` yok, ilk token okuması TypeError atıyor ve `restoreSession` bunu bağlantı hatası ("unavailable") sayıyor. Chrome DevTools protokolüyle yeniden üretildi: ağ isteği hiç çıkmıyordu. (İkinci engel, backend'de CORS yoktu; depolama düzelince çıktı.) Not: o sırada 8081'deki Metro `EXPO_PUBLIC_API_URL`'i hosted staging'e bakıyordu, yani web önizlemesi yerel backend'i değil staging'i çağırırdı; doğrulama ayrı bir Metro'da (8082, yerel API) yapıldı.
+
+**Değişiklik (yalnız geliştirme):**
+- `mobile/metro.config.js` + `mobile/src/dev/webSecureStore.ts`: yalnız **web** platformunda `expo-secure-store` bellek içi bir gölge depoyla değiştirilir. localStorage/cookie/IndexedDB yok; yenileme oturumu kapatır. `__DEV__` kapalıysa gölge depo çalışmayı reddeder. iOS ve Android paketleri gerçek SecureStore'u çözer (üç platform paketi indirilip sayıldı); `tokens.ts` ve oturum/yetki mantığı değişmedi.
+- Backend: `CORS_ALLOWED_ORIGINS` (varsayılan boş = hiç CORS başlığı yok). Yalnızca `http://localhost[:port]` / `http://127.0.0.1[:port]` kabul edilir; `*`, yol, https ve barındırılan adresler ile `staging`/`production`'da dolu değer **açılışta reddedilir**. Kimlik bilgisi (cookie) izni yok; izinli başlıklar `Authorization`, `Content-Type`. 401/yetki kontrolleri aynı (CORS'lu 401 doğrulandı).
+- Testler: `backend/tests/test_cors.py` (preflight, yabancı origin, ayar doğrulaması), `mobile/tests/web-preview.test.cjs`. `test_config.py`/`test_deployment.py` yardımcıları artık geliştiricinin kendi `backend/.env`'indeki CORS değerinden yalıtılı (yerel `.env`'de değer varken 37 dağıtım testi düşüyordu).
+
+**Doğrulama (gerçek Chrome, yerel backend, geçici hesap):** kayıt → ana ekran → Profile → Sign out → giriş ekranı → yeniden giriş → ana ekran → sayfa yenileme → giriş ekranı (yenilemede API çağrısı yok, localStorage/sessionStorage/cookie boş). Konsolda hata/uyarı yok. `pytest` 1267 geçti, `ruff check` temiz, `mypy app` temiz, `alembic check` fark yok; mobil `tsc` 0, `expo lint` 0, 734 mobil test geçti.
+
+**Sınırlar:** Tarayıcı önizlemesi UI geliştirme içindir; iPhone klavye/dokunma doğrulamasının yerini tutmaz (ayrı görev, bu adımda yapılmadı). Yalnız kayıt/giriş/ana ekran/çıkış akışı gezildi; diğer ekranlar web'de denenmedi. Bellek içi depo yüzünden yarım antrenman işaretçisi gibi cihaz-yerel durumlar yenilemede kaybolur (beklenen). Sürücü betiği geçici dizindeydi, depoya girmedi.
+
 ### Adım 78: Windows 11 + WSL2'ye taşıma hazırlığı ve yarım kalan klavye görevinin kontrol noktası — 5 Kasım 2026
 
 Yeni özellik yok; yalnız envanter, özel transfer paketi ve belge. **Taşıma tamamlanmadı:** Windows ortamı henüz kurulmadı, hedef kontrolleri (bkz. `README.md` > "Windows 11 + WSL2 geliştirme ortamına taşıma") orada geçene kadar Mac'teki proje ve veritabanı olduğu gibi kalır.

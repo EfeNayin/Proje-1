@@ -5,8 +5,9 @@
  * than plain files, which matters for the refresh token: it is long-lived and
  * enough on its own to mint new access tokens.
  *
- * Note that SecureStore is native-only — pressing "w" for web in the Expo CLI
- * will fail here. This app targets phones.
+ * SecureStore is native-only. In the browser preview (`npm run web`, development
+ * only) Metro swaps it for an in-memory stand-in, src/dev/webSecureStore.ts, so
+ * tokens never reach browser storage and a reload signs out. See metro.config.js.
  */
 
 import * as SecureStore from "expo-secure-store";

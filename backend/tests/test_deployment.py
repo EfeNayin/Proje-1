@@ -42,6 +42,8 @@ STAGING: dict[str, Any] = {
     "MAIL_TRANSPORT": "resend",
     "RESEND_API_KEY": RESEND_SECRET,
     "MAIL_FROM": "BodyTrack <no-reply@mail.example.test>",
+    # A developer's own backend/.env may allow a browser preview; staging must not see it.
+    "CORS_ALLOWED_ORIGINS": "",
 }
 
 

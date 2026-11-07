@@ -18,6 +18,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 MIN_JWT_SECRET_BYTES = 32
 
 
+def _is_loopback_origin(origin: str) -> bool:
+    """True for exactly http://localhost[:port] or http://127.0.0.1[:port]."""
+    try:
+        parts = urlsplit(origin)
+        port = parts.port
+    except ValueError:
+        return False
+    if parts.scheme != "http" or parts.hostname not in {"localhost", "127.0.0.1"}:
+        return False
+    return origin == f"http://{parts.hostname}" + (f":{port}" if port is not None else "")
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -161,6 +173,14 @@ class Settings(BaseSettings):
     # client-address model is in README.md ("Hız sınırları").
     FORWARDED_ALLOW_IPS: str | None = None
 
+    # ── Browser preview (development only) ──
+    # Comma-separated origins of a local Expo web preview, e.g. "http://localhost:8081".
+    # Empty (the default) adds no CORS headers at all, so a phone app is unaffected.
+    # Only loopback http origins are accepted, and only when ENVIRONMENT is development
+    # (see check_cors). The API uses bearer tokens, never cookies, so credentialed
+    # cross-origin requests stay disallowed.
+    CORS_ALLOWED_ORIGINS: str = ""
+
     # ── NCBI E-utilities (PubMed) ──
     # Both optional. An API key raises NCBI's per-IP limit from 3 to 10
     # requests/second; it lives only here on the backend, never in the mobile
@@ -186,6 +206,10 @@ class Settings(BaseSettings):
         return self.MAIL_FROM or self.SMTP_FROM
 
     @property
+    def cors_origins(self) -> list[str]:
+        return [part.strip() for part in self.CORS_ALLOWED_ORIGINS.split(",") if part.strip()]
+
+    @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
 
@@ -204,6 +228,7 @@ class Settings(BaseSettings):
         certificate checks. Raised as a plain error, never a pydantic one, so the
         message cannot echo a secret or a connection string.
         """
+        self.check_cors()
         if self.is_development:
             return
         environment = self.ENVIRONMENT
@@ -223,6 +248,27 @@ class Settings(BaseSettings):
                 f"ENVIRONMENT is {environment!r}: a wildcard would let any caller choose "
                 "the address its rate limits are counted under."
             )
+
+    def check_cors(self) -> None:
+        """Browser access exists only for a local preview: loopback http origins, in development.
+
+        A wildcard or a hosted origin would let any web page call this API with a
+        user's token, so those are startup errors, as is any value outside development.
+        """
+        origins = self.cors_origins
+        if not origins:
+            return
+        if not self.is_development:
+            raise RuntimeError(
+                f"CORS_ALLOWED_ORIGINS must be empty when ENVIRONMENT is "
+                f"{self.ENVIRONMENT!r}: browser access is a development-only preview."
+            )
+        for origin in origins:
+            if not _is_loopback_origin(origin):
+                raise RuntimeError(
+                    "CORS_ALLOWED_ORIGINS entries must look like http://localhost:8081 "
+                    "(http, localhost or 127.0.0.1, optional port, no path or wildcard)."
+                )
 
     def _check_mail(self, environment: str) -> None:
         if self.MAIL_TRANSPORT == "resend":

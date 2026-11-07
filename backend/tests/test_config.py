@@ -24,6 +24,8 @@ def make_settings(**overrides: object) -> Settings:
         "REDIS_URL": "rediss://default:pw@redis.example.test:6379",
         "JWT_SECRET_KEY": LONG_KEY,
         "SMTP_HOST": "smtp.example.test",
+        # A developer's own backend/.env may allow a browser preview; these tests must not see it.
+        "CORS_ALLOWED_ORIGINS": "",
         **overrides,
     }
     return Settings(_env_file=None, **values)  # type: ignore[arg-type]
