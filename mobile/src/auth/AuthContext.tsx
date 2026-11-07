@@ -24,6 +24,7 @@ import { receivedFeedbackStore } from "../coaching/receivedFeedbackSession";
 import { workoutFeedbackStore } from "../coaching/workoutFeedbackSession";
 import { dailyCheckinStore } from "../readiness/dailyCheckinSession";
 import { restTimerStore } from "../workout/restTimerStore";
+import { setDraftStore } from "../workout/setDraftStore";
 import { clearPasswordChangedNotice } from "./passwordChangedNotice";
 import { recoveryStore } from "./recoverySession";
 import { createSessionController } from "./sessionController";
@@ -71,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           recoveryStore.reset();
           // The rest countdown belongs to the account's workout.
           restTimerStore.reset();
+          setDraftStore.reset();
         },
         apply: (view) => {
           // Whoever signs in next is not told about the account that was deleted.

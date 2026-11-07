@@ -197,6 +197,45 @@ test('editing a set: keyboard Done neither saves nor discards the edit', async (
   assert.equal(inputs(render()).find(i => i.props.keyboardType === 'number-pad' && i.props.accessibilityLabel.startsWith('Recorded RIR')).props.returnKeyType, 'done');
 });
 
+// A draft survives the screen being closed: the form reports every change and starts from what was reported.
+test('new set: every change is reported as a whole draft and a reopened form starts from it', () => {
+  const reported = [];
+  const render = screen('SetForm', { unit: 'kg', busy: false, lastSet, onSubmit: async () => {},
+    onDraftChange: value => reported.push({ ...value }) });
+  weightOf(render()).props.onChangeText('82.5');
+  repsOf(render()).props.onChangeText('6');
+  rirOf(render()).props.onChangeText('2');
+  byLabel(render(), 'Warm-up set').props.onPress();
+  assert.deepEqual(reported.at(-1), { weight: '82.5', reps: '6', rir: '2', isWarmup: true });
+
+  const reopened = screen('SetForm', { unit: 'kg', busy: false, lastSet, onSubmit: async () => {},
+    draft: reported.at(-1) });
+  assert.equal(weightOf(reopened()).props.value, '82.5');
+  assert.equal(repsOf(reopened()).props.value, '6');
+  assert.equal(rirOf(reopened()).props.value, '2');
+  assert.equal(byLabel(reopened(), 'Warm-up set').props.accessibilityState.checked, true);
+});
+
+test('new set: a saved set empties the reported draft but keeps the warm-up choice; a failed one keeps everything', async () => {
+  const reported = [];
+  let fail = true;
+  const render = screen('SetForm', { unit: 'kg', busy: false, lastSet,
+    onSubmit: async () => { if (fail) throw new Error('Offline'); },
+    onDraftChange: value => reported.push({ ...value }) });
+  weightOf(render()).props.onChangeText('82.5');
+  repsOf(render()).props.onChangeText('6');
+  byLabel(render(), 'Warm-up set').props.onPress();
+  const typed = reported.length;
+
+  logSet(render()).props.onPress(); await settle();
+  assert.equal(reported.length, typed); // the failure reported nothing: the draft stands
+  assert.equal(weightOf(render()).props.value, '82.5');
+
+  fail = false;
+  logSet(render()).props.onPress(); await settle();
+  assert.deepEqual(reported.at(-1), { weight: '', reps: '', rir: '', isWarmup: true });
+});
+
 test('editing a set: the explicit Save updates it once; Cancel leaves the saved values alone', async () => {
   const saves = [];
   const render = screen('SetRow', { set: { ...lastSet, rir: 3 }, unit: 'kg', onDelete() {},

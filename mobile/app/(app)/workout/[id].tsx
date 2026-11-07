@@ -56,6 +56,7 @@ import { formatRecordedRir, parseRirInput } from "../../../src/workout/rir";
 import { PreviousExercise } from "../../../src/workout/PreviousExercise";
 import { useEntryReveal } from "../../../src/workout/useEntryReveal";
 import { restTimerStore } from "../../../src/workout/restTimerStore";
+import { setDraftStore, type SetDraft } from "../../../src/workout/setDraftStore";
 import { useRestTimer } from "../../../src/workout/useRestTimer";
 import { getSetSaveRequest, prepareSetSaveRequest, sendSetSaveRequest, type SetSaveRequest } from "../../../src/workout/setSaveRequest";
 import {
@@ -576,6 +577,8 @@ function SetForm({
   busy,
   blocked = false,
   lastSet,
+  draft,
+  onDraftChange,
   onEntryFocus,
   onEntryBlur,
 }: {
@@ -584,6 +587,10 @@ function SetForm({
   busy: boolean;
   blocked?: boolean;
   lastSet: LoggedSet | undefined;
+  /** What was typed before this form was closed with its screen; read once, when the form appears. */
+  draft?: SetDraft;
+  /** Every change to the inputs, so the screen can keep them while it is closed. */
+  onDraftChange?: (draft: SetDraft) => void;
   /** Tell the screen which panel to keep above the keyboard, and when its fields lose focus. */
   onEntryFocus?: (panel: View | null) => void;
   onEntryBlur?: () => void;
@@ -593,10 +600,29 @@ function SetForm({
   const blurPanel = () => onEntryBlur?.();
   // Prefilled from the previous set: on a working set you usually repeat the
   // weight, and retyping it every time is the main friction in logging.
-  const [weight, setWeight] = useState("");
-  const [reps, setReps] = useState("");
-  const [isWarmup, setIsWarmup] = useState(false);
-  const [rir, setRir] = useState("");
+  const [weight, setWeightState] = useState(draft?.weight ?? "");
+  const [reps, setRepsState] = useState(draft?.reps ?? "");
+  const [isWarmup, setIsWarmupState] = useState(draft?.isWarmup ?? false);
+  const [rir, setRirState] = useState(draft?.rir ?? "");
+  // The latest inputs as one value, so a change to one field reports the others as they are now.
+  const latestDraft = useRef({
+    weight: draft?.weight ?? "",
+    reps: draft?.reps ?? "",
+    rir: draft?.rir ?? "",
+    isWarmup: draft?.isWarmup ?? false,
+  });
+  const changeDraft = (patch: Partial<SetDraft>) => {
+    latestDraft.current = { ...latestDraft.current, ...patch };
+    onDraftChange?.(latestDraft.current);
+  };
+  const setWeight = (value: string) => { setWeightState(value); changeDraft({ weight: value }); };
+  const setReps = (value: string) => { setRepsState(value); changeDraft({ reps: value }); };
+  const setRir = (value: string) => { setRirState(value); changeDraft({ rir: value }); };
+  const toggleWarmup = () => {
+    const next = !latestDraft.current.isWarmup;
+    setIsWarmupState(next);
+    changeDraft({ isWarmup: next });
+  };
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submitInFlight = useRef(false);
@@ -700,7 +726,7 @@ function SetForm({
           accessibilityLabel="Warm-up set"
           accessibilityState={{ checked: isWarmup, disabled }}
           style={[styles.warmupToggle, isWarmup && styles.warmupActive]}
-          onPress={() => setIsWarmup((value) => !value)}
+          onPress={toggleWarmup}
           disabled={disabled}
         >
           <Ionicons
@@ -974,7 +1000,11 @@ export default function ActiveWorkoutScreen() {
   const { scrollRef, scrollProps, revealEntry, releaseEntry } = useEntryReveal();
 
   const [workout, setWorkout] = useState<WorkoutDetail | null>(null);
-  const [pending, setPending] = useState<{ id: string; name: string }[]>([]);
+  // Exercises picked but not yet logged exist only here, so they are kept
+  // (with the typed set drafts) while the screen is closed and reopened.
+  const [pending, setPending] = useState<{ id: string; name: string }[]>(() =>
+    user?.id ? setDraftStore.getPending(user.id, id) : [],
+  );
   const [loading, setLoading] = useState(true);
   const [busyExercise, setBusyExercise] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1037,6 +1067,10 @@ export default function ActiveWorkoutScreen() {
     setRestSecondsState(value);
     void setRestSeconds(value);
   }, []);
+
+  useEffect(() => {
+    if (userId) setDraftStore.savePending(userId, id, pending);
+  }, [pending, userId, id]);
 
   const { openPicker } = usePickedExercise((exercise) => {
     setPending((current) =>
@@ -1118,6 +1152,8 @@ export default function ActiveWorkoutScreen() {
         // Also clear the original form after a successful retry from the banner.
         // A direct save lets SetForm clear itself and retain its warm-up toggle.
         if (!proposed) {
+          // The form is about to be rebuilt empty; its old draft must not come back with it.
+          setDraftStore.clearDraft(userId, id, request.input.exercise_id);
           setSetFormVersions(versions => ({
             ...versions, [request.input.exercise_id]: (versions[request.input.exercise_id] ?? 0) + 1,
           }));
@@ -1191,14 +1227,15 @@ export default function ActiveWorkoutScreen() {
       setFinishing(false);
       return;
     }
-    // The workout is over; so is its rest countdown.
+    // The workout is over; so are its rest countdown and anything left typed into it.
     restTimerStore.clearForWorkout(id);
+    if (userId) setDraftStore.clearWorkout(userId, id);
     // Server completion is authoritative; local cleanup must not trap us here.
     await clearActiveWorkout().catch(() => undefined);
     await clearTemplateSaveRequest(id).catch(() => undefined);
     router.dismissAll();
     router.replace("/");
-  }, [id, router]);
+  }, [id, router, userId]);
 
   const confirmFinish = () => {
     const empty = (workout?.sets.length ?? 0) === 0;
@@ -1426,6 +1463,10 @@ export default function ActiveWorkoutScreen() {
                     busy={busyExercise !== null || finishing}
                     blocked={pendingSetRequest !== null}
                     lastSet={block.sets[block.sets.length - 1]}
+                    draft={userId ? setDraftStore.getDraft(userId, id, block.exerciseId) : undefined}
+                    onDraftChange={(draft: SetDraft) => {
+                      if (userId) setDraftStore.saveDraft(userId, id, block.exerciseId, draft);
+                    }}
                     onEntryFocus={revealEntry}
                     onEntryBlur={releaseEntry}
                     onSubmit={(weightKg, reps, isWarmup, rir) =>

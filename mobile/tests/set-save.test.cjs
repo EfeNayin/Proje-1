@@ -140,7 +140,8 @@ function screen(helpers, initial = log([]), overrides = {}) {
   let cursor = 0, effectCursor = 0, pending = [];
   const globals = {
     ...helpers,
-    useState(initial) { const index = cursor++; if (!(index in state)) state[index] = initial;
+    // Like React, a function initialiser is called once, on the first render.
+    useState(initial) { const index = cursor++; if (!(index in state)) state[index] = typeof initial === 'function' ? initial() : initial;
       return [state[index], value => { state[index] = typeof value === 'function' ? value(state[index]) : value; }]; },
     useRef(initial) { const index = cursor++; state[index] ??= { current: initial }; return state[index]; },
     useMemo: fn => fn(), useCallback: fn => fn,
@@ -152,6 +153,7 @@ function screen(helpers, initial = log([]), overrides = {}) {
     useFocusEffect(fn) { const index = effectCursor++;
       pending.push(() => { effects[index]?.cleanup?.(); effects[index] = { deps: [], cleanup: fn() }; }); },
     restTimerStore: load(read('src/workout/restTimerStore.ts')).createRestTimerStore(),
+    setDraftStore: load(read('src/workout/setDraftStore.ts')).createSetDraftStore(),
     useEntryReveal: () => ({ scrollRef: { current: null }, scrollProps: {}, revealEntry() {}, releaseEntry() {} }),
     useAuth: () => ({ user: { id: 'user', weight_unit: 'kg' } }),
     usePickedExercise: () => ({ openPicker() {} }), getStartingPlan: () => ({ targets: [], description: null }),
@@ -175,6 +177,7 @@ function screen(helpers, initial = log([]), overrides = {}) {
   render.unmount = () => effects.forEach(effect => effect?.cleanup?.());
   render.state = state;
   render.timers = globals.restTimerStore;
+  render.drafts = globals.setDraftStore;
   return render;
 }
 function nodes(tree) {
@@ -385,4 +388,82 @@ test('the screen starts and stops the shared timer through the store', () => {
   assert.match(rest, /restTimerStore\.start\(\{ userId, workoutId \}, seconds\)/);
   assert.match(rest, /restTimerStore\.clearForWorkout\(workoutId\)/);
   assert.match(source, /<RestTimer workoutId=\{id\} userId=\{userId\}/);
+});
+
+// Back pops the workout screen and the rest-timer pill pushes a fresh one: what was typed has to survive that.
+const newDrafts = () => load(read('src/workout/setDraftStore.ts')).createSetDraftStore();
+const sharedExercise = log([{ ...input, id: 1, exercise_name: 'Bench', set_number: 1 }]);
+const benchForm = render => nodes(render()).filter(node => node.type === 'SetForm').find(node => JSON.stringify(node.props.lastSet).includes('Bench'));
+
+test('a half-typed set is still there when the workout screen is closed and reopened', async () => {
+  const drafts = newDrafts();
+  const helpers = api(storage(), async () => sharedExercise);
+  const first = screen(helpers, sharedExercise, { setDraftStore: drafts });
+  first(); await settle();
+  form(first()).props.onDraftChange({ weight: '82.5', reps: '6', rir: '2', isWarmup: true });
+  first.unmount(); // Back
+
+  const reopened = screen(helpers, sharedExercise, { setDraftStore: drafts }); // the pill pushes a fresh screen
+  reopened(); await settle();
+  const restored = form(reopened()).props.draft;
+  assert.equal(restored.weight, '82.5');
+  assert.equal(restored.reps, '6');
+  assert.equal(restored.rir, '2');
+  assert.equal(restored.isWarmup, true);
+  assert.equal(benchForm(reopened) === undefined, false);
+});
+
+test('a draft never shows for another account or another workout', async () => {
+  const drafts = newDrafts();
+  drafts.saveDraft('someone-else', 'workout', 'bench', { weight: '99', reps: '9', rir: '', isWarmup: false });
+  drafts.saveDraft('user', 'different-workout', 'bench', { weight: '98', reps: '8', rir: '', isWarmup: false });
+  const render = screen(api(storage(), async () => sharedExercise), sharedExercise, { setDraftStore: drafts });
+  render(); await settle();
+  assert.equal(form(render()).props.draft.weight, '');
+  assert.equal(form(render()).props.draft.reps, '');
+});
+
+test('an exercise picked but not yet logged is still on the workout after the screen is reopened', async () => {
+  const drafts = newDrafts();
+  let pick;
+  const helpers = api(storage(), async () => sharedExercise);
+  const options = { setDraftStore: drafts, usePickedExercise: onPick => { pick = onPick; return { openPicker() {} }; } };
+  const first = screen(helpers, sharedExercise, options);
+  first(); await settle();
+  pick({ id: 'row', name: 'Row' });
+  first(); // the pick lands in state, then the effect keeps it
+  first.unmount();
+
+  const reopened = screen(helpers, sharedExercise, options);
+  reopened(); await settle();
+  assert.match(JSON.stringify(reopened()), /Row/);
+});
+
+test('finishing the workout throws its drafts away; a failed finish keeps them', async () => {
+  let calls = 0;
+  const harness = finishHarness(async () => { if (++calls === 1) throw new Error('Offline'); return {}; });
+  harness.render(); await settle();
+  const drafts = harness.render.drafts;
+  drafts.saveDraft('user', 'workout', 'bench', { weight: '80', reps: '8', rir: '', isWarmup: false });
+  drafts.savePending('user', 'workout', [{ id: 'row', name: 'Row' }]);
+  harness.confirm()(); await settle();
+  assert.equal(drafts.getDraft('user', 'workout', 'bench').weight, '80'); // offline: the session goes on
+  assert.equal(drafts.getPending('user', 'workout').length, 1);
+  harness.confirm()(); await settle();
+  assert.equal(drafts.getDraft('user', 'workout', 'bench').weight, '');
+  assert.equal(drafts.getPending('user', 'workout').length, 0);
+});
+
+test('a confirmed retry of an unsent set clears that exercise draft so it does not come back with the rebuilt form', async () => {
+  let calls = 0;
+  const sets = [{ ...input, id: 1, exercise_name: 'Bench', set_number: 1 }];
+  const helpers = api(storage(), async () => { if (++calls === 1) throw new ApiError(0); return log(sets); });
+  const render = screen(helpers, log(sets));
+  render(); await settle();
+  form(render()).props.onDraftChange({ weight: '20', reps: '8', rir: '', isWarmup: false });
+  await assert.rejects(form(render()).props.onSubmit(20, 8, false, 0));
+  assert.equal(render.drafts.getDraft('user', 'workout', 'bench').weight, '20'); // the failure kept it
+  retry(render()).props.onPress(); await settle();
+  assert.equal(render.drafts.getDraft('user', 'workout', 'bench').weight, '');
+  assert.equal(form(render()).props.draft.weight, '');
 });
