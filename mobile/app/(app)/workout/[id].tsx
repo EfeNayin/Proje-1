@@ -9,7 +9,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -55,6 +55,8 @@ import { getStartingPlan } from "../../../src/workout/startingPlan";
 import { formatRecordedRir, parseRirInput } from "../../../src/workout/rir";
 import { PreviousExercise } from "../../../src/workout/PreviousExercise";
 import { useEntryReveal } from "../../../src/workout/useEntryReveal";
+import { restTimerStore } from "../../../src/workout/restTimerStore";
+import { useRestTimer } from "../../../src/workout/useRestTimer";
 import { getSetSaveRequest, prepareSetSaveRequest, sendSetSaveRequest, type SetSaveRequest } from "../../../src/workout/setSaveRequest";
 import {
   clearTemplateSaveRequest,
@@ -177,20 +179,31 @@ function FinishedDuration({ startedAt, endedAt }: { startedAt: string; endedAt: 
  *
  * The length is a saved preference chosen from presets, so it is picked once
  * and not retyped every set.
+ *
+ * The countdown itself lives in restTimerStore, not here, so it keeps running
+ * (and shows as a pill elsewhere in the app) while this screen is not on top.
+ * This component only starts, stops and shows it for its own workout.
  */
 function RestTimer({
+  workoutId,
+  userId,
   seconds,
   onChangeSeconds,
 }: {
+  workoutId: string;
+  userId: string | undefined;
   seconds: number;
   onChangeSeconds: (value: number) => void;
 }) {
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const elapsed = useElapsedSeconds(startedAt);
+  const { timer, remaining: timerRemaining, state } = useRestTimer(userId);
 
-  const running = startedAt !== null;
-  const remaining = running ? Math.max(0, seconds - elapsed) : seconds;
-  const finished = running && remaining === 0;
+  // A timer started for another workout is not this screen's to show.
+  const owned = timer !== null && timer.workoutId === workoutId;
+  const running = owned;
+  const remaining = owned ? timerRemaining : seconds;
+  const finished = owned && timerRemaining === 0;
+  // The exercise-history panel shows the countdown while it covers this screen.
+  const covered = state.covers > 0;
 
   const chooseDuration = () => {
     Alert.alert("Rest between sets", undefined, [
@@ -198,11 +211,19 @@ function RestTimer({
         text: formatRest(preset),
         onPress: () => {
           onChangeSeconds(preset);
-          setStartedAt(null);
+          restTimerStore.clearForWorkout(workoutId);
         },
       })),
       { text: "Cancel", style: "cancel" as const },
     ]);
+  };
+
+  const toggle = () => {
+    if (running) {
+      restTimerStore.clearForWorkout(workoutId);
+    } else if (userId) {
+      restTimerStore.start({ userId, workoutId }, seconds);
+    }
   };
 
   return (
@@ -222,9 +243,11 @@ function RestTimer({
       </View>
 
       <View
-        accessible
+        accessible={!covered}
+        importantForAccessibility={covered ? "no-hide-descendants" : "auto"}
+        accessibilityElementsHidden={covered}
         accessibilityLabel={`${finished ? "Rest over" : running ? "Rest remaining" : "Rest target"} ${formatRest(remaining)}`}
-        style={styles.restCountdownBox}
+        style={[styles.restCountdownBox, covered && styles.restCovered]}
       >
         <Text style={[styles.restCountdown, finished && styles.restDone]}>
           {formatRest(remaining)}
@@ -237,7 +260,7 @@ function RestTimer({
         accessibilityRole="button"
         accessibilityLabel={running ? "Stop rest timer" : "Start rest timer"}
         style={[styles.restButton, running && styles.restButtonActive]}
-        onPress={() => setStartedAt(running ? null : Date.now())}
+        onPress={toggle}
       >
         <Ionicons
           name={running ? "stop" : "play"}
@@ -976,6 +999,30 @@ export default function ActiveWorkoutScreen() {
     return () => { viewGeneration.current = generation + 1; };
   }, [id, userId]);
 
+  // The rest timer follows this workout's lifecycle. Registered for as long as
+  // the screen is in the navigation stack, so the floating pill knows whether
+  // to pop back to it or push it.
+  useEffect(() => restTimerStore.registerWorkoutScreen(id), [id]);
+
+  const readOnlyView = workout !== null && workout.finished_at !== null && !editing;
+  const editableView = workout !== null && !readOnlyView;
+
+  // A finished workout shown read-only has no rest in progress: if this one
+  // had a timer (it was being edited) it ends when the edit does.
+  useEffect(() => {
+    if (readOnlyView) restTimerStore.clearForWorkout(id);
+  }, [readOnlyView, id]);
+
+  // While a workout is open for editing it owns the bottom of the display
+  // (set inputs, keyboard), so the floating pill of another workout's timer
+  // stays off it. Focus-bound: a screen buried under another one must not hold it.
+  useFocusEffect(
+    useCallback(() => {
+      if (!editableView) return;
+      return restTimerStore.suppressPill();
+    }, [editableView]),
+  );
+
   useEffect(() => {
     let cancelled = false;
     void getRestSeconds().then((value) => {
@@ -1144,6 +1191,8 @@ export default function ActiveWorkoutScreen() {
       setFinishing(false);
       return;
     }
+    // The workout is over; so is its rest countdown.
+    restTimerStore.clearForWorkout(id);
     // Server completion is authoritative; local cleanup must not trap us here.
     await clearActiveWorkout().catch(() => undefined);
     await clearTemplateSaveRequest(id).catch(() => undefined);
@@ -1311,7 +1360,7 @@ export default function ActiveWorkoutScreen() {
             )}
           </View>
 
-          {readOnly ? null : <RestTimer seconds={restSeconds} onChangeSeconds={handleChangeRest} />}
+          {readOnly ? null : <RestTimer workoutId={id} userId={userId} seconds={restSeconds} onChangeSeconds={handleChangeRest} />}
 
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {pendingSetRequest ? (
@@ -1550,6 +1599,8 @@ const styles = StyleSheet.create({
   },
   restTarget: { color: light.textSecondary, fontSize: 13 },
   restCountdownBox: { alignItems: "center" },
+  // Hidden while the history panel shows it; the space stays so nothing shifts behind the scrim.
+  restCovered: { opacity: 0 },
   restCountdown: {
     color: light.text,
     fontSize: 28,

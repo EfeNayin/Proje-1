@@ -2,10 +2,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
 import { light } from "../../../src/lightTheme";
+import { TabBarWithRestTimer } from "../../../src/workout/TabBarWithRestTimer";
 
 export default function TabsLayout() {
   return (
     <Tabs
+      // The usual bar, with the rest countdown above it while one is running.
+      tabBar={(props) => <TabBarWithRestTimer {...props} />}
       screenOptions={{
         // Every tab draws its own title bar (headerShown: false below); a native
         // header as well would show each title twice.

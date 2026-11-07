@@ -148,6 +148,10 @@ function screen(helpers, initial = log([]), overrides = {}) {
       if (effects[index]?.deps.every((value, i) => value === deps[i])) return;
       pending.push(() => { effects[index]?.cleanup?.(); effects[index] = { deps, cleanup: fn() }; }); },
     useRouter: () => ({}), useLocalSearchParams: () => ({ id: 'workout' }),
+    // Focus is not simulated: a focus effect runs on every commit and cleans up before the next one.
+    useFocusEffect(fn) { const index = effectCursor++;
+      pending.push(() => { effects[index]?.cleanup?.(); effects[index] = { deps: [], cleanup: fn() }; }); },
+    restTimerStore: load(read('src/workout/restTimerStore.ts')).createRestTimerStore(),
     useEntryReveal: () => ({ scrollRef: { current: null }, scrollProps: {}, revealEntry() {}, releaseEntry() {} }),
     useAuth: () => ({ user: { id: 'user', weight_unit: 'kg' } }),
     usePickedExercise: () => ({ openPicker() {} }), getStartingPlan: () => ({ targets: [], description: null }),
@@ -170,6 +174,7 @@ function screen(helpers, initial = log([]), overrides = {}) {
     pending.forEach(fn => fn()); return tree; };
   render.unmount = () => effects.forEach(effect => effect?.cleanup?.());
   render.state = state;
+  render.timers = globals.restTimerStore;
   return render;
 }
 function nodes(tree) {
@@ -277,7 +282,7 @@ function finishHarness(finish, cleanup = async () => {}) {
     clearActiveWorkout: cleanup, clearTemplateSaveRequest: async () => {},
     useRouter: () => ({ dismissAll: () => routes.push('dismiss'), replace: route => routes.push(route) }),
   });
-  return { render, routes, confirm() {
+  return { render, routes, timers: render.timers, confirm() {
     const finish = nodes(render()).find(node => node.type === 'Pressable' &&
       node.props.accessibilityLabel === 'Finish workout');
     finish.props.onPress();
@@ -318,4 +323,66 @@ test('failed server finish retains the session and releases the lock for an expl
   assert.equal(calls, 2);
   assert.equal(cleanups, 1);
   assert.deepEqual(harness.routes, ['dismiss', '/']);
+});
+
+// Rest timer lifecycle on the real screen callbacks (the countdown itself is covered by rest-timer.test.cjs).
+const ownTimer = timers => timers.start({ userId: 'user', workoutId: 'workout' }, 90);
+
+test('finishing a workout ends its rest timer, but a failed finish keeps it running', async () => {
+  let calls = 0;
+  const harness = finishHarness(async () => { if (++calls === 1) throw new Error('Offline'); return {}; });
+  harness.render(); await settle();
+  ownTimer(harness.timers);
+  harness.confirm()(); await settle();
+  assert.equal(harness.timers.getSnapshot().timer?.workoutId, 'workout'); // offline: still resting
+  harness.confirm()(); await settle();
+  assert.equal(harness.timers.getSnapshot().timer, null);
+});
+
+test('finishing does not touch a timer that belongs to another workout', async () => {
+  const harness = finishHarness(async () => ({}));
+  harness.render(); await settle();
+  harness.timers.start({ userId: 'user', workoutId: 'other' }, 90);
+  harness.confirm()(); await settle();
+  assert.equal(harness.timers.getSnapshot().timer?.workoutId, 'other');
+});
+
+test('a finished workout shown read-only drops its timer; editing it keeps it until the edit ends', async () => {
+  const finishedLog = { ...log([]), finished_at: '2026-09-24T13:00:00Z' };
+  const render = screen(api(storage(), async () => log([])), finishedLog, { formatSessionDate: () => 'Thu, 24 Sep' });
+  ownTimer(render.timers);
+  render(); await settle(); render();
+  assert.equal(render.timers.getSnapshot().timer, null);
+
+  // Another workout's timer is not this screen's to end.
+  render.timers.start({ userId: 'user', workoutId: 'other' }, 90);
+  render();
+  assert.equal(render.timers.getSnapshot().timer?.workoutId, 'other');
+});
+
+test('the screen registers while mounted and an editable view keeps the floating pill off the bottom of the display', async () => {
+  const live = screen(api(storage(), async () => log([])), log([]));
+  assert.equal(live.timers.isWorkoutScreenOpen('workout'), false);
+  live(); await settle(); live();
+  assert.equal(live.timers.isWorkoutScreenOpen('workout'), true);
+  assert.equal(live.timers.getSnapshot().pillSuppressions, 1);
+  live.unmount();
+  assert.equal(live.timers.isWorkoutScreenOpen('workout'), false);
+  assert.equal(live.timers.getSnapshot().pillSuppressions, 0);
+
+  const finishedLog = { ...log([]), finished_at: '2026-09-24T13:00:00Z' };
+  const past = screen(api(storage(), async () => log([])), finishedLog, { formatSessionDate: () => 'Thu, 24 Sep' });
+  past(); await settle(); past();
+  assert.equal(past.timers.getSnapshot().pillSuppressions, 0); // read-only: the pill may show
+});
+
+test('the screen starts and stops the shared timer through the store', () => {
+  const source = read('app/(app)/workout/[id].tsx');
+  const start = source.indexOf('function RestTimer(');
+  const rest = source.slice(start, start + source.slice(start).search(/\r?\n\}\r?\n/));
+  assert.ok(rest.length > 100 && rest.length < 5000, 'RestTimer component not isolated');
+  assert.doesNotMatch(rest, /useState/); // no screen-local countdown to lose on navigation
+  assert.match(rest, /restTimerStore\.start\(\{ userId, workoutId \}, seconds\)/);
+  assert.match(rest, /restTimerStore\.clearForWorkout\(workoutId\)/);
+  assert.match(source, /<RestTimer workoutId=\{id\} userId=\{userId\}/);
 });

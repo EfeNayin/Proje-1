@@ -28,6 +28,7 @@ function view(request, props = { workoutId: 'current', exerciseId: 'bench', exer
   let effectCursor = 0;
   let pending = [];
   const dismissed = [];
+  const timers = load(read('src/workout/restTimerStore.ts')).createRestTimerStore();
   const hooks = {
     useRef(initial) {
       const index = cursor++;
@@ -59,8 +60,11 @@ function view(request, props = { workoutId: 'current', exerciseId: 'bench', exer
     'react-native-safe-area-context': { SafeAreaProvider: 'SafeAreaProvider', SafeAreaView: 'SafeAreaView' },
     '../api/workouts': { getExerciseHistory: request },
     '../lightTheme': { light: {} }, '../units/weight': units,
+    './RestTimerPill': { RestCountdownChip: 'RestCountdownChip' },
+    './restTimerStore': { restTimerStore: timers },
   });
   return {
+    timers,
     render() {
       cursor = 0; effectCursor = 0; pending = [];
       const tree = ExerciseHistory(props);

@@ -15,6 +15,8 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { getExerciseHistory, type PreviousExerciseSession } from "../api/workouts";
 import { light } from "../lightTheme";
 import { formatWeight, type WeightUnit } from "../units/weight";
+import { RestCountdownChip } from "./RestTimerPill";
+import { restTimerStore } from "./restTimerStore";
 
 type HistoryState = {
   items: PreviousExerciseSession[];
@@ -37,6 +39,14 @@ export function ExerciseHistory({ workoutId, exerciseId, exerciseName, unit }: {
   const [attempt, setAttempt] = useState(0);
   const [history, setHistory] = useState<HistoryState>(empty);
   const inFlight = useRef(false);
+
+  // The panel is a full-screen modal and hides the workout's own rest
+  // countdown, so it shows one in its header and the screen's is hidden
+  // meanwhile: one countdown on display at a time.
+  useEffect(() => {
+    if (!visible) return;
+    return restTimerStore.coverInline();
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -108,6 +118,7 @@ export function ExerciseHistory({ workoutId, exerciseId, exerciseName, unit }: {
                     <Text accessibilityRole="header" style={styles.headerTitle}>Exercise history</Text>
                     <Text style={styles.headerSubtitle} numberOfLines={2}>{exerciseName}</Text>
                   </View>
+                  <RestCountdownChip />
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Close exercise history"
