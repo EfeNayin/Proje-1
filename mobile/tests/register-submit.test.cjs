@@ -157,6 +157,28 @@ test('a second submit while one is in flight starts no second request', async ()
   assert.equal((await first).kind, 'success');
 });
 
+test('Go then a button tap, a button tap then Go, and repeated taps all send one request', async () => {
+  // The screen hands the same submitter to the Go key and to the button, so whichever came
+  // second (or any number of further taps) meets the first request's lock.
+  for (const pattern of ['go,button', 'button,go', 'button,button,button,go,go']) {
+    const gate = deferred();
+    const seen = [];
+    let starts = 0;
+    const submit = createRegisterSubmitter(
+      (input) => { seen.push(input); return gate.promise; },
+      () => { starts += 1; },
+    );
+    const outcomes = pattern.split(',').map(() => submit(valid));
+    // Everything after the first resolves at once as ignored; the first is still pending.
+    const later = await Promise.all(outcomes.slice(1));
+    assert.ok(later.every((outcome) => outcome.kind === 'ignored'), pattern);
+    assert.equal(seen.length, 1, pattern);
+    assert.equal(starts, 1, pattern);
+    gate.resolve();
+    assert.equal((await outcomes[0]).kind, 'success', pattern);
+  }
+});
+
 test('a failure keeps the server wording and releases the lock for a retry with the same input', async () => {
   const seen = [];
   let attempt = 0;

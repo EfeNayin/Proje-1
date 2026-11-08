@@ -79,7 +79,11 @@ export default function RegisterScreen() {
         <ScrollView
           ref={scrollRef}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
+          // iOS: "on-drag" closes the keyboard the moment a scroll begins, so on a small phone
+          // the button could only be reached by losing the keyboard. "interactive" keeps it open
+          // while the form scrolls up and still lets a downward drag onto the keyboard dismiss
+          // it. On Android "interactive" would behave like "none", so it keeps "on-drag".
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           contentContainerStyle={[
             styles.content,
             { paddingTop: insets.top + 32, paddingBottom: Math.max(insets.bottom, 24) + 16 },

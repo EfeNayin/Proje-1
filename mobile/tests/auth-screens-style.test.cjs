@@ -126,6 +126,36 @@ test('auth screens: the whole form scrolls above the keyboard and no action is p
   }
 });
 
+test('registration: on iOS a scroll keeps the keyboard open so Create Account can be reached', () => {
+  const source = register();
+  // "on-drag" would close the keyboard as soon as the form is dragged.
+  assert.match(
+    source,
+    /keyboardDismissMode=\{Platform\.OS === "ios" \? "interactive" : "on-drag"\}/,
+  );
+  // Android ("interactive" acts like "none" there) and web keep the previous mode, and the
+  // form never opts out of dismissing entirely.
+  assert.doesNotMatch(source, /keyboardDismissMode="on-drag"|keyboardDismissMode="none"/);
+  // The keyboard still never swallows the first tap on the button.
+  assert.match(source, /keyboardShouldPersistTaps="handled"/);
+  // One mechanism for lifting the form above the keyboard: adding automatic insets on top of
+  // KeyboardAvoidingView padding would count the keyboard twice.
+  assert.match(source, /behavior=\{Platform\.OS === "ios" \? "padding" : undefined\}/);
+  assert.doesNotMatch(source, /automaticallyAdjustKeyboardInsets/);
+});
+
+test('registration: the Go key and the button share one handler, in the same field order', () => {
+  const source = register();
+  assert.equal(source.match(/createRegisterSubmitter\(/g).length, 1);
+  assert.match(source, /returnKeyType="go"\n\s+onSubmitEditing=\{handleSubmit\}/);
+  assert.match(source, /onPress=\{handleSubmit\}\n\s+disabled=\{busy\}/);
+  // Focus order: email > username > first name > phone > password.
+  const order = ['usernameRef', 'firstNameRef', 'phoneRef', 'passwordRef'];
+  const positions = order.map((name) => source.indexOf(`onSubmitEditing={() => ${name}.current?.focus()}`));
+  assert.ok(positions.every((position) => position > 0), 'every field hands focus to the next');
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+});
+
 test('auth screens: password toggle and links have named 44 pt targets', () => {
   for (const [file, get] of Object.entries(screens)) {
     assert.match(get(), /"Hide password" : "Show password"/, file);
