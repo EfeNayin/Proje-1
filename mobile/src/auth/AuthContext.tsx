@@ -10,10 +10,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 
 import * as authApi from "../api/auth";
-import type { RegisterInput, UserProfile } from "../api/auth";
+import type { AuthResponse, RegisterInput, UserProfile } from "../api/auth";
 import { accountDeletionStore } from "../account/deletionSession";
 import { clearAccountDeletedNotice, showAccountDeletedNotice } from "../account/deletionNotice";
 import { setOnSessionExpired } from "../api/client";
+import type { SocialSignInResponse } from "../api/social";
 import { athleteExerciseHistoryStore } from "../coaching/athleteExerciseHistorySession";
 import { athleteOverviewStore } from "../coaching/athleteOverviewSession";
 import { athleteWorkoutsStore } from "../coaching/athleteWorkoutsSession";
@@ -23,11 +24,14 @@ import { programPreparationStore } from "../coaching/programPreparationSession";
 import { receivedFeedbackStore } from "../coaching/receivedFeedbackSession";
 import { workoutFeedbackStore } from "../coaching/workoutFeedbackSession";
 import { dailyCheckinStore } from "../readiness/dailyCheckinSession";
+import { nativeProviders } from "../social/nativeProviders";
+import { onboardingStore } from "../social/providerSession";
 import { restTimerStore } from "../workout/restTimerStore";
 import { setDraftStore } from "../workout/setDraftStore";
 import { clearPasswordChangedNotice } from "./passwordChangedNotice";
 import { recoveryStore } from "./recoverySession";
 import { createSessionController } from "./sessionController";
+import type { ProviderSignInResult } from "./sessionController";
 
 type AuthStatus = "loading" | "signedIn" | "signedOut" | "unavailable";
 
@@ -36,6 +40,10 @@ type AuthContextValue = {
   user: UserProfile | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (input: RegisterInput) => Promise<void>;
+  /** Google / Apple: opens the sheet inside `request` and signs in, or returns an onboarding offer. */
+  signInWithProvider: (request: () => Promise<SocialSignInResponse>) => Promise<ProviderSignInResult>;
+  /** Signs in with a server answer that carries tokens (account created or linked in onboarding). */
+  establish: (request: () => Promise<AuthResponse>) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   retryRestore: () => void;
@@ -70,6 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           dailyCheckinStore.reset();
           accountDeletionStore.reset();
           recoveryStore.reset();
+          // A half-finished first Google/Apple sign-in belongs to nobody once the account changes.
+          onboardingStore.clear();
           // The rest countdown belongs to the account's workout.
           restTimerStore.reset();
           setDraftStore.reset();
@@ -133,14 +143,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = controller.signIn;
   const signUp = useCallback((input: RegisterInput) => controller.signUp(input), [controller]);
+  const signInWithProvider = controller.signInWithProvider;
+  const establish = controller.establish;
 
   const refreshProfile = useCallback(async () => {
     setUser(await authApi.fetchMe());
   }, []);
 
+  // The person revoked Aures in their Apple ID settings. The server learns of it from Apple
+  // and ends the sessions of an account that has no other way in; asking for the profile
+  // here makes this device find out now instead of at its next request. An account with a
+  // password simply stays signed in (the Apple link is gone, the account is not).
+  const signedIn = status === "signedIn";
+  useEffect(() => {
+    if (!signedIn) return undefined;
+    return nativeProviders.watchAppleRevocation(() => {
+      void authApi.fetchMe().catch(() => undefined);
+    });
+  }, [signedIn]);
+
   const value = useMemo(
-    () => ({ status, user, signIn, signUp, signOut, refreshProfile, retryRestore }),
-    [status, user, signIn, signUp, signOut, refreshProfile, retryRestore],
+    () => ({
+      status,
+      user,
+      signIn,
+      signUp,
+      signInWithProvider,
+      establish,
+      signOut,
+      refreshProfile,
+      retryRestore,
+    }),
+    [status, user, signIn, signUp, signInWithProvider, establish, signOut, refreshProfile, retryRestore],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

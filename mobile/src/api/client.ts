@@ -33,6 +33,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The server's machine-readable reason (e.g. "social_username_taken"), when it gave one. */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -106,7 +108,7 @@ async function performRefresh(epoch: number): Promise<boolean> {
   // Network errors, rate limits and server failures must preserve tokens.
   if (response.status === 401) return false;
   if (!response.ok) {
-    throw new ApiError(response.status, await extractError(response));
+    throw new ApiError(response.status, (await readError(response)).message);
   }
 
   const pair: TokenPair = await response.json();
@@ -162,19 +164,24 @@ function refreshSession(epoch: number): Promise<boolean> {
   return promise;
 }
 
-async function extractError(response: Response): Promise<string> {
+async function readError(response: Response): Promise<{ message: string; code?: string }> {
   try {
     const body = await response.json();
+    const code = typeof body?.code === "string" ? body.code : undefined;
     // FastAPI returns {detail: "..."} for our AppError, or a list of objects
     // for Pydantic validation failures.
-    if (typeof body?.detail === "string") return body.detail;
+    if (typeof body?.detail === "string") return { message: body.detail, code };
     if (Array.isArray(body?.detail)) {
-      return body.detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(", ");
+      const message = body.detail
+        .map((item: { msg?: string }) => item.msg)
+        .filter(Boolean)
+        .join(", ");
+      return { message, code };
     }
   } catch {
     // Response was not JSON.
   }
-  return `Request failed (${response.status})`;
+  return { message: `Request failed (${response.status})` };
 }
 
 type RequestOptions = {
@@ -233,7 +240,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   if (!response.ok) {
-    const error = new ApiError(response.status, await extractError(response));
+    const { message, code } = await readError(response);
+    const error = new ApiError(response.status, message, code);
     assertCurrent();
     throw error;
   }

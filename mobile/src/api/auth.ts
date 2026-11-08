@@ -6,6 +6,7 @@
  */
 
 import { apiRequest } from "./client";
+import type { ProviderCredential } from "./social";
 import type { TokenPair } from "./tokens";
 
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
@@ -38,6 +39,11 @@ export type UserProfile = {
   nutrition_goal: NutritionGoalKind | null;
   /** Coach tools switched on. Adds capabilities; grants no access to anyone's data. */
   coach_enabled: boolean;
+  /**
+   * False for an account made with Google or Apple: it has no password to type, to reset or
+   * to confirm a deletion with. It confirms by signing in with its provider again.
+   */
+  has_password: boolean;
   created_at: string;
 };
 
@@ -145,10 +151,12 @@ const DELETE_ACCOUNT_TIMEOUT_MS = 45_000;
  * password is 403 (not 401, which this client would read as a dead session), a
  * limit is 429, and "no answer" is status 0: the server may or may not have acted.
  */
-export function deleteAccount(password: string): Promise<void> {
+export function deleteAccount(confirmation: string | ProviderCredential): Promise<void> {
+  // A password, or (for an account without one) a fresh sign-in with a linked provider.
+  const body = typeof confirmation === "string" ? { password: confirmation } : { provider_credential: confirmation };
   return apiRequest<void>("/users/me/delete-account", {
     method: "POST",
-    body: { password },
+    body,
     timeoutMs: DELETE_ACCOUNT_TIMEOUT_MS,
   });
 }

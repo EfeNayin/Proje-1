@@ -2,8 +2,9 @@
  * Delete account (Profile > Account > Delete account).
  *
  * Permanent. The page says what goes, what stays with other people and that it
- * cannot be undone; asks for the current password in a secure field; and needs a
- * second, explicit confirmation before anything is sent. "Cancel" and "Keep my
+ * cannot be undone; asks for the current password in a secure field (an account made
+ * with Google or Apple has none, so it signs in with that provider again instead); and
+ * needs a second, explicit confirmation before anything is sent. "Cancel" and "Keep my
  * account" leave without a request.
  *
  * The password lives only in this screen's state: it is handed to the request and
@@ -32,9 +33,21 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { accountDeletionStore } from "../../../src/account/deletionSession";
 import { useAccountDeletion } from "../../../src/account/useAccountDeletion";
+import { fetchSignInMethods } from "../../../src/api/social";
+import type { SocialProvider } from "../../../src/api/social";
+import { useAuth } from "../../../src/auth/AuthContext";
+import { providerDeps } from "../../../src/social/providerSession";
+import {
+  NO_PROVIDERS,
+  obtainCredential,
+  resolveOfferedProviders,
+} from "../../../src/social/providerSignIn";
+import type { OfferedProviders } from "../../../src/social/providerSignIn";
 import { light } from "../../../src/lightTheme";
 
 const MIN_TOUCH = 44;
+
+const PROVIDER_NAME: Record<SocialProvider, string> = { google: "Google", apple: "Apple" };
 
 const DELETED = [
   "Your profile, preferences and nutrition goals",
@@ -71,6 +84,35 @@ export default function DeleteAccountScreen() {
   const insets = useSafeAreaInsets();
   const state = useAccountDeletion();
   const deleting = state.phase === "deleting";
+  const { user } = useAuth();
+  // An account made with a provider has no password to type: it confirms by signing in with
+  // that provider again, in the same request (see account/deletion.ts).
+  const passwordless = user != null && !user.has_password;
+  const [provider, setProvider] = useState<SocialProvider | null>(null);
+  const [offered, setOffered] = useState<OfferedProviders>(NO_PROVIDERS);
+  const [providerLoad, setProviderLoad] = useState<"loading" | "ready" | "failed">("loading");
+
+  useEffect(() => {
+    if (!passwordless) return undefined;
+    let cancelled = false;
+    Promise.all([fetchSignInMethods(), resolveOfferedProviders(providerDeps)])
+      .then(([methods, available]) => {
+        if (cancelled) return;
+        // Only a provider this account has AND this build/server can still run.
+        const usable = methods.providers.find((linked) =>
+          linked.provider === "google" ? available.google !== null : available.apple,
+        );
+        setOffered(available);
+        setProvider(usable?.provider ?? null);
+        setProviderLoad("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setProviderLoad("failed");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [passwordless]);
 
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -93,6 +135,19 @@ export default function DeleteAccountScreen() {
 
   const askToConfirm = () => {
     if (deleting) return;
+    if (passwordless) {
+      if (provider === null) {
+        setEntryError(
+          providerLoad === "loading"
+            ? "One moment, checking how you sign in."
+            : "We cannot confirm it is you right now: sign-in with your provider is unavailable. Try again later.",
+        );
+        return;
+      }
+      setEntryError(null);
+      setConfirming(true);
+      return;
+    }
     if (password.length === 0) {
       setEntryError("Enter your current password to continue.");
       passwordRef.current?.focus();
@@ -104,8 +159,15 @@ export default function DeleteAccountScreen() {
 
   const submit = async () => {
     if (deleting) return; // the store refuses a duplicate as well; this just saves the render
-    const outcome = await accountDeletionStore.submit(password);
-    if (outcome.kind === "wrong-password" || outcome.kind === "rate-limited") {
+    // The provider's sheet opens inside the same guarded attempt as the request.
+    const outcome = await accountDeletionStore.submit(
+      passwordless && provider !== null
+        ? () => obtainCredential(provider, offered, providerDeps)
+        : password,
+    );
+    if (outcome.kind === "cancelled") {
+      setConfirming(false);
+    } else if (outcome.kind === "wrong-password" || outcome.kind === "rate-limited") {
       // Nothing was deleted, and a password that was refused is not kept around.
       setPassword("");
       setConfirming(false);
@@ -153,8 +215,19 @@ export default function DeleteAccountScreen() {
         </View>
 
         <Text accessibilityRole="header" style={styles.sectionLabel}>
-          Confirm with your password
+          {passwordless ? "Confirm it is you" : "Confirm with your password"}
         </Text>
+        {passwordless ? (
+          <View style={styles.card}>
+            <Text style={styles.confirmText} testID="delete-account-provider-note">
+              {provider !== null
+                ? `Your account has no password. When you confirm, you will be asked to sign in with ${PROVIDER_NAME[provider]} again.`
+                : providerLoad === "loading"
+                  ? "Checking how you sign in…"
+                  : "Your account has no password and signing in with your provider is unavailable right now, so we cannot confirm it is you. Try again later."}
+            </Text>
+          </View>
+        ) : (
         <View>
           <TextInput
             ref={passwordRef}
@@ -192,6 +265,7 @@ export default function DeleteAccountScreen() {
             />
           </Pressable>
         </View>
+        )}
 
         {error ? (
           <View style={styles.errorRow}>

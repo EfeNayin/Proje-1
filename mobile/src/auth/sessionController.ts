@@ -12,6 +12,9 @@
  *    obsolete and cannot write tokens, clear tokens or reach a caller.
  *  - A new account's tokens are written only after the previous account's
  *    sign-out cleanup has finished, so a late delete cannot remove them.
+ *  - A provider sign-in (Google, Apple) is one transition from the moment its sheet
+ *    opens: the epoch moves on before the native prompt, so a sheet that returns late,
+ *    after another sign-in or a sign-out, finds its epoch gone and changes nothing.
  *  - A confirmed account deletion ends the session like a sign-out, minus the
  *    server call (there is no session left to end), and only for the sign-in the
  *    deletion was made under: a deletion that was answered late, after another
@@ -20,6 +23,7 @@
 
 import * as authApi from "../api/auth";
 import type { AuthResponse, RegisterInput, UserProfile } from "../api/auth";
+import type { OnboardingOffer, SocialSignInResponse } from "../api/social";
 import { advanceAuthEpoch, currentAuthEpoch, persistTokens, SessionChangedError } from "../api/client";
 import { clearTokens, takeRefreshToken } from "../api/tokens";
 import { clearActiveWorkout } from "../workout/activeWorkout";
@@ -29,6 +33,11 @@ import type { RestoredSession } from "./restoreSession";
 export type AccountView =
   | { status: "signedIn"; user: UserProfile }
   | { status: "signedOut"; user: null };
+
+/** How a provider sign-in ended: signed in, or a new identity that must finish onboarding first. */
+export type ProviderSignInResult =
+  | { kind: "signedIn" }
+  | { kind: "onboarding"; offer: OnboardingOffer };
 
 export type SessionHooks = {
   /** Drops everything private to the account: coaching lists, pending answers, shown codes. */
@@ -137,15 +146,37 @@ export function createSessionController(hooks: SessionHooks) {
     hooks.apply({ status: "signedOut", user: null });
   }
 
-  async function establish(request: () => Promise<AuthResponse>): Promise<void> {
-    // A new sign-in supersedes whatever an earlier attempt, or the previous
-    // account, still has in flight.
-    const epoch = advanceAuthEpoch();
-    const result = await request();
+  async function finishSignIn(epoch: number, result: AuthResponse): Promise<void> {
     await cleanup;
     if (!(await persistTokens(result.tokens, epoch))) throw new SessionChangedError();
     if (currentAuthEpoch() !== epoch) throw new SessionChangedError();
     hooks.apply({ status: "signedIn", user: result.user });
+  }
+
+  async function establish(request: () => Promise<AuthResponse>): Promise<void> {
+    // A new sign-in supersedes whatever an earlier attempt, or the previous
+    // account, still has in flight.
+    const epoch = advanceAuthEpoch();
+    await finishSignIn(epoch, await request());
+  }
+
+  /**
+   * `request` opens the provider's sheet and sends what it returned to the server. The
+   * epoch is taken first, so everything after (the sheet, the network, the Keychain
+   * write) belongs to this attempt only. A new identity yields an offer and signs
+   * nothing in; the account exists only once onboarding is completed (or linked).
+   */
+  async function signInWithProvider(
+    request: () => Promise<SocialSignInResponse>,
+  ): Promise<ProviderSignInResult> {
+    const epoch = advanceAuthEpoch();
+    const result = await request();
+    if (result.status === "onboarding") {
+      if (currentAuthEpoch() !== epoch) throw new SessionChangedError();
+      return { kind: "onboarding", offer: result.onboarding };
+    }
+    await finishSignIn(epoch, result);
+    return { kind: "signedIn" };
   }
 
   function signIn(email: string, password: string): Promise<void> {
@@ -163,7 +194,17 @@ export function createSessionController(hooks: SessionHooks) {
     return currentAuthEpoch() === epoch ? restored : null;
   }
 
-  return { signIn, signUp, signOut, accountDeleted, sessionExpired, restore };
+  return {
+    signIn,
+    signUp,
+    signInWithProvider,
+    /** Finishes onboarding or links to an existing account: both end signed in. */
+    establish,
+    signOut,
+    accountDeleted,
+    sessionExpired,
+    restore,
+  };
 }
 
 export type SessionController = ReturnType<typeof createSessionController>;

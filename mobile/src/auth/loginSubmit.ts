@@ -21,21 +21,43 @@ export function validateLogin(email: string, password: string): string | null {
   return null;
 }
 
+/**
+ * Shared with the Google and Apple buttons (see auth/attemptGate.ts), so a provider
+ * sign-in and an email sign-in cannot overlap. Typed structurally: this module imports
+ * nothing.
+ */
+type Gate = { tryEnter: () => boolean; leave: () => void };
+
 export function createLoginSubmitter(
   signIn: (email: string, password: string) => Promise<void>,
   // Called once a request is actually about to start (not for ignored or
   // invalid submits), so the screen can show its loading state.
   onStart?: () => void,
+  gate?: Gate,
 ): (email: string, password: string) => Promise<LoginOutcome> {
   let inFlight = false;
+  const own: Gate = {
+    tryEnter() {
+      if (inFlight) return false;
+      inFlight = true;
+      return true;
+    },
+    leave() {
+      inFlight = false;
+    },
+  };
+  const attempts = gate ?? own;
 
   return async (email, password) => {
-    if (inFlight) return { kind: "ignored" };
-
     const message = validateLogin(email, password);
-    if (message) return { kind: "invalid", message };
+    // A submit while another attempt runs is ignored before it is judged: the running
+    // request owns the screen.
+    if (!attempts.tryEnter()) return { kind: "ignored" };
+    if (message) {
+      attempts.leave();
+      return { kind: "invalid", message };
+    }
 
-    inFlight = true;
     onStart?.();
     try {
       await signIn(email.trim(), password);
@@ -43,7 +65,7 @@ export function createLoginSubmitter(
     } catch (err) {
       return { kind: "failed", message: err instanceof Error ? err.message : "Sign in failed" };
     } finally {
-      inFlight = false;
+      attempts.leave();
     }
   };
 }
