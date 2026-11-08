@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.mailer import Mailer as MailTransport
 from app.core.mailer import get_mailer
-from app.domains.auth import recovery, recovery_email, service
+from app.domains.auth import recovery, recovery_email, service, social_router
 from app.domains.auth.schemas import (
     AuthResponse,
     LoginRequest,
@@ -34,6 +34,7 @@ from app.domains.auth.throttle import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+router.include_router(social_router.router)
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 Mailer = Annotated[MailTransport, Depends(get_mailer)]

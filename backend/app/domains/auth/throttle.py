@@ -31,6 +31,12 @@ Refresh
      reaches this bucket, so nobody can spend another account's allowance with a
      made-up token.
 
+Sign in with Google / Apple (README.md, "Google ve Apple ile giriş")
+  Requester only, checked before anything is verified, one bucket per entry point: nonces
+  (one row each), sign-ins (a call to the provider each), account creation, and Apple's
+  notifications. Linking an existing account by password reuses the login buckets above,
+  keyed by the email typed, so it is no easier to guess a password through this door.
+
 Password recovery (README.md, "Parola kurtarma")
   Request a code: requester, address as typed (case-folded) and a resend cooldown on that
   address, admitted together or not at all. Confirm a code: requester and address, spent
@@ -93,6 +99,41 @@ class AuthThrottle:
                 )
             ],
             message="Too many session refreshes.",
+        )
+
+    async def social_nonce_requester(self) -> None:
+        await self._social("nonce", "Too many sign-in attempts.")
+
+    async def social_signin_requester(self) -> None:
+        await self._social("signin", "Too many sign-in attempts.")
+
+    async def social_complete_requester(self) -> None:
+        await self._social("complete", "Too many sign-up attempts.")
+
+    async def social_notify_requester(self) -> None:
+        await self._social("notify", "Too many notifications.")
+
+    async def _social(self, kind: str, message: str) -> None:
+        limit, window = {
+            "nonce": (
+                settings.RATE_LIMIT_SOCIAL_NONCE_IP_LIMIT,
+                settings.RATE_LIMIT_SOCIAL_NONCE_IP_WINDOW_SECONDS,
+            ),
+            "signin": (
+                settings.RATE_LIMIT_SOCIAL_SIGNIN_IP_LIMIT,
+                settings.RATE_LIMIT_SOCIAL_SIGNIN_IP_WINDOW_SECONDS,
+            ),
+            "complete": (
+                settings.RATE_LIMIT_SOCIAL_COMPLETE_IP_LIMIT,
+                settings.RATE_LIMIT_SOCIAL_COMPLETE_IP_WINDOW_SECONDS,
+            ),
+            "notify": (
+                settings.RATE_LIMIT_SOCIAL_NOTIFY_IP_LIMIT,
+                settings.RATE_LIMIT_SOCIAL_NOTIFY_IP_WINDOW_SECONDS,
+            ),
+        }[kind]
+        await self._limiter.admit(
+            [Bucket(f"social-{kind}:ip", self._requester, limit, window)], message=message
         )
 
     async def login_account(self, email: str) -> Admission:
@@ -198,3 +239,19 @@ async def limit_register_requester(throttle: Throttle) -> None:
 
 async def limit_refresh_requester(throttle: Throttle) -> None:
     await throttle.refresh_requester()
+
+
+async def limit_social_nonce_requester(throttle: Throttle) -> None:
+    await throttle.social_nonce_requester()
+
+
+async def limit_social_signin_requester(throttle: Throttle) -> None:
+    await throttle.social_signin_requester()
+
+
+async def limit_social_complete_requester(throttle: Throttle) -> None:
+    await throttle.social_complete_requester()
+
+
+async def limit_social_notify_requester(throttle: Throttle) -> None:
+    await throttle.social_notify_requester()

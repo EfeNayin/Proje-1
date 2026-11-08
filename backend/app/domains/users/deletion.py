@@ -76,7 +76,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dberrors import RETRYABLE_SQLSTATES, sqlstate_of
 from app.core.exceptions import ForbiddenError, ServiceUnavailableError, UnauthorizedError
 from app.core.passwordwork import PasswordWorkBusyError
+from app.domains.auth import social
 from app.domains.auth.service import lock_family, password_matches
+from app.domains.auth.social_schemas import ProviderCredential
 from app.domains.programs.service import lock_active_program
 from app.domains.users.ratelimit import AccountDeletionThrottle
 from app.models import CoachAthleteLink, CoachInvite, RefreshToken, User
@@ -88,38 +90,57 @@ _NOT_DELETED = "The account could not be deleted right now. Nothing was deleted;
 
 
 async def delete_account(
-    db: AsyncSession, user: User, password: str, throttle: AccountDeletionThrottle
-) -> None:
-    """Check the password again, then erase `user` (always the signed-in account)."""
-    # Counted before bcrypt, so a refused caller never reaches it.
+    db: AsyncSession,
+    user: User,
+    throttle: AccountDeletionThrottle,
+    *,
+    password: str | None,
+    provider_credential: ProviderCredential | None,
+    sc: social.Social,
+) -> list[str]:
+    """Confirm again, then erase `user` (always the signed-in account).
+
+    Confirmation is the current password or, for an account that has none, a fresh
+    sign-in with a provider linked to THIS account. Returns the Apple refresh tokens the
+    account held, read before it was erased, so the caller can revoke the authorization
+    once the response is on its way; revoking can fail without affecting the deletion.
+    """
+    # Counted before bcrypt or a provider call, so a refused caller never reaches either.
     attempt = await throttle.begin(user)
     try:
-        # An account without a password (created with Google or Apple) cannot confirm with one.
-        matches = user.password_hash is not None and await password_matches(
-            password, user.password_hash
-        )
-    except PasswordWorkBusyError:
-        # Nothing was checked, so this is not a wrong password: it must not count.
+        if password is not None:
+            # An account without a password cannot confirm with one.
+            matches = user.password_hash is not None and await password_matches(
+                password, user.password_hash
+            )
+            if not matches:
+                # 403, not 401: this client reads a 401 as "the session is dead" and signs out.
+                raise ForbiddenError("Incorrect password")
+        else:
+            assert provider_credential is not None
+            await social.prove_provider_control(db, sc, user, provider_credential)
+    except (PasswordWorkBusyError, ServiceUnavailableError):
+        # Nothing was checked (busy worker, or the provider is down): not a wrong answer.
         await attempt.refund()
         raise
-    if not matches:
-        # 403, not 401: this client reads a 401 as "the session is dead" and signs out.
-        raise ForbiddenError("Incorrect password")
-    # Only wrong passwords stay counted.
+    # Only wrong answers stay counted.
     await attempt.refund()
 
     # Read now: a rollback in the loop expires the object.
     user_id, credential_version = user.id, user.credential_version
+    apple_tokens = await social.apple_tokens_for_revocation(db, sc, user_id)
     for attempt_number in range(_ATTEMPTS):
         try:
             await _erase(db, user_id, credential_version)
-            return
+            return apple_tokens
         except DBAPIError as error:
             await db.rollback()
             if sqlstate_of(error) not in RETRYABLE_SQLSTATES:
                 raise
             if attempt_number == _ATTEMPTS - 1:
                 raise ServiceUnavailableError(_NOT_DELETED, retry_after=5) from None
+    # Unreachable: the last attempt returns or raises. Kept so nothing says "deleted" by mistake.
+    raise ServiceUnavailableError(_NOT_DELETED, retry_after=5)
 
 
 async def _erase(db: AsyncSession, user_id: UUID, credential_version: int) -> None:

@@ -20,9 +20,12 @@ email-validator~=2.2.0   # Pydantic EmailStr için gerekli
 
 # Kimlik doğrulama: JWT üretimi/doğrulaması + bcrypt ile şifre hash'leme
 # 3.4.0+ kapatır: JWE sıkıştırma bombası (CVE-2024-33664) ve OpenSSH ECDSA anahtarıyla
-# algoritma karışıklığı (CVE-2024-33663). Uygulama yalnızca HS256 + açık algoritma listesi
-# kullandığından ikisi de erişilemezdi; yine de güncel sürümde kalmak ucuz.
+# algoritma karışıklığı (CVE-2024-33663). Uygulama HS256 (kendi token'ları), RS256 (Google/Apple
+# kimlik token'ları) ve ES256 (Apple client_secret) kullanır; her çağrıda açık algoritma listesi
+# verilir ve sağlayıcı token'larında başlıktaki alg RS256 değilse reddedilir. Güncel sürümde kalmak ucuz.
 python-jose[cryptography]~=3.5.0
+# Fernet (app/core/secretbox.py) için doğrudan içe aktarılıyor; python-jose bunu zaten çekiyordu.
+cryptography~=50.0
 passlib[bcrypt]~=1.7.4
 bcrypt~=4.0.1            # passlib 1.7.4 ile uyumlu sürüm (4.1+ gereksiz uyarı basar)
 

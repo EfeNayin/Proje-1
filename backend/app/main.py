@@ -85,9 +85,10 @@ async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
     Lets the service layer raise NotFoundError / UnauthorizedError / ... and
     stay free of any HTTP concepts.
     """
-    return JSONResponse(
-        status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers
-    )
+    content = {"detail": exc.detail}
+    if exc.code is not None:
+        content["code"] = exc.code
+    return JSONResponse(status_code=exc.status_code, content=content, headers=exc.headers)
 
 
 @app.exception_handler(RequestValidationError)

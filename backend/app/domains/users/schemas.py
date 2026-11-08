@@ -19,6 +19,7 @@ from app.domains.auth.schemas import (
     normalize_phone_number,
     validate_timezone,
 )
+from app.domains.auth.social_schemas import ProviderCredential
 
 __all__ = ["DeleteAccountRequest", "UserProfile", "UserUpdate"]
 
@@ -102,4 +103,14 @@ class DeleteAccountRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    password: str = Field(min_length=1, max_length=1024)
+    # Exactly one of the two. A password account confirms with its password; an account
+    # that has none (created with Google or Apple) confirms by signing in with a provider
+    # it has linked, freshly, in the same request.
+    password: str | None = Field(default=None, min_length=1, max_length=1024)
+    provider_credential: ProviderCredential | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_confirmation(self) -> Self:
+        if (self.password is None) == (self.provider_credential is None):
+            raise ValueError("Send exactly one of password or provider_credential")
+        return self

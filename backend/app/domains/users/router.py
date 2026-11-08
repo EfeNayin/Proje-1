@@ -2,11 +2,14 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.domains.auth import social
 from app.domains.auth.dependencies import CurrentUser
+from app.domains.auth.social_deps import SocialDep
+from app.domains.auth.social_schemas import SignInMethods
 from app.domains.users import deletion, service
 from app.domains.users.ratelimit import Throttle
 from app.domains.users.schemas import DeleteAccountRequest, UserProfile, UserUpdate
@@ -50,6 +53,27 @@ async def delete_me(
     current_user: CurrentUser,
     db: DbSession,
     throttle: Throttle,
+    sc: SocialDep,
+    background: BackgroundTasks,
 ) -> Response:
-    await deletion.delete_account(db, current_user, payload.password, throttle)
+    apple_tokens = await deletion.delete_account(
+        db,
+        current_user,
+        throttle,
+        password=payload.password,
+        provider_credential=payload.provider_credential,
+        sc=sc,
+    )
+    if apple_tokens:
+        # After the response: Apple being slow or down must not hold up or undo a deletion.
+        background.add_task(social.revoke_apple_tokens, sc.providers, apple_tokens)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/me/sign-in-methods",
+    response_model=SignInMethods,
+    summary="How this account can sign in",
+)
+async def sign_in_methods(current_user: CurrentUser, db: DbSession) -> SignInMethods:
+    return await social.sign_in_methods(db, current_user.id)

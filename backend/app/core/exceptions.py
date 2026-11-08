@@ -21,8 +21,11 @@ class AppError(Exception):
         """Extra response headers (e.g. Retry-After); most errors have none."""
         return None
 
-    def __init__(self, detail: str | None = None) -> None:
+    def __init__(self, detail: str | None = None, *, code: str | None = None) -> None:
         self.detail = detail or self.default_detail
+        # A stable identifier clients can branch on (the text may change). Optional: most
+        # errors have none and are told apart by status alone.
+        self.code = code
         super().__init__(self.detail)
 
 
@@ -94,8 +97,10 @@ class ServiceUnavailableError(AppError):
     status_code = 503
     default_detail = "The service is temporarily unavailable. Try again in a moment."
 
-    def __init__(self, detail: str | None = None, retry_after: int | None = None) -> None:
-        super().__init__(detail)
+    def __init__(
+        self, detail: str | None = None, retry_after: int | None = None, *, code: str | None = None
+    ) -> None:
+        super().__init__(detail, code=code)
         self.retry_after = retry_after
 
     @property

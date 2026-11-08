@@ -129,6 +129,53 @@ class Settings(BaseSettings):
     PASSWORD_RESET_CODE_TTL_SECONDS: int = Field(default=900, ge=60, le=3600)
     PASSWORD_RESET_MAX_ATTEMPTS: int = Field(default=5, ge=1, le=10)
 
+    # ── Sign in with Google / Apple (see README.md, "Google ve Apple ile giriş") ──
+    # Both are OFF unless their flag is true AND every value they need is set; a flag with
+    # missing values is a startup error outside development (check_deployment_safety), and
+    # the app is told a provider is unavailable until it is fully configured. Secrets live
+    # only here: nothing below is ever sent to the app except the public client ids.
+    SOCIAL_GOOGLE_ENABLED: bool = False
+    # The Google web client: the one the phone's server auth code is minted for and redeemed
+    # with. Its id is the audience of the ID token Google returns.
+    GOOGLE_WEB_CLIENT_ID: str | None = None
+    GOOGLE_WEB_CLIENT_SECRET: SecretStr | None = None
+    # Public: the iOS client the native SDK is configured with (also baked into the app).
+    GOOGLE_IOS_CLIENT_ID: str | None = None
+    # Empty omits redirect_uri, which is what the mobile SDKs' server codes are redeemed with.
+    GOOGLE_CODE_REDIRECT_URI: str = ""
+    GOOGLE_TOKEN_URL: str = "https://oauth2.googleapis.com/token"
+    GOOGLE_JWKS_URL: str = "https://www.googleapis.com/oauth2/v3/certs"
+
+    SOCIAL_APPLE_ENABLED: bool = False
+    # The app's bundle id (the Sign in with Apple "client id" for native sign-in).
+    APPLE_CLIENT_ID: str | None = None
+    # Extra accepted audiences, comma separated. Development only: Expo Go signs in as
+    # "host.exp.Exponent", not as this app.
+    APPLE_EXTRA_AUDIENCES: str = ""
+    APPLE_TEAM_ID: str | None = None
+    APPLE_KEY_ID: str | None = None
+    # The .p8 key's PEM text. Newlines may be written as backslash-n so it fits in one env line.
+    APPLE_PRIVATE_KEY: SecretStr | None = None
+    APPLE_BASE_URL: str = "https://appleid.apple.com"
+    # Encrypts the Apple refresh token kept for revocation (Fernet key, see core/secretbox.py):
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    SOCIAL_TOKEN_ENCRYPTION_KEY: SecretStr | None = None
+
+    # How long a nonce / an unfinished sign-up lasts, and how long we wait on a provider.
+    SOCIAL_NONCE_TTL_SECONDS: int = Field(default=300, ge=60, le=900)
+    SOCIAL_SIGNUP_TTL_SECONDS: int = Field(default=900, ge=120, le=3600)
+    SOCIAL_HTTP_TIMEOUT_SECONDS: float = Field(default=5, gt=0, le=30)
+    # Per requester, counted before anything is verified (nonces cost a row, sign-ins a call
+    # to the provider, completions a user row).
+    RATE_LIMIT_SOCIAL_NONCE_IP_LIMIT: int = Field(default=60, ge=1)
+    RATE_LIMIT_SOCIAL_NONCE_IP_WINDOW_SECONDS: int = Field(default=600, ge=1)
+    RATE_LIMIT_SOCIAL_SIGNIN_IP_LIMIT: int = Field(default=30, ge=1)
+    RATE_LIMIT_SOCIAL_SIGNIN_IP_WINDOW_SECONDS: int = Field(default=600, ge=1)
+    RATE_LIMIT_SOCIAL_COMPLETE_IP_LIMIT: int = Field(default=20, ge=1)
+    RATE_LIMIT_SOCIAL_COMPLETE_IP_WINDOW_SECONDS: int = Field(default=3600, ge=1)
+    RATE_LIMIT_SOCIAL_NOTIFY_IP_LIMIT: int = Field(default=120, ge=1)
+    RATE_LIMIT_SOCIAL_NOTIFY_IP_WINDOW_SECONDS: int = Field(default=600, ge=1)
+
     # ── Outgoing email ──
     # MAIL_TRANSPORT names the one transport in use; nothing switches between them on
     # failure. "smtp" talks SMTP (below); "resend" calls Resend's HTTPS API, which is how
@@ -210,6 +257,10 @@ class Settings(BaseSettings):
         return [part.strip() for part in self.CORS_ALLOWED_ORIGINS.split(",") if part.strip()]
 
     @property
+    def apple_extra_audiences(self) -> list[str]:
+        return [part.strip() for part in self.APPLE_EXTRA_AUDIENCES.split(",") if part.strip()]
+
+    @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
 
@@ -229,6 +280,7 @@ class Settings(BaseSettings):
         message cannot echo a secret or a connection string.
         """
         self.check_cors()
+        self.check_social()
         if self.is_development:
             return
         environment = self.ENVIRONMENT
@@ -248,6 +300,73 @@ class Settings(BaseSettings):
                 f"ENVIRONMENT is {environment!r}: a wildcard would let any caller choose "
                 "the address its rate limits are counted under."
             )
+
+    def check_social(self) -> None:
+        """A provider that is switched on must be complete; nothing half-configured starts.
+
+        Runs in every environment: a flag with missing values would otherwise show a button
+        that can never work. Messages name the variables, never their values.
+        """
+        # Imported here: secretbox imports nothing of ours, and config must stay importable first.
+        from app.core.secretbox import is_valid_key
+
+        def missing(names: dict[str, object]) -> list[str]:
+            return [name for name, value in names.items() if not value]
+
+        if self.SOCIAL_GOOGLE_ENABLED:
+            absent = missing(
+                {
+                    "GOOGLE_WEB_CLIENT_ID": self.GOOGLE_WEB_CLIENT_ID,
+                    "GOOGLE_WEB_CLIENT_SECRET": (
+                        self.GOOGLE_WEB_CLIENT_SECRET
+                        and self.GOOGLE_WEB_CLIENT_SECRET.get_secret_value()
+                    ),
+                    "GOOGLE_IOS_CLIENT_ID": self.GOOGLE_IOS_CLIENT_ID,
+                }
+            )
+            if absent:
+                raise RuntimeError(
+                    f"SOCIAL_GOOGLE_ENABLED is true but {', '.join(absent)} "
+                    f"{'is' if len(absent) == 1 else 'are'} not set."
+                )
+        if self.SOCIAL_APPLE_ENABLED:
+            key = self.SOCIAL_TOKEN_ENCRYPTION_KEY
+            absent = missing(
+                {
+                    "APPLE_CLIENT_ID": self.APPLE_CLIENT_ID,
+                    "APPLE_TEAM_ID": self.APPLE_TEAM_ID,
+                    "APPLE_KEY_ID": self.APPLE_KEY_ID,
+                    "APPLE_PRIVATE_KEY": (
+                        self.APPLE_PRIVATE_KEY and self.APPLE_PRIVATE_KEY.get_secret_value()
+                    ),
+                    "SOCIAL_TOKEN_ENCRYPTION_KEY": key and key.get_secret_value(),
+                }
+            )
+            if absent:
+                raise RuntimeError(
+                    f"SOCIAL_APPLE_ENABLED is true but {', '.join(absent)} "
+                    f"{'is' if len(absent) == 1 else 'are'} not set."
+                )
+            if key is not None and not is_valid_key(key.get_secret_value()):
+                raise RuntimeError(
+                    "SOCIAL_TOKEN_ENCRYPTION_KEY is not a valid Fernet key (32 url-safe "
+                    "base64-encoded bytes)."
+                )
+        if not self.is_development:
+            for name, url in (
+                ("GOOGLE_TOKEN_URL", self.GOOGLE_TOKEN_URL),
+                ("GOOGLE_JWKS_URL", self.GOOGLE_JWKS_URL),
+                ("APPLE_BASE_URL", self.APPLE_BASE_URL),
+            ):
+                if urlsplit(url).scheme != "https":
+                    raise RuntimeError(
+                        f"{name} must be an https URL when ENVIRONMENT is {self.ENVIRONMENT!r}."
+                    )
+            if self.apple_extra_audiences:
+                raise RuntimeError(
+                    f"APPLE_EXTRA_AUDIENCES must be empty when ENVIRONMENT is "
+                    f"{self.ENVIRONMENT!r}: it exists to test with Expo Go in development."
+                )
 
     def check_cors(self) -> None:
         """Browser access exists only for a local preview: loopback http origins, in development.

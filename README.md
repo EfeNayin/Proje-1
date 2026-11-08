@@ -329,6 +329,100 @@ değişirse (oturum dönemi) gecikmiş yanıt atılır; kurtarma hiçbir oturum 
 **Test:** gerçek PostgreSQL + Redis ve ayrı bir test SMTP kutusu (`backend/tests/support/smtp_sink.py`).
 Native doğrulama ve e2e kutusu: `mobile/README.md`.
 
+## Google ve Apple ile giriş (yalnız iOS; 8 Kasım 2026)
+
+> **Durum:** kod ve yerel testler hazır; **gerçek Google/Apple hesabıyla, gerçek cihazda hiç denenmedi**
+> ve sağlayıcı konsolları kurulmadı. İki bayrak da kapalı gelir (`SOCIAL_GOOGLE_ENABLED`,
+> `SOCIAL_APPLE_ENABLED`); kapalıyken uygulama düğmeleri göstermez, e-posta/parola her
+> platformda aynen çalışır. Kod: `app/domains/auth/social*.py`, modeller `app/models/identity.py`.
+
+**Kimlik modeli.** Bir kimlik `(sağlayıcı, subject)` çiftidir; e-posta yalnızca **iletişim bilgisidir,
+anahtar değil**. E-posta eşleşmesi hiçbir zaman bir kimliği hesaba bağlamaz ve oturum vermez. Tablo
+`user_identities`: `UNIQUE(provider, subject)` (bir sağlayıcı hesabı en fazla bir Aures hesabına ait),
+`UNIQUE(user_id, provider)` (bir hesapta sağlayıcı başına bir kimlik), `ON DELETE CASCADE`.
+Parolasız hesap için sahte parola **yoktur**: `users.password_hash` artık `NULL` olabilir
+(`User.has_password`). Giriş, kurtarma ve silme `NULL`'u "parolası yok" sayar; kurtarma bilinmeyen
+adresle aynı yanıtı verir (hesabın parolasız olduğu sızmaz).
+
+**Akış.**
+1. `GET /auth/social/providers` hangi sağlayıcının **gerçekten çalıştığını** söyler (uygulama düğmeyi
+   buna göre gösterir; genel istemci kimlikleri dışında sır dönmez).
+2. `POST /auth/social/login` `{provider, …kimlik bilgisi}`. Kimlik tanınıyorsa `status: signed_in` + token'lar.
+   Tanınmıyorsa **hesap açılmaz**: `status: onboarding` ve 15 dk süreli, tek kullanımlık bir jeton
+   (veritabanında yalnızca SHA-256 özeti) döner.
+3. `POST /auth/social/complete` kullanıcı adı (kayıttaki kurallar), cihaz saat dilimi, gerekirse e-posta ile
+   hesabı **tek işlemde** kimlikle birlikte açar ve jetonu harcar. Eşzamanlı iki tamamlama: biri kazanır,
+   diğeri `400/409` alır, **yetim kullanıcı kalmaz** (`UNIQUE` kısıtı hakemdir).
+4. `POST /auth/social/link-existing` zaten Aures hesabı olan kişi için: **o hesabın e-postası ve
+   parolası** + taze sağlayıcı kimlik bilgisi. Parola kanıtı giriş kovasını paylaşır (aynı 5 deneme limiti).
+   Hesap, sağlayıcının bildirdiği e-posta ile değil **yazılan** e-posta ile bulunur. Apple relay adresi
+   (`@privaterelay.appleid.com`) da bu yoldan mevcut hesaba bağlanabilir.
+5. `POST /auth/social/link` (oturum açık) sağlayıcı eklemek için: taze kimlik bilgisi + **kanıt** (parola, ya da
+   parolasız hesapta hesabın zaten sahip olduğu sağlayıcıyla yeniden giriş). Başka hesapta bağlı bir kimlik
+   `409` alır; hiçbir şey taşınmaz/birleşmez. Oturum açıkken başarısızlıklar **403**'tür (istemci 401'i
+   "oturum öldü" sayıp çıkış yapar).
+6. `GET /users/me/sign-in-methods` hesabın parola/sağlayıcı durumu.
+
+**Doğrulama (sunucuda, HTTPS, kimlik bilgisi istemciden doğrudan kabul edilmez).**
+- *Google:* uygulama tek kullanımlık **server auth code** yollar; sunucu bunu Google'ın token ucunda web
+  istemci sırrıyla bozdurur, gelen ID token'ın imza (yalnız RS256), `iss`, `aud` (= web istemci kimliği),
+  `exp`/`iat`, `sub` kontrolünü yapar. Yeniden oynatma koruması **kodun tek kullanımlık olmasıdır**
+  (ücretsiz `@react-native-google-signin` kütüphanesi nonce taşıyamaz).
+- *Apple:* uygulama `POST /auth/social/nonce` ile sunucudan **tek kullanımlık nonce** (5 dk, veritabanında
+  yalnız özet, `DELETE … RETURNING` ile atomik harcanır) alır, Apple'a verir, dönen identity token'ı
+  nonce'uyla yollar. İmza/`iss`/`aud`/`exp`/`sub` ve `nonce` claim'i (ham ya da SHA-256 hex) kontrol edilir.
+  Nonce, token doğrulandıktan **sonra** harcanır (böylece yabancı biri başkasının nonce'unu yakamaz); harcandıktan
+  sonra sonraki adım başarısız olsa bile aynı kimlik bilgisi bir daha geçmez.
+- JWKS anahtarları önbelleklenir; bilinmeyen `kid` en fazla 30 sn'de bir yeniden çekilir; sağlayıcı
+  çökerse eldeki anahtarlar çalışmaya devam eder. Sağlayıcı kesintisi `503` + `Retry-After` +
+  `social_provider_unavailable` (e-posta ile girişin hâlâ çalıştığını söyler); geçersiz bilgi `401`.
+- **Hangi e-posta kabul edilir:** Google'da yalnız `email_verified: true` adres yeni hesabın e-postası olur
+  (`hd` aranmaz; adres sadece iletişim bilgisidir). Doğrulanmamış/eksik adres için kullanıcıdan e-posta
+  istenir ve bu adres mevcut bir hesaba aitse `409`. Apple adresi yalnız kişi paylaştıysa gelir.
+- Günlüğe kod/jeton/claim **yazılmaz**; `422` doğrulama hataları gönderilen değeri geri yansıtmaz.
+- Sınırlar (IP başına, `RATE_LIMIT_SOCIAL_*`): nonce, login, complete, Apple bildirimi.
+
+**Apple özelliği: yetki geri alma.** Giriş sırasında `authorization_code` varsa sunucu bunu Apple'a bozdurup
+**yenileme jetonunu Fernet ile şifreli** saklar (`SOCIAL_TOKEN_ENCRYPTION_KEY`). Hesap silinirken, silme
+**yanıtından sonra** arka planda `revoke` çağrılır; Apple çökükse silme **engellenmez ve geri alınmaz**
+(yalnız yetki iptali kaçar; kullanıcı Ayarlar → Apple Kimliği'nden elle kaldırabilir). Apple'ın sunucu
+bildirimleri (`consent-revoked`, `account-delete`) `POST /auth/social/apple/notifications` ucuna gelir:
+kimlik işaretlenir, saklı jeton silinir; **hesabın başka giriş yolu (parola) yoksa** oturumlar da kapatılır
+(`credential_version` artar, refresh token'lar silinir), varsa oturumlar korunur.
+
+**Hesap silme.** `POST /users/me/delete-account` gövdesi **tam olarak birini** ister:
+`password` ya da `provider_credential` (parolasız hesap için aynı sağlayıcıyla taze giriş; başka kişinin
+sağlayıcı hesabı `403 reauth_failed`). Sağlayıcı çökerse `503` ve deneme hakkı **harcanmaz**.
+
+**Dağıtım / geri alma kısıtları.**
+- Migration `c7d9f3a2b6e1`: `users.password_hash`'i `NULL`'a açar + 3 tablo ekler (`user_identities`,
+  `social_signup_challenges`, `social_nonces`). Mevcut satırlar değişmez; **eklemeli** bir göçtür, eski kod
+  yeni şemada çalışmaya devam eder **parolasız hesap yokken**.
+- **Geri alma (downgrade) parolasız hesap varsa BİLEREK reddedilir** (`RuntimeError`): `NOT NULL`'a dönmek
+  için sahte parola uydurmak yerine önce o hesaplar silinmeli/parola almalıdır. Bu yüzden sıra: (1) bayrakları
+  kapat, (2) uygulama sürümünü geri al, (3) gerekirse parolasız hesapları ele al, (4) en son `alembic downgrade`.
+- Bayrakları kapatmak yeni girişleri durdurur; var olan sağlayıcı hesapları parola belirleme akışı olmadan
+  giriş yapamaz (kurtarma parolasız hesapta bilerek çalışmaz). **Çalışan mobil sürümde bir hesap sağlayıcı
+  bayrağı kapatılınca kilitli kalır**; bayrağı kapatmadan önce bunu hesaba katın.
+- Paylaşılan (staging) veritabanına migration sahibin kararıdır; bu dalda uygulanmadı.
+
+**Sahip adımları** (sağlayıcı konsolu/imzalama bu depoda yapılmaz):
+1. *Google Cloud:* bir OAuth izin ekranı (yalnız `openid email profile`), **iki** OAuth istemcisi: **Web
+   application** (kimlik + sır → `GOOGLE_WEB_CLIENT_ID/SECRET`) ve **iOS** (bundle id `com.efenayin.aures` →
+   `GOOGLE_IOS_CLIENT_ID`). iOS istemcisinin **ters istemci kimliği** (`com.googleusercontent.apps.…`)
+   uygulamanın URL şemasıdır (`app.config.js` → `GOOGLE_IOS_URL_SCHEME`).
+2. *Apple Developer:* App ID'de **Sign in with Apple** yeteneği; **Keys** altında Sign in with Apple anahtarı
+   (`.p8` bir kez indirilir → `APPLE_PRIVATE_KEY`, `APPLE_KEY_ID`, `APPLE_TEAM_ID`, `APPLE_CLIENT_ID` = bundle id).
+   Sunucu bildirimi adresi olarak `https://<backend>/auth/social/apple/notifications` kaydedilir.
+3. *Backend ortamı (staging):* yukarıdaki değişkenler + `SOCIAL_TOKEN_ENCRYPTION_KEY`, ardından bayrak(lar).
+4. *Mobil:* imzalı geliştirme/TestFlight yapısı (Expo Go **olmaz**, Google kütüphanesi native modül ister).
+
+**Doğrulanmadı / kaynağı hafıza:** Apple'ın `auth/token`, `auth/revoke` ve bildirim yük biçimleri ile Google'ın
+`serverAuthCode` bozdurma ayrıntıları (`redirect_uri` gerektirmemesi) resmî dokümandan **bu oturumda
+okunamadı**; kod bu biçimlere göre yazıldı ve yalnız taklit sunucuya karşı test edildi. Apple nonce
+claim'inin ham mı özet mi geldiği gerçek cihazda bakılmalı (ikisi de kabul edilir). Gerçek sağlayıcı sonucu
+için `PROJE_1_CODEX_INCELEME.md` Adım 82.
+
 ## Staging'e dağıtım (Render + Neon + Upstash + Resend, ücretsiz planlar)
 
 > **Durum (5 Kasım 2026): Neon ve Upstash gerçek servislere karşı doğrulandı, staging
