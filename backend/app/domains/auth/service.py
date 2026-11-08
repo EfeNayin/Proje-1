@@ -103,11 +103,13 @@ async def login(
 
     user = await db.scalar(select(User).where(User.email == payload.email))
 
-    # Always run one bcrypt verification, against a throwaway hash when the email
-    # is unknown, so the response time does not reveal whether it is registered.
+    # Always run one bcrypt verification, against a throwaway hash when the email is
+    # unknown or the account has no password (it was created with Google or Apple), so
+    # the response time does not reveal either. Both answer exactly like a wrong password.
     try:
+        stored_hash = user.password_hash if user is not None else None
         password_hash = (
-            user.password_hash if user is not None else await offload(dummy_password_hash)
+            stored_hash if stored_hash is not None else await offload(dummy_password_hash)
         )
         password_ok = await password_matches(payload.password, password_hash)
     except PasswordWorkBusyError:
@@ -115,7 +117,7 @@ async def login(
         await attempt.refund()
         raise
 
-    if user is None or not password_ok:
+    if user is None or stored_hash is None or not password_ok:
         raise UnauthorizedError(_INVALID_CREDENTIALS)
 
     # A right password is not a failed attempt; only failures stay counted.

@@ -125,7 +125,10 @@ async def request_recovery(
 
     user = await db.scalar(select(User).where(User.email == email))
     challenge_id, code = uuid4(), new_code()
-    if user is None:
+    # An account without a password (created with Google or Apple) is answered like an
+    # unknown address: an emailed code would let whoever controls the mailbox add a password
+    # to an account that was never reachable that way. It signs in with its provider.
+    if user is None or not user.has_password:
         hash_code(challenge_id, uuid4(), code)  # the same work as below
         return None
 
@@ -167,6 +170,8 @@ async def reset_password(
     attempt = await throttle.recovery_confirm(email)
 
     user = await db.scalar(select(User).where(User.email == email))
+    if user is not None and not user.has_password:
+        user = None  # no password to reset: the same answer as an unknown address
     challenge = (
         await db.scalar(
             select(PasswordResetChallenge).where(PasswordResetChallenge.user_id == user.id)

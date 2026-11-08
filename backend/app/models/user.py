@@ -59,8 +59,12 @@ class User(Base):
     email: Mapped[str] = mapped_column(CITEXT, nullable=False, unique=True)
     username: Mapped[str] = mapped_column(CITEXT, nullable=False, unique=True)
 
-    # bcrypt hash. The plaintext password is never stored.
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # bcrypt hash. The plaintext password is never stored. NULL for an account created with
+    # Google or Apple: it has no password (not a dummy one), so password sign-in, password
+    # recovery and password-confirmed deletion all treat it as "no password" (see
+    # has_password and app/domains/auth/social.py). Every account made before social
+    # sign-in existed has a hash.
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     first_name: Mapped[str | None] = mapped_column(Text)
     last_name: Mapped[str | None] = mapped_column(Text)
@@ -178,6 +182,10 @@ class User(Base):
         CheckConstraint("carb_goal_g BETWEEN 0 AND 1000", name="users_carb_goal_g_check"),
         CheckConstraint("fat_goal_g BETWEEN 0 AND 400", name="users_fat_goal_g_check"),
     )
+
+    @property
+    def has_password(self) -> bool:
+        return self.password_hash is not None
 
     def __repr__(self) -> str:
         return f"<User {self.username}>"

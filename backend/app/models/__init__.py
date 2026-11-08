@@ -14,6 +14,7 @@ from app.models.coaching import (
     WorkoutFeedback,
 )
 from app.models.exercise import Exercise, ExerciseMuscleGroup, MuscleGroup
+from app.models.identity import SocialNonce, SocialSignupChallenge, UserIdentity
 from app.models.program import Program, TemplateExercise, TemplateSaveRequest, WorkoutTemplate
 from app.models.readiness import ReadinessLog
 from app.models.recovery import PasswordResetChallenge
@@ -36,9 +37,12 @@ __all__ = [
     "RefreshToken",
     "Set",
     "SetSaveRequest",
+    "SocialNonce",
+    "SocialSignupChallenge",
     "TemplateExercise",
     "TemplateSaveRequest",
     "User",
+    "UserIdentity",
     "Workout",
     "WorkoutFeedback",
     "WorkoutTemplate",

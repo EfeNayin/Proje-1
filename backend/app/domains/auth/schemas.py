@@ -229,6 +229,9 @@ class UserProfile(BaseModel):
     activity_level: ActivityLevel | None
     nutrition_goal: NutritionGoalKind | None
     coach_enabled: bool
+    # False for an account created with Google or Apple. The app uses it to decide how the
+    # person confirms sensitive actions (a password, or signing in with the provider again).
+    has_password: bool
     created_at: datetime
 
 

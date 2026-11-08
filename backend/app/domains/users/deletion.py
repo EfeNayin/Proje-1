@@ -94,7 +94,10 @@ async def delete_account(
     # Counted before bcrypt, so a refused caller never reaches it.
     attempt = await throttle.begin(user)
     try:
-        matches = await password_matches(password, user.password_hash)
+        # An account without a password (created with Google or Apple) cannot confirm with one.
+        matches = user.password_hash is not None and await password_matches(
+            password, user.password_hash
+        )
     except PasswordWorkBusyError:
         # Nothing was checked, so this is not a wrong password: it must not count.
         await attempt.refund()

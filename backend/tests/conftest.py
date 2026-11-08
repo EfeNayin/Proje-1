@@ -122,6 +122,9 @@ async def _clean_tables(db_engine: AsyncEngine) -> AsyncGenerator[None, None]:
     yield
     async with db_engine.begin() as conn:
         await conn.execute(text("DELETE FROM users"))
+        # No foreign key to users, so the line above does not reach them.
+        await conn.execute(text("DELETE FROM social_signup_challenges"))
+        await conn.execute(text("DELETE FROM social_nonces"))
 
 
 @pytest.fixture

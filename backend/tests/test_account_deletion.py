@@ -1080,6 +1080,8 @@ class TestEveryReferenceToAUserHasADecision:
         ("readiness_logs", "user_id", "CASCADE"),
         ("refresh_tokens", "user_id", "CASCADE"),
         ("template_save_requests", "user_id", "CASCADE"),
+        # Linked Google/Apple identities belong to the account and go with it.
+        ("user_identities", "user_id", "CASCADE"),
         ("workouts", "user_id", "CASCADE"),
     }
 
