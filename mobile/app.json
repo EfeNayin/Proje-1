@@ -4,6 +4,12 @@
     "slug": "aures",
     "version": "1.0.0",
     "orientation": "portrait",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/751aebe3-68ef-4617-ac03-9060ce2d0d81"
+    },
     "icon": "./assets/images/icon.png",
     "scheme": "aures",
     "userInterfaceStyle": "light",

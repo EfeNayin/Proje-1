@@ -18,7 +18,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "update:check": "node scripts/check-staging-update.cjs",
+    "update:staging": "node scripts/check-staging-update.cjs && npx eas-cli@latest update --platform ios --channel testflight-staging --environment production"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -42,6 +44,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.2",
     "expo-system-ui": "~57.0.3",
+    "expo-updates": "~57.0.27",
     "expo-web-browser": "~57.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",

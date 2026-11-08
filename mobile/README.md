@@ -288,6 +288,73 @@ gönderim bekleme sayacının native davranışı ve sıfırlama sürerken hesap
 `tests/password-recovery.test.cjs` (gerçek kurtarma deposu ve oturum dönemi korumaları, sahte ağ) ve
 backend testleriyle kapsanır. **Gerçek bir e-posta sağlayıcısıyla teslimat hiçbir yerde doğrulanmadı.**
 
+## TestFlight güncellemeleri (Expo Update, `testflight-staging`)
+
+Aures'in dahili TestFlight uygulamasına JavaScript, ekran düzeni, yazı tipi ve görsel değişiklikleri yeni
+TestFlight yapısı olmadan ulaştırmak için. **Native** bir değişiklik (yeni paket, eklenti, yetki, `app.json`
+yapılandırması) hâlâ yeni yapı ister. Bu yapı bir kez alınır; ondan sonrası güncelleme olur.
+
+**Nasıl çalışır**
+- `app.json`: `updates.url` (bu Expo projesinin güncelleme sunucusu) ve `runtimeVersion: { policy: "fingerprint" }`.
+  Çalışma zamanı sürümü, native tarafın (eklentiler, native modüller, yapılandırma, `eas.json`, `.gitignore`,
+  `package.json` `scripts`) parmak izidir. Bir güncelleme yalnız **aynı parmak izli** yapıya iner; native tarafı
+  farklı bir yapıya hiç inmez. Sabit bir sürüm dizesinde bu koruma olmazdı.
+- `eas.json`: `testflight-staging` profili artık `channel: "testflight-staging"` taşır ve değişkenleri
+  `environment: "production"` ortamından okur. (Apple/Google anahtarları `AURES_APPLE_SIGN_IN` ve
+  `AURES_GOOGLE_IOS_URL_SCHEME` bugün yalnız EAS'taki `production` ortamında; profil bunu açıkça sabitler.)
+- **Güncelleme, profilin `env` alanını ve yerel `.env`'i kullanmaz.** `eas update --environment production`
+  yalnız EAS'taki o ortamın değişkenlerini kullanır. Bu yüzden `EXPO_PUBLIC_API_URL` orada da tanımlı olmalı;
+  yoksa güncellemedeki uygulama API adresi olmadan açılır ve `src/config.ts` açılışta hata fırlatır.
+  `AURES_*` anahtarları da orada olmalı; yoksa çalışma zamanı sürümü yapıdakinden farklı çıkar ve güncelleme
+  hiçbir cihaza inmez. `npm run update:check` bunların hepsini yayınlamadan önce okur (yalnız okur).
+- Güncelleme arka planda iner ve **bir sonraki açılışta** uygulanır: uygulamayı tamamen kapatıp yeniden açın
+  (bazen iki kez).
+
+**Tek seferlik kurulum ve yeni yapı (PowerShell, `mobile` klasöründe)**
+```powershell
+cd C:\Users\efena\Desktop\Proje-1-windows\mobile
+git fetch; git checkout fix/provider-button-polish; git pull          # expo-updates'li commit'i alır
+npm ci
+npx eas-cli@latest whoami                                             # efe.nayn@gmail.com görünmeli; değilse: npx eas-cli@latest login
+
+# 1) Güncellemelerin de görmesi için API adresini EAS ortamına bir kez yazın:
+npx eas-cli@latest env:set --name EXPO_PUBLIC_API_URL --value https://proje-1-t6lh.onrender.com --environment production --visibility plaintext
+npm run update:check                                                  # "OK: ..." yazmalı
+
+# 2) Yapıyı alın (build numarası otomatik artar) ve TestFlight'a yükleyin:
+npx eas-cli@latest build --platform ios --profile testflight-staging
+npx eas-cli@latest submit --platform ios --latest                     # ya da daha önce nasıl yüklediyseniz öyle
+
+# 3) Yapının çalışma zamanı sürümünü, bu bilgisayarın ürettiğiyle karşılaştırın:
+npx eas-cli@latest build:list --platform ios --limit 1 --json --non-interactive   # son yapı; "runtimeVersion" alanı
+#   (alan adı bu yapı için henüz görülmedi: yoksa expo.dev > Aures > Builds > son yapı > "Runtime version")
+$out = npx eas-cli@latest env:exec production "npx expo-updates runtimeversion:resolve --platform ios"
+($out | Where-Object { $_.StartsWith('{"runtimeVersion"') } | ForEach-Object { ($_ | ConvertFrom-Json).runtimeVersion })
+```
+İki değer **aynı** olmalı. Farklıysa güncelleme o yapıya inmez: önce nedenini bulun (aşağıda "Çalışma zamanı
+sürümü eşleşmiyorsa"). TestFlight'tan yeni yapıyı telefona bir kez yükleyin.
+
+**Küçük bir güncelleme denemesi (aynı uygulamada)**
+1. Telefonda görünen küçük bir JavaScript değişikliği yapın, örneğin `app/(auth)/login.tsx` içindeki ayırıcı
+   yazısı `or` → `or continue with`. (`eas.json`, `app.json`, `package.json` ve yapılandırmadaki görselleri
+   değiştirmeyin; onlar parmak izini bozar.)
+2. Yayınlayın (önce `update:check` otomatik çalışır, geçmezse hiçbir şey yayınlanmaz):
+   ```powershell
+   npm run update:staging -- --message "Deneme: giriş ekranı ayırıcı yazısı"
+   ```
+   İlk yayında kanal yoksa hata verirse bir kez: `npx eas-cli@latest channel:create testflight-staging`, sonra yeniden.
+3. Kontrol: `npx eas-cli@latest channel:view testflight-staging` kanalın dalını ve çalışma zamanı sürümünü gösterir;
+   sürüm 3. adımdaki değerle aynı olmalı.
+4. Telefonda Aures'i tamamen kapatın, yeniden açın (gerekirse bir kez daha). Yazı değişmiş olmalı.
+5. Denemeyi geri alın: değişikliği geri çevirip `npm run update:staging -- --message "Deneme geri alındı"`.
+
+**Çalışma zamanı sürümü eşleşmiyorsa:** parmak izi; `eas.json`, `.gitignore`, `package.json` (bağımlılıklar ve
+`scripts` dahil), `app.json`/`app.config.js`, eklentiler ve yapılandırmadaki görsellerden oluşur. Yapıdan sonra bunlardan
+biri değiştiyse (ya da `ios/`/`android/` klasörü üretildiyse) değer değişir. Güvenli yön: eşleşmeyen güncelleme **inmez**,
+uygulamayı bozmaz. Yerel `AURES_*` anahtarlarıyla değil, **her zaman** `--environment production` ile yayınlayın
+(`npm run update:staging` bunu yapar): anahtarlar eksik olduğunda Apple/Google eklentileri yapılandırmadan düşer ve
+parmak izi değişir.
+
 ## Daha fazla bilgi
 
 - [Expo documentation](https://docs.expo.dev/)
