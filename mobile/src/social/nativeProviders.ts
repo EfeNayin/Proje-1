@@ -18,6 +18,7 @@
 import { Platform } from "react-native";
 
 import { SocialCancelledError, SocialUnavailableError } from "./errors";
+import { subscribeToRevocation } from "./revocation";
 
 export type AppleResult = {
   identityToken: string;
@@ -141,11 +142,7 @@ export const nativeProviders: NativeProviders = {
   watchAppleRevocation(onRevoked) {
     const apple = loadApple();
     if (!apple) return () => undefined;
-    try {
-      const subscription = apple.addRevokeListener(onRevoked);
-      return () => subscription.remove();
-    } catch {
-      return () => undefined;
-    }
+    // The cleanup is guarded too, not only the registration (see social/revocation.ts).
+    return subscribeToRevocation((listener) => apple.addRevokeListener(listener), onRevoked);
   },
 };

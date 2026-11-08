@@ -42,6 +42,15 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 83: My Expo Go'da `Cannot read property 'remove' of undefined` çökmesi — 8 Kasım 2026
+
+Dal: `feat/social-sign-in` (taban `e7869e0`). Yalnız mobil; SDK, bağımlılık, backend ve sağlayıcı ayarları değişmedi.
+
+- **Bulgu (sahip bildirdi, ben cihazda görmedim):** My Expo Go'da `mobile/src/social/nativeProviders.ts:146` çöküyordu. **Kök neden:** `watchAppleRevocation` kaydı `try/catch` içindeydi ama `addRevokeListener()` kullanılabilir bir abonelik döndürmediğinde (`undefined`) hata kayıtta değil, `AuthContext`'in effect temizliği çalıştığında (oturum kapanırken/ekran sökülürken, render sırasında) `subscription.remove()` satırında patlıyordu. `try/catch` o anı göremez. Sahibin yerel JS koşumundaki yeniden üretimi doğruladı; ben aynı davranışı testle sabitledim.
+- **Düzeltme:** abonelik işi `src/social/revocation.ts` içindeki `subscribeToRevocation`'a taşındı. Kayıt hata verirse veya abonelik `undefined`/`null`/`remove`'suz ise temizlik sessiz bir no-op; geçerli abonelikte geri çağırma korunur ve temizlikte `remove()` **bir kez** (yöntem olarak, `this` korunarak) çağrılır; `remove()` fırlatırsa yutulur. İmzalı Aures yapısında iptal dinleyicisi aynen çalışır.
+- **Test:** `tests/apple-revocation.test.cjs` (8): `undefined`, `null`, `remove`'suz nesne, fırlatan kayıt, geçerli abonelik (geri çağırma + tek `remove`), çoklu temizlik, `this`, fırlatan `remove`, ve sarmalayıcının doğrudan `.remove()` çağırmadığı. Mobil takım 829 testten 827 geçti; 2 başarısız yine bu işten önce var olan `appearance.test.cjs`. `tsc` ve `lint` sıfır hata/uyarı, `git diff --check` temiz.
+- **Cihazda hâlâ denenmedi:** düzeltmeyi My Expo Go'da (e-posta/parola girişi + çıkış, çökme olmadan) ve imzalı yapıda (Apple ID ayarlarından Aures'i kaldırınca dinleyicinin tetiklenmesi) sahip doğrulamalı. Aynı türden bir varsayım `nativeProviders.ts`'te `GoogleSignin.signOut().catch(...)` satırında da var (Promise döndüğü varsayılıyor); Expo Go'da Google modülü yüklenmediği için o yola girilmiyor, bu yüzden kapsam dışı bırakıldı.
+
 ### Adım 82: Google ve Apple ile giriş (yalnız iOS) — 8 Kasım 2026
 
 Dal: `feat/social-sign-in` (taban `fix/register-keyboard-scroll` @ `3e87968`). Üç ayrı iş: hesap modeli, backend akışları, mobil. E-posta/parola her platformda ve sağlayıcı kapalıyken olduğu gibi çalışır. **Sağlayıcı bayrakları kapalı gelir; hiçbir sağlayıcı konsolu kurulmadı, hiçbir paylaşılan veritabanına migration uygulanmadı, imzalı yapı alınmadı.**
