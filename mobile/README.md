@@ -291,69 +291,81 @@ backend testleriyle kapsanır. **Gerçek bir e-posta sağlayıcısıyla teslimat
 ## TestFlight güncellemeleri (Expo Update, `testflight-staging`)
 
 Aures'in dahili TestFlight uygulamasına JavaScript, ekran düzeni, yazı tipi ve görsel değişiklikleri yeni
-TestFlight yapısı olmadan ulaştırmak için. **Native** bir değişiklik (yeni paket, eklenti, yetki, `app.json`
-yapılandırması) hâlâ yeni yapı ister. Bu yapı bir kez alınır; ondan sonrası güncelleme olur.
+TestFlight yapısı olmadan ulaştırmak için. **Native** bir değişiklik hâlâ yeni yapı ister (aşağıdaki kural).
 
 **Nasıl çalışır**
-- `app.json`: `updates.url` (bu Expo projesinin güncelleme sunucusu) ve `runtimeVersion: { policy: "fingerprint" }`.
-  Çalışma zamanı sürümü, native tarafın (eklentiler, native modüller, yapılandırma, `eas.json`, `.gitignore`,
-  `package.json` `scripts`) parmak izidir. Bir güncelleme yalnız **aynı parmak izli** yapıya iner; native tarafı
-  farklı bir yapıya hiç inmez. Sabit bir sürüm dizesinde bu koruma olmazdı.
-- `eas.json`: `testflight-staging` profili artık `channel: "testflight-staging"` taşır ve değişkenleri
-  `environment: "production"` ortamından okur. (Apple/Google anahtarları `AURES_APPLE_SIGN_IN` ve
-  `AURES_GOOGLE_IOS_URL_SCHEME` bugün yalnız EAS'taki `production` ortamında; profil bunu açıkça sabitler.)
-- **Güncelleme, profilin `env` alanını ve yerel `.env`'i kullanmaz.** `eas update --environment production`
-  yalnız EAS'taki o ortamın değişkenlerini kullanır. Bu yüzden `EXPO_PUBLIC_API_URL` orada da tanımlı olmalı;
-  yoksa güncellemedeki uygulama API adresi olmadan açılır ve `src/config.ts` açılışta hata fırlatır.
-  `AURES_*` anahtarları da orada olmalı; yoksa çalışma zamanı sürümü yapıdakinden farklı çıkar ve güncelleme
-  hiçbir cihaza inmez. `npm run update:check` bunların hepsini yayınlamadan önce okur (yalnız okur).
+- `app.json`: `updates.url` (bu Expo projesinin güncelleme sunucusu) ve `runtimeVersion: { policy: "appVersion" }`.
+  Çalışma zamanı sürümü uygulamanın `version` alanıdır (şimdi `1.0.0`). Güncelleme, **aynı `version`'a sahip her
+  yapıya** iner; başka sürümlere inmez. Yapı numarası (`autoIncrement`, EAS'ta uzaktan) bunu etkilemez.
+- Neden `fingerprint` değil: `fingerprint` ile alınan yapı `ddc691d2…` "Configure expo-updates" aşamasında düştü.
+  EAS parmak izini iOS projesini üretip paketleri bağladıktan **sonra** yeniden hesaplıyor; sonuç (`462fe9c9…`)
+  Windows'ta hesaplananla (`da060347…`) eşleşmedi (üretilen `ios` klasörü ve bazı paketlerin özetleri farklıydı).
+  Windows'tan bu eşleşme sağlanamaz, o yüzden belgelenmiş `appVersion` politikası kullanılıyor.
+- `eas.json`: `testflight-staging` profili `channel: "testflight-staging"` taşır ve değişkenleri `environment:
+  "production"` ortamından okur (Apple/Google anahtarları `AURES_APPLE_SIGN_IN` ve `AURES_GOOGLE_IOS_URL_SCHEME`
+  EAS'ta yalnız orada; profil bunu açıkça sabitler). Profilin `env` alanındaki staging API adresi korunur.
+- **Güncelleme, profilin `env` alanını ve yerel `.env`'i kullanmaz.** `eas update --environment production` yalnız
+  EAS'taki o ortamın değişkenlerini kullanır; bu yüzden `EXPO_PUBLIC_API_URL` orada da tanımlı ve profildekiyle aynı
+  olmalı, yoksa güncellemedeki uygulama API adresi olmadan açılır (`src/config.ts` açılışta hata fırlatır).
 - Güncelleme arka planda iner ve **bir sonraki açılışta** uygulanır: uygulamayı tamamen kapatıp yeniden açın
   (bazen iki kez).
 
-**Tek seferlik kurulum ve yeni yapı (PowerShell, `mobile` klasöründe)**
+**KURAL: native değişiklik = `version` yükseltmesi + yeni imzalı yapı, güncellemeden önce.**
+`appVersion` politikası native değişiklikleri **fark etmez**: `version` aynı kaldıkça çalışma zamanı sürümü aynı kalır
+ve bir güncelleme, çalıştıramayacağı bir yapıya inebilir. Aşağıdakilerden biri değiştiyse güncelleme yayınlamayın:
+önce `app.json` içindeki `version`'ı yükseltin (ör. `1.0.0` → `1.0.1`; `autoIncrement` yalnız yapı numarasını artırır,
+`version`'ı artırmaz), `eas build` ile yeni yapıyı alın, TestFlight'tan telefona yükleyin, **ondan sonra** yayınlayın.
+- native bir paket eklemek/kaldırmak/yükseltmek (`expo-*` modülleri, `react-native-*`, `@react-native-*`, Expo SDK);
+- `app.json` / `app.config.js` içinde eklenti, yetki, `infoPlist`, `ios`/`plugins`/`scheme` gibi native ayarlar,
+  `AURES_*` anahtarları (Apple/Google girişi);
+- uygulama simgesi ve açılış ekranı görselleri (`assets/images/icon.png`, `splash-icon.png`).
+
+Güncellemeyle **gidebilenler**: `app/`, `src/` altındaki JavaScript/TypeScript, ekran düzeni, `useFonts` ile yüklenen
+yazı tipleri (`assets/fonts`), `require` ile yüklenen görseller, yalnız JavaScript olan bağımlılıklar.
+
+**Yayın öncesi kontrol (`npm run update:staging` bunu otomatik çalıştırır, yalnız okur)**
+1. Yapılandırma: kanal, ortam sabitlemesi, `appVersion` politikası, `updates.url`, EAS `production`'daki
+   `EXPO_PUBLIC_API_URL` (profildekiyle aynı mı).
+2. Çalışma zamanı: `expo-updates`'in EAS ortamıyla çözdüğü iOS çalışma zamanı sürümü (güncellemenin yayınlanacağı) ile
+   kanaldaki en yeni **bitmiş** iOS yapısının sürümü karşılaştırılır. Uyuşmazlıkta yayınlamaz. Yapı numarasını yazar:
+   TestFlight'ta yüklü olanla aynı mı, siz doğrulayın.
+3. Uyarı (durdurmaz): yapının commit'inden beri `package.json`, `package-lock.json`, `app.json`, `app.config.js`,
+   `eas.json`, simge veya açılış görseli değiştiyse dosyaları listeler. Bunlar native'e dokunduysa yukarıdaki kural geçerli.
+
+**Tek seferlik yapı (PowerShell, `mobile` klasöründe)**
 ```powershell
 cd C:\Users\efena\Desktop\Proje-1-windows\mobile
-git fetch; git checkout fix/provider-button-polish; git pull          # expo-updates'li commit'i alır
+git fetch; git checkout fix/provider-button-polish; git pull
 npm ci
-npx eas-cli@latest whoami                                             # efe.nayn@gmail.com görünmeli; değilse: npx eas-cli@latest login
+npx eas-cli@latest whoami                      # efe.nayn@gmail.com; değilse: npx eas-cli@latest login
+npm run update:check                           # yalnız yapılandırma; "OK (configuration)" yazmalı
+# "no EXPO_PUBLIC_API_URL" derse bir kez: npx eas-cli@latest env:set --name EXPO_PUBLIC_API_URL --value https://proje-1-t6lh.onrender.com --environment production --visibility plaintext
 
-# 1) Güncellemelerin de görmesi için API adresini EAS ortamına bir kez yazın:
-npx eas-cli@latest env:set --name EXPO_PUBLIC_API_URL --value https://proje-1-t6lh.onrender.com --environment production --visibility plaintext
-npm run update:check                                                  # "OK: ..." yazmalı
-
-# 2) Yapıyı alın (build numarası otomatik artar) ve TestFlight'a yükleyin:
 npx eas-cli@latest build --platform ios --profile testflight-staging
-npx eas-cli@latest submit --platform ios --latest                     # ya da daha önce nasıl yüklediyseniz öyle
-
-# 3) Yapının çalışma zamanı sürümünü, bu bilgisayarın ürettiğiyle karşılaştırın:
-npx eas-cli@latest build:list --platform ios --limit 1 --json --non-interactive   # son yapı; "runtimeVersion" alanı
-#   (alan adı bu yapı için henüz görülmedi: yoksa expo.dev > Aures > Builds > son yapı > "Runtime version")
-$out = npx eas-cli@latest env:exec production "npx expo-updates runtimeversion:resolve --platform ios"
-($out | Where-Object { $_.StartsWith('{"runtimeVersion"') } | ForEach-Object { ($_ | ConvertFrom-Json).runtimeVersion })
+npx eas-cli@latest submit --platform ios --latest      # ya da daha önce nasıl yüklediyseniz öyle
 ```
-İki değer **aynı** olmalı. Farklıysa güncelleme o yapıya inmez: önce nedenini bulun (aşağıda "Çalışma zamanı
-sürümü eşleşmiyorsa"). TestFlight'tan yeni yapıyı telefona bir kez yükleyin.
+Yapı "Configure expo-updates" aşamasını geçmeli (`ddc691d2` orada düştü). Bittikten sonra TestFlight'tan telefona bir
+kez yükleyin, sonra eşleşmeyi bu bilgisayardan doğrulayın:
+```powershell
+node scripts/check-staging-update.cjs --target-build
+```
+"OK (runtime)" yazmalı ve hedef yapı olarak az önce yüklediğiniz yapı numarasını göstermeli.
 
 **Küçük bir güncelleme denemesi (aynı uygulamada)**
 1. Telefonda görünen küçük bir JavaScript değişikliği yapın, örneğin `app/(auth)/login.tsx` içindeki ayırıcı
-   yazısı `or` → `or continue with`. (`eas.json`, `app.json`, `package.json` ve yapılandırmadaki görselleri
-   değiştirmeyin; onlar parmak izini bozar.)
-2. Yayınlayın (önce `update:check` otomatik çalışır, geçmezse hiçbir şey yayınlanmaz):
+   yazısı `or` → `or continue with`. (Native sayılan dosyalara dokunmayın; yukarıdaki kural.)
+2. Yayınlayın (önce kontrol çalışır, geçmezse hiçbir şey yayınlanmaz):
    ```powershell
    npm run update:staging -- --message "Deneme: giriş ekranı ayırıcı yazısı"
    ```
-   İlk yayında kanal yoksa hata verirse bir kez: `npx eas-cli@latest channel:create testflight-staging`, sonra yeniden.
 3. Kontrol: `npx eas-cli@latest channel:view testflight-staging` kanalın dalını ve çalışma zamanı sürümünü gösterir;
-   sürüm 3. adımdaki değerle aynı olmalı.
+   sürüm hedef yapınınkiyle (`1.0.0`) aynı olmalı.
 4. Telefonda Aures'i tamamen kapatın, yeniden açın (gerekirse bir kez daha). Yazı değişmiş olmalı.
 5. Denemeyi geri alın: değişikliği geri çevirip `npm run update:staging -- --message "Deneme geri alındı"`.
 
-**Çalışma zamanı sürümü eşleşmiyorsa:** parmak izi; `eas.json`, `.gitignore`, `package.json` (bağımlılıklar ve
-`scripts` dahil), `app.json`/`app.config.js`, eklentiler ve yapılandırmadaki görsellerden oluşur. Yapıdan sonra bunlardan
-biri değiştiyse (ya da `ios/`/`android/` klasörü üretildiyse) değer değişir. Güvenli yön: eşleşmeyen güncelleme **inmez**,
-uygulamayı bozmaz. Yerel `AURES_*` anahtarlarıyla değil, **her zaman** `--environment production` ile yayınlayın
-(`npm run update:staging` bunu yapar): anahtarlar eksik olduğunda Apple/Google eklentileri yapılandırmadan düşer ve
-parmak izi değişir.
+**Güncelleme inmiyorsa:** önce `channel:view` ile güncellemenin çalışma zamanı sürümünü, sonra yapınınkini
+(`node scripts/check-staging-update.cjs --target-build` hedef yapıyı yazar) karşılaştırın. Farklıysa `version`
+yükseltilmiş ama o sürümün yapısı yüklenmemiştir (ya da tersi). Aynıysa uygulamayı tamamen kapatıp iki kez açın.
 
 ## Daha fazla bilgi
 

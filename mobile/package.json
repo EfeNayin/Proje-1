@@ -20,7 +20,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "update:check": "node scripts/check-staging-update.cjs",
-    "update:staging": "node scripts/check-staging-update.cjs && npx eas-cli@latest update --platform ios --channel testflight-staging --environment production"
+    "update:staging": "node scripts/check-staging-update.cjs --target-build && npx eas-cli@latest update --platform ios --channel testflight-staging --environment production"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
