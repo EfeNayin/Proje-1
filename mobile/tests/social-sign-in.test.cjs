@@ -552,14 +552,14 @@ test('the sign-in screen orders email, "or", the providers, then Create account'
   assert.match(source, /offered\.apple \|\| offered\.google/);
 });
 
-test('the provider buttons are the providers\' own, at one size, and fully labelled', () => {
+test('the provider buttons are Apple\'s own and a flat Google one, at one size, and fully labelled', () => {
+  // How they look and behave is covered by provider-buttons.test.cjs.
   const source = read('src/social/ProviderButtons.tsx');
   assert.match(source, /AppleAuthenticationButton/);
-  assert.match(source, /GoogleSigninButton/);
+  assert.doesNotMatch(source, /GoogleSigninButton/);
   assert.match(source, /accessibilityLabel="Sign in with Apple"/);
   assert.match(source, /accessibilityLabel="Sign in with Google"/);
-  assert.match(source, /google: \{ width: "100%", height: HEIGHT \}/);
-  assert.match(source, /apple: \{ width: "100%", height: HEIGHT \}/);
+  assert.match(source, /apple: \{ width: "100%", height: BUTTON_HEIGHT \}/);
   assert.match(source, /Platform\.OS !== "ios"/);
 });
 
