@@ -410,12 +410,14 @@ sağlayıcı hesabı `403 reauth_failed`). Sağlayıcı çökerse `503` ve denem
 1. *Google Cloud:* bir OAuth izin ekranı (yalnız `openid email profile`), **iki** OAuth istemcisi: **Web
    application** (kimlik + sır → `GOOGLE_WEB_CLIENT_ID/SECRET`) ve **iOS** (bundle id `com.efenayin.aures` →
    `GOOGLE_IOS_CLIENT_ID`). iOS istemcisinin **ters istemci kimliği** (`com.googleusercontent.apps.…`)
-   uygulamanın URL şemasıdır (`app.config.js` → `GOOGLE_IOS_URL_SCHEME`).
+   uygulamanın URL şemasıdır: derleme ortamına `AURES_GOOGLE_IOS_URL_SCHEME` olarak verilir (`mobile/app.config.js`).
 2. *Apple Developer:* App ID'de **Sign in with Apple** yeteneği; **Keys** altında Sign in with Apple anahtarı
    (`.p8` bir kez indirilir → `APPLE_PRIVATE_KEY`, `APPLE_KEY_ID`, `APPLE_TEAM_ID`, `APPLE_CLIENT_ID` = bundle id).
    Sunucu bildirimi adresi olarak `https://<backend>/auth/social/apple/notifications` kaydedilir.
 3. *Backend ortamı (staging):* yukarıdaki değişkenler + `SOCIAL_TOKEN_ENCRYPTION_KEY`, ardından bayrak(lar).
-4. *Mobil:* imzalı geliştirme/TestFlight yapısı (Expo Go **olmaz**, Google kütüphanesi native modül ister).
+4. *Mobil:* imzalı geliştirme/TestFlight yapısı (Expo Go **olmaz**, Google kütüphanesi native modül ister). EAS derleme profilinin
+   `env`'ine (ya da EAS ortam değişkenlerine) `AURES_APPLE_SIGN_IN=1` ve `AURES_GOOGLE_IOS_URL_SCHEME=com.googleusercontent.apps.…`
+   eklenir; ikisi yoksa uygulama bu özellikler olmadan, yalnız e-postayla derlenir. `mobile/eas.json` bilerek değiştirilmedi.
 
 **Doğrulanmadı / kaynağı hafıza:** Apple'ın `auth/token`, `auth/revoke` ve bildirim yük biçimleri ile Google'ın
 `serverAuthCode` bozdurma ayrıntıları (`redirect_uri` gerektirmemesi) resmî dokümandan **bu oturumda

@@ -42,6 +42,45 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 82: Google ve Apple ile giriş (yalnız iOS) — 8 Kasım 2026
+
+Dal: `feat/social-sign-in` (taban `fix/register-keyboard-scroll` @ `3e87968`). Üç ayrı iş: hesap modeli, backend akışları, mobil. E-posta/parola her platformda ve sağlayıcı kapalıyken olduğu gibi çalışır. **Sağlayıcı bayrakları kapalı gelir; hiçbir sağlayıcı konsolu kurulmadı, hiçbir paylaşılan veritabanına migration uygulanmadı, imzalı yapı alınmadı.**
+
+**Kararlar (gerekçeleriyle)**
+- **Kimlik = (sağlayıcı, subject); e-posta anahtar değil.** E-posta eşleşmesi hiçbir yerde bir kimliği hesaba bağlamaz ve oturum vermez; `UNIQUE(provider, subject)` bir sağlayıcı hesabının tek Aures hesabına ait olmasını, yarışlarda da, veritabanına bırakır.
+- **Yeni kimliğe hesap açılmaz.** İlk girişte yalnız 15 dk'lık, tek kullanımlık (veritabanında özeti) bir onboarding kaydı döner; hesap, kimlikle birlikte tek işlemde `POST /auth/social/complete` ile açılır. Eşzamanlı iki tamamlamada biri kazanır, yetim kullanıcı kalmaz (testli).
+- **Mevcut hesaba bağlama bilinçli ve kanıtlı:** onboarding sırasında *yazılan* e-posta + parola (giriş kovasını paylaşır), ya da oturum açıkken parola / parolasız hesapta zaten bağlı sağlayıcıyla yeniden giriş. Başka hesapta bağlı kimlik `409`; hiçbir veri taşınmaz.
+- **Parolasız hesap:** `users.password_hash` NULL olabilir, sahte parola yok. Giriş yanlış parola gibi, kurtarma bilinmeyen adres gibi yanıtlar; silme sağlayıcıyla yeniden girişle onaylanır.
+- **Google:** sunucu auth code'u web istemci sırrıyla bozdurur; telefondan ID token **kabul edilmez**. Yeniden oynatma koruması kodun tek kullanımlık olmasıdır (ücretsiz kütüphane nonce taşıyamıyor; ücretli sürüm taşıyabilir, bu sürümde gerekmedi).
+- **Apple:** sunucu nonce'u (5 dk, özetle saklı, `DELETE…RETURNING` ile tek harcama). `nonce` claim'i ham ya da SHA-256 hex kabul edilir. Yenileme jetonu Fernet ile şifreli saklanır, hesap silinince **yanıttan sonra** geri alınır; Apple çökükse silme engellenmez/geri alınmaz. `consent-revoked`/`account-delete` bildirimi: parolası olmayan hesabın oturumları kapanır, parolalı hesabınki kalır.
+- **403, 401 değil:** oturum açıkken sağlayıcı/parola kanıtı başarısızlıkları 403; istemci 401'i "oturum öldü" sayıp çıkış yapıyor.
+- **Mobil:** Apple'ın ve Google'ın kendi native düğmeleri, aynı boyutta, Apple üstte; yalnız iOS + modül yapıda var + sunucu "etkin" diyor ise görünür. Native modüller tembel `require` ile yüklenir (modülsüz yapı yine açılır). `mobile/app.config.js` `app.json`'u temel alır; eklentileri yalnız `AURES_APPLE_SIGN_IN=1` ve `AURES_GOOGLE_IOS_URL_SCHEME` verilirse ekler. Tek seferde tek giriş denemesi (e-posta + Google + Apple + onboarding aynı kapıyı paylaşır). Geç dönen native/sunucu sonucu, auth epoch'u sayesinde daha yeni oturumun yerini alamaz (mutasyonla doğrulandı: koruma bozulunca 3 test kırılıyor).
+
+**Commit'ler:** hesap modeli `f66a624`, backend akışları `56153b7`, mobil `31a7ad8`.
+
+**Yerelde doğrulanan (gerçek PostgreSQL + Redis; sağlayıcı sınırı taklit)**
+- Backend: tam takım **1429 geçti** (yeni testler: `test_social_account_model` 14, `test_social_auth` 59, `test_social_providers` 55, `test_social_config` 34). `ruff check` temiz, `mypy app` strict temiz. Hesap modeli commit'i temiz bir worktree'de tek başına `ruff`+`mypy`+107 testle doğrulandı.
+- `test_social_providers`: gerçek RSA imzalı token'larla imza, `iss`, `aud`, `exp`, `sub`, HS256/`none` algoritma karışıklığı, Apple nonce (ham/özet/uyumsuz), JWKS önbelleği (soğuma, sahte `kid` seli, kesintide eldeki anahtar), Apple `client_secret` (ES256, istenen claim'ler), token alışverişi/geri alma hataları, bildirim biçimleri. **Bu testler yazılırken gerçek bir hata buldu:** bozuk `.p8` `JWSError` fırlatıyordu ve "asla fırlatmaz" sözü yanlıştı; `JOSEError` yakalanıyor.
+- Mobil: `tests/social-sign-in.test.cjs` 44 test (gerçek istemci/oturum denetleyicisi/depolar, yalnız Keychain, ağ ve native SDK taklit). `tsc --noEmit` ve `npm run lint` sıfır hata/uyarı. `expo export --platform ios` **paketleme** başarılı (cihazda çalıştığını göstermez). Tüm mobil takım: 2 test başarısız, ikisi de bu işten **önce** var olan `appearance.test.cjs` (`status bar…`, `no application screen…`).
+
+**Doğrulanmayan (dürüst sınır)**
+- **Hiçbir gerçek Google/Apple sheet'i açılmadı**; gerçek hesapla giriş, bağlama, yeniden açılış, silme hiçbirinde denenmedi. Aşağıdaki liste bunun içindir.
+- Apple `auth/token`, `auth/revoke` ve sunucu bildirimi yük biçimleri ile Google kod bozdurma ayrıntıları (`redirect_uri` gerekmemesi, `serverAuthCode` için `webClientId`+`offlineAccess`) kaynak dokümandan bu oturumda okunamadığı için **hafızadan**; yalnız taklit sunucuya karşı test edildi. Expo'nun SDK 57 Apple sayfası okundu (API adları, `ERR_REQUEST_CANCELED`, simülatörde `getCredentialStateAsync` hatası) ama **nonce'un özetlenip özetlenmediğini belirtmiyor**; bu yüzden sunucu ikisini de kabul ediyor, gerçek cihazda hangisinin geldiği bakılmalı.
+- `GoogleSigninButton` (native `GIDSignInButton`) tam genişlikte ve 52 pt yükseklikte gerçekten düzgün görünüyor mu, Apple düğmesiyle hizalı mı: görülmedi. Apple iptal dinleyicisinin (`addRevokeListener`) gerçek davranışı görülmedi; simülatör bunu desteklemez.
+- Sunucu bildirim adresinin Apple'a kaydı, Apple'ın bildirimi gerçekten göndermesi, `SOCIAL_TOKEN_ENCRYPTION_KEY` kaybı/döndürülmesi (saklı jetonlar çözülemez, giriş etkilenmez, yalnız geri alma kaçar) denenmedi.
+- Migration `c7d9f3a2b6e1` yalnız yerel geliştirme ve çöp veritabanında (yükselt → parolasız hesap varken reddet → temiz geri al → tekrar yükselt) denendi.
+
+**Bilinen sınırlar / riskler**
+- **Geri alma:** parolasız hesap varken `alembic downgrade` bilerek reddedilir. Sıra: bayrakları kapat → uygulamayı geri al → o hesapları ele al → en son downgrade.
+- **Bayrağı kapatmak parolasız hesapları kilitler** (giriş ve silme onaylama sağlayıcıyla yapıldığı için); şimdilik parola belirleme akışı yok. Sağlayıcı bayrağı açıkken kapatma kararı bunu hesaba katmalı.
+- Profilde "sağlayıcı ekle/kaldır" ekranı **yok**; oturum açıkken bağlama ucu (`POST /auth/social/link`) backend'de hazır ve testli, arayüzü sonraya. Bağlama bugün yalnız onboarding'deki "I already have an Aures account" yolundan.
+- Google tarafında yeniden oynatma koruması yalnız kodun tek kullanımlık olmasıdır (nonce yok); nonce'lu akış için ücretli kütüphane ya da başka bir entegrasyon gerekir, bu sürümde kapsam dışı.
+- Expo Go'da Google çalışmaz (native modül); Apple de gerçek Expo Go audience'ı için `APPLE_EXTRA_AUDIENCES` (yalnız development) ister.
+
+**Sahibin sıradaki adımları:** `README.md` → "Google ve Apple ile giriş" → "Sahip adımları" (Google OAuth: Web + iOS istemci, ters istemci kimliği; Apple: Sign in with Apple yeteneği, `.p8` anahtar, bildirim adresi; staging ortam değişkenleri; EAS derleme `env`'i; imzalı yapı).
+
+**İmzalı iPhone kontrol listesi (hiçbiri henüz yapılmadı):** (1) yapıyı yükle, giriş ekranında Apple ve Google düğmelerinin göründüğünü, aynı boyutta olduğunu ve e-posta alanlarının/klavyenin bozulmadığını gör. (2) Google ile yeni hesap: onboarding → kullanıcı adı → oturum açık; uygulamayı kapatıp aç → oturum sürüyor. (3) Çıkış yap, aynı Google ile gir → aynı hesap. (4) Apple ile aynısı, bir kez "e-postamı gizle" ile (relay adresi), bir kez adı reddederek. (5) Var olan e-posta/parola hesabıyla "I already have an Aures account" → bağlan → sonra sağlayıcıyla giriş aynı hesap. (6) Sheet'i kapat → hata yok, yazılan e-posta duruyor. (7) Parolasız hesapta Delete account → sağlayıcıyla yeniden giriş → silindi; aynı sağlayıcıyla tekrar giriş → onboarding (yeni hesap). (8) Apple ID ayarlarından Aures'i kaldır → bildirim geldiyse parolasız hesabın oturumu kapanıyor mu. Her biri için gerçek sonucu buraya ayrıca yaz.
+
 ### Adım 81: Kayıt formunda klavye açıkken "Create Account"a ulaşma — 8 Kasım 2026
 
 Dal: `fix/register-keyboard-scroll` (taban `feat/floating-rest-timer` @ `6fdcc02`, yüzen sayaç çalışmasını taşır). Yalnız mobil; backend, bağımlılık, SDK ve Personal Details telefon düzenleme kapsam dışı.
