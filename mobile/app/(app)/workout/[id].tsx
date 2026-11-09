@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -53,6 +54,8 @@ import {
 import { buildTemplateExercisesFromWorkout } from "../../../src/workout/templateFromWorkout";
 import { getStartingPlan } from "../../../src/workout/startingPlan";
 import { formatRecordedRir, parseRirInput } from "../../../src/workout/rir";
+import { PlateCalculator } from "../../../src/workout/PlateCalculator";
+import { initialPlateTotal } from "../../../src/workout/plateMath";
 import { PreviousExercise } from "../../../src/workout/PreviousExercise";
 import { useEntryReveal } from "../../../src/workout/useEntryReveal";
 import { restTimerStore } from "../../../src/workout/restTimerStore";
@@ -627,6 +630,12 @@ function SetForm({
   const [submitting, setSubmitting] = useState(false);
   const submitInFlight = useRef(false);
   const disabled = busy || submitting || blocked;
+  // The calculator is told the weight once, when it opens, and cannot write back.
+  const [calculatorTotal, setCalculatorTotal] = useState<string | null>(null);
+  const openCalculator = () => {
+    Keyboard.dismiss();
+    setCalculatorTotal(initialPlateTotal(weight));
+  };
 
   const weightHint = lastSet ? formatWeightValue(Number(lastSet.weight_kg), unit) : "0";
   const repsHint = lastSet ? String(lastSet.reps) : "8";
@@ -719,6 +728,20 @@ function SetForm({
         <RirField value={rir} onChangeText={setRir} disabled={disabled} onFocus={focusPanel} onBlur={blurPanel} />
       </View>
 
+      {/* Barbell only, and named so: the workout data does not say which equipment
+          an exercise uses, and guessing it from the exercise name would be wrong
+          for some. The user decides when a bar is involved. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Plate calculator"
+        accessibilityHint="Barbell only. Shows the plates to load on each side of the bar."
+        style={({ pressed }) => [styles.plateCalculatorButton, pressed && styles.rowPressed]}
+        onPress={openCalculator}
+      >
+        <Ionicons name="barbell-outline" size={20} color={light.text} />
+        <Text style={styles.plateCalculatorText}>Plate calculator</Text>
+      </Pressable>
+
       <View style={styles.entryActions}>
         {/* A box and the words, so the on/off state is not carried by colour alone. */}
         <Pressable
@@ -754,6 +777,9 @@ function SetForm({
       </View>
       {submitError ? (
         <Text accessibilityRole="alert" style={styles.error}>{submitError}</Text>
+      ) : null}
+      {calculatorTotal !== null ? (
+        <PlateCalculator unit={unit} initialTotal={calculatorTotal} onClose={() => setCalculatorTotal(null)} />
       ) : null}
     </View>
   );
@@ -1807,6 +1833,18 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 10,
   },
+  plateCalculatorButton: {
+    alignSelf: "flex-start",
+    minHeight: MIN_TOUCH,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    marginTop: 6,
+    borderRadius: 22,
+    backgroundColor: light.surface,
+  },
+  plateCalculatorText: { color: light.text, fontSize: 14, fontWeight: "600" },
   warmupToggle: {
     minHeight: MIN_TOUCH,
     flexDirection: "row",

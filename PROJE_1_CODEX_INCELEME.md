@@ -42,6 +42,42 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 88: Aktif antrenmanda barbell plaka hesaplayıcı — 9 Kasım 2026
+
+**Amaç:** Verilen toplam ağırlık için barın **her iki yanına** hangi plakaların takılacağını göstermek. Yalnız bu iş; ısınma seti üretimi ayrı bir görev. Dal: `feat/barbell-plate-calculator` (taban `2c22886`). Yalnız mobil; backend, API, şema ve yeni bağımlılık yok.
+
+**Davranış:**
+- Her egzersizin set formunda, "Warm-up set" satırının üstünde **"Plate calculator"** düğmesi (simge: barbell). Aktif antrenman verisi ekipmanı güvenilir biçimde taşımadığı için egzersiz adından ekipman **tahmin edilmez**; düğme ve açılan ekran açıkça "Barbell plate calculator" der, düğmenin erişilebilirlik ipucu "Barbell only" der.
+- Açılırken toplam alanı, o formdaki **ağırlık taslağından** doldurulur (geçerli bir sayıysa; değilse boş — son setin ağırlığı tahmin edilmez). Sonra hesaplayıcının kendi alanıdır; ona yazılan hiçbir şey taslağa dönmez. Hesaplayıcıya taslak yazıcı, set kaydı veya zamanlayıcı kontrolü **verilmez** (yalnız `unit`, `initialTotal`, `onClose`).
+- Uygulamanın mevcut kg/lb tercihini kullanır; birim dönüşümü yok (kullanıcının yazdığı 100 lb, 100 lb kalır). Bar ağırlığı serbest alan; mevcut plaka boyutları işaretlenir. kg varsayılanı: 20 kg bar, 25/20/15/10/5/2.5/1.25. lb varsayılanı: 45 lb bar, 45/35/25/10/5/2.5. Seçenekler: kg 25…0.25, lb 100, 45…1.25. İlk sürüm her seçili boyuttan yeterince çift olduğunu varsayar (ekranda yazılı).
+- Toplam **bar dahil**. Sonuç "Per side": `1 × 20 kg`, … ve `87.5 kg = 20 kg bar + 2 × 33.75 kg` özeti.
+- Boş/geçersiz toplam ve bar, ondalık virgül ve nokta, bardan düşük hedef, boş bar (bar = 0 geçerli; bar alanı boş = hata; hedef = bar → "Just the bar") ve plaka seçilmemesi ayrı mesajlarla ele alınır. Tam yük mümkün değilse **eşit veya altındaki en yakın toplam** ve **eksik miktar** gösterilir; hiçbir zaman yukarı yuvarlanmaz.
+- Bar ve plaka seçimi cihazda, birim başına ayrı anahtarla (`bodytrack.plate_calculator.kg|lb`, `expo-secure-store`, `restPreference` kalıbı) saklanır. Okuma/yazma hatası kullanıcıya yansımaz (varsayılana dönülür); geçerli olmayan bar saklanmaz; kullanıcı yüklenmeden değiştirirse saklı değer üzerine yazmaz.
+
+**Mimari kararlar:**
+- Hesap `src/workout/plateMath.ts` içinde saf ve yereldir. **Açgözlü ("en büyük plaka önce") yöntem kullanılmadı:** yalnız 25 ve 20 ile 40/yan = 20 + 20, açgözlü 25 alıp 15'te takılır. Bunun yerine en büyük ulaşılabilir yan yükünü bulan küçük bir dinamik programlama + en az plaka kullanılır. Eşit plaka sayılı alternatiflerde (örn. 33.75/yan: 20+10+2.5+1.25 ile 25+5+2.5+1.25) gösterilen belirleyici ama keyfidir; kullanıcı istemediği boyutu seçimden çıkarır.
+- Tüm toplamlar **binde bir birim** tam sayılarıyla yapılır (kayan nokta kayması yok); 1.25 ve 0.25 plakalar tam korunur. Paylaşılan `formatWeight` (1 ondalık) **değiştirilmedi**; plaka sayıları için kendi `formatPlateNumber` kullanılır. En çok 3 ondalık girilebilir, fazlası geçersiz (yanlışlıkla "tam" görünmemesi için). Üst sınır: toplam 2000, bar 500. Dosya adı `plateMath.ts`: `PlateCalculator.tsx` ile yalnız büyük/küçük harf farkı olan bir ad Windows/macOS ve `tsc` için çakışma çıkarıyordu (ilk denemede `tsc` yakaladı).
+- Arayüz, egzersiz-geçmişi paneli kalıbında tam ekran `Modal`; dinlenme sayacını **yalnız okur**: açıkken ekrandaki sayaç gizlenir (`restTimerStore.coverInline()`), başlığında `RestCountdownChip` görünür, kapanınca bırakılır. Sayaç başlatma/durdurma/silme yok.
+
+**Doğrulama — koda karşı (gerçekten yapıldı):**
+- Yeni `mobile/tests/plate-calculator.test.cjs`: **36 test**. 87.5 kg / 20 kg bar / 20-10-2.5-1.25 → her biri bir tane; açgözlü yöntemin kaçırdığı durum; lb (135 → 1×45, 100 → 25 + 2.5); ondalık virgül; ondalık plaka ve kayan nokta; ulaşılamayan hedef (88 → 87.5, 0.5 eksik; 21 → yalnız bar); bardan düşük; boş bar (üç anlamı); geçersiz girdiler; plaka yok; üst sınır süresi; birim başına varsayılan ve saklama (anahtar karakterleri, bozuk JSON, Keychain hatası, kg↔lb sızmaması); gerçek `SetForm` ve `PlateCalculator` fonksiyonlarının ana makine adaptörleriyle sürülmesi: kullanıcı hesaplayıcıda toplamı, barı ve plakayı değiştirip kapattıktan sonra **ağırlık/tekrar/RIR taslağı, "Warm-up set" işareti ve "Log set" durumu aynı**, `onDraftChange` ve `onSubmit` hiç çağrılmaz; gerçek `restTimerStore` ile çalışan sayaç nesnesi aynı kalır ve `covers` açılıp kapanınca 1→0 olur.
+- Mobil `tsc --noEmit`: 0 hata. `npm run lint` (`expo lint`): 0 hata/uyarı. `git diff --check`: temiz. Tüm `node --test tests/*.test.cjs`: **899 testten 897 geçti, 2 kaldı** — ikisi de `tests/appearance.test.cjs` içinde ve **bu değişiklikten bağımsız**: Windows yol ayırıcısı (`app\_layout.tsx` ≠ `app/_layout.tsx`, `src\lightTheme.ts`). Aynı iki test, değişiklik öncesi `2c22886` temiz çıkışında (geçici worktree) da aynı şekilde düşüyor. Düzeltilmedi (kapsam dışı).
+- Backend'e dokunulmadı; backend testleri koşulmadı.
+
+**Doğrulama — tarayıcıda:** yapılmadı. (Web önizlemesi backend + CORS + hesap gerektirir; bu görevde kurulmadı. Modal ve klavye davranışı zaten tarayıcıda iPhone'un yerini tutmazdı.)
+
+**Doğrulama — cihazda:** yapılmadı. "Kodda mevcut" ≠ "telefonda denendi". Aşağıdaki liste fiziksel iPhone içindir.
+
+**Fiziksel iPhone kontrol listesi** (antrenman açıkken):
+1. Bir egzersizin kartında **Weight (kg)** alanına `87,5` yaz → **Plate calculator**'a dokun. Başlık **Barbell plate calculator**; **Total (kg)** `87,5`, **Bar (kg)** `20` görünmeli; plaka seçimini yalnız **20**, **10**, **2.5**, **1.25** bırakınca **Per side**: 1 × 20, 1 × 10, 1 × 2.5, 1 × 1.25.
+2. **Total (kg)**'ı `88` yap → "closest … 87.5 kg, 0.5 kg short" uyarısı; `15` yap → bar altı uyarısı; boşalt → yalnız yönlendirme metni.
+3. **Plate calculator**'ı kapat (**Close plate calculator**, yandaki boşluk veya geri hareketi): **Weight (kg)**, **Reps**, **RIR**, **Warm-up set** işareti aynı olmalı; hiçbir set eklenmemiş olmalı.
+4. **Start rest timer**'a dokun, sonra **Plate calculator**'ı aç: başlıkta geri sayım rozeti ilerlemeli; kapatınca ekrandaki sayaç kaldığı yerden sürmeli (sıfırlanmamış, durmamış).
+5. Barı `15` yap, **25** plakasını kapat, uygulamayı tamamen kapatıp aç, aynı yoldan yeniden gir: **15** ve **25** kapalı hatırlanmalı. Profile'dan birimi lb yap: **Bar (lb)** `45`, plakalar 45/35/25/10/5/2.5 (kg ayarı sızmamalı). `100` → 1 × 25 lb, 1 × 2.5 lb.
+6. Klavye açıkken sonuç alanı görünür kalmalı; ondalık tuş takımında virgül/nokta ikisi de çalışmalı. VoiceOver'da **Plate calculator**, **Total weight in kg, bar included**, **25 kg plate** (işaretli/işaretsiz) ve "Per side: …" okunmalı (yalnız kodla doğrulandı, ekranda denenmedi).
+
+**Sınırlar / bilinçli yapılmayanlar:** Hesaplayıcıdan sete **"kullan"/yaz-geri düğmesi yok** (istenmedi; sonuç yalnız gösterilir). Ekipman çıkarımı yok. Plaka çifti sayısı sınırı yok. Isınma seti üretimi yok. TestFlight ve Expo Update yayını ayrı sahip adımları (bu adım bir yayın yapmadı).
+
 ### Adım 87: Expo Update çalışma zamanı sürümü `fingerprint` → `appVersion` — 8 Kasım 2026
 
 Dal: `fix/provider-button-polish` (taban `b8f8458`). Değişen: `app.json` politikası, güncelleme öncesi kontrol, testler, README. Kanal `testflight-staging`, staging API, Google/Apple yapı ayarları, bundle ID ve Expo projesi aynı. **Yeni yapı alınmadı, TestFlight'a yüklenmedi, güncelleme yayınlanmadı.**
