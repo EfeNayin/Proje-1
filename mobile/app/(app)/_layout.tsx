@@ -17,7 +17,7 @@ import { RestTimerOverlay } from "../../src/workout/RestTimerPill";
 /**
  * Deep links (and reloads) that land on a screen below the tabs, such as
  * /research, have no history of their own, so the stack would show no back
- * control. Anchoring on (tabs) puts the tabs — Training first — underneath
+ * control. Anchoring on (tabs) puts the tabs — Start Workout first — underneath
  * the linked screen, and the native back arrow, swipe-back gesture and Android
  * back button all return there. In-app navigation is unaffected: router.push
  * from a tab already stacks on top of it.
@@ -75,7 +75,9 @@ export default function AppLayout() {
         />
         {/* Draws its own bar (back arrow, delete, editable name); a native header too would show the name twice. */}
         <Stack.Screen name="program/[id]" options={{ title: "Program", headerShown: false }} />
+        <Stack.Screen name="program/new" options={{ title: "New program" }} />
         <Stack.Screen name="program/template/[id]" options={{ title: "Template" }} />
+        <Stack.Screen name="exercise/[id]" options={{ title: "Exercise" }} />
         <Stack.Screen
           name="profile/edit"
           options={{ title: "Edit Profile", presentation: "modal" }}

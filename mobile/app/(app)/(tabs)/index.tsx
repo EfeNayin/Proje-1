@@ -1,5 +1,21 @@
 /**
- * Training home: resume or start a session, and browse past ones.
+ * Start Workout: the workout and program hub, and the screen the app opens on.
+ *
+ * From top to bottom: the one primary action (Start an Empty Workout, or Resume
+ * workout while a session is active), Create program directly beneath it, then
+ * My programs. Finished sessions live in the History tab; the Programs tab is
+ * folded in here.
+ *
+ * Everything this screen does is an existing behaviour reached from a new place:
+ *  - starting (and the optional readiness check-in) is src/workout/workoutStarter.ts,
+ *    the logic the old Training screen had, unchanged;
+ *  - creating a program is the /program/new screen (createProgramCreator, so the
+ *    same validation and duplicate-submit protection);
+ *  - a program card opens /program/[id], where activating, deleting, renaming and
+ *    template editing already live. A tap on a card never changes which program
+ *    is active.
+ * Research, which used to be a row on the old Training screen, is a button in
+ * the title bar so it stays one tap away however many programs the list holds.
  */
 
 import { Ionicons } from "@expo/vector-icons";
@@ -7,10 +23,10 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   Modal,
   Pressable,
   RefreshControl,
-  SectionList,
   StyleSheet,
   Text,
   View,
@@ -18,431 +34,259 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as programsApi from "../../../src/api/programs";
-import type { ProgramDetail } from "../../../src/api/programs";
+import type { ProgramSummary } from "../../../src/api/programs";
 import * as readinessApi from "../../../src/api/readiness";
 import * as workoutsApi from "../../../src/api/workouts";
-import type { WorkoutSummary } from "../../../src/api/workouts";
 import { light } from "../../../src/lightTheme";
+import { TabTopBar } from "../../../src/navigation/TabTopBar";
+import { createProgramsHub } from "../../../src/programs/programsHub";
 import { clearActiveWorkout, getActiveWorkout, setActiveWorkout } from "../../../src/workout/activeWorkout";
 import { isReadinessCheckinEnabled } from "../../../src/workout/readinessPreference";
 import { resolveActiveWorkoutId } from "../../../src/workout/resolveActiveWorkout";
-import { createWorkoutHistory } from "../../../src/workout/workoutHistory";
+import { createWorkoutStarter } from "../../../src/workout/workoutStarter";
 
 const MIN_TOUCH = 44;
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
-}
-
-function isSameLocalDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-/**
- * "Today" / "Yesterday" / a full date — grouping is by the device's LOCAL
- * calendar day, same reasoning as the server's per-user-timezone weekly
- * volume cutoff: a workout performed_at close to midnight UTC must land in
- * the day it actually happened in for the person doing it, not in UTC's.
- */
-function sectionTitleFor(performedAt: string): string {
-  const day = new Date(performedAt);
-  const today = new Date();
-  if (isSameLocalDay(day, today)) return "Today";
-
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (isSameLocalDay(day, yesterday)) return "Yesterday";
-
-  return formatDate(performedAt);
-}
-
-/** For a session still in progress, shown instead of a duration it doesn't have yet. */
-function formatTimeOfDay(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
-/** Fixed session length, for a finished workout only — nothing to show for one still in progress. */
-function formatCardDuration(performedAt: string, finishedAt: string): string {
-  const seconds = Math.max(
-    0,
-    Math.floor((new Date(finishedAt).getTime() - new Date(performedAt).getTime()) / 1000),
-  );
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
-
-/**
- * The line under a card's title. The day is already the section header above;
- * each row adds what the header can't — its duration once finished, or its
- * start time while it's the one still in progress.
- */
-function cardMetaFor(item: WorkoutSummary): { icon: "timer-outline" | "time-outline" | "information-circle-outline"; text: string } {
-  if (!item.finished_at) return { icon: "time-outline", text: formatTimeOfDay(item.performed_at) };
-  if (item.finished_automatically === false) {
-    return { icon: "timer-outline", text: formatCardDuration(item.performed_at, item.finished_at) };
-  }
-  return {
-    icon: "information-circle-outline",
-    text: item.finished_automatically ? "Auto-closed · duration unknown" : "Duration unavailable",
-  };
-}
-
-type HistorySection = { title: string; data: WorkoutSummary[] };
-
-/**
- * Workouts already arrive most-recent-first from the server, so grouping is
- * a single linear pass — no re-sorting, no bucketing into a map first.
- */
-function groupByDay(workouts: WorkoutSummary[]): HistorySection[] {
-  const sections: HistorySection[] = [];
-  let currentDay: string | null = null;
-
-  for (const workout of workouts) {
-    const day = new Date(workout.performed_at);
-    const key = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
-    if (key !== currentDay) {
-      sections.push({ title: sectionTitleFor(workout.performed_at), data: [] });
-      currentDay = key;
-    }
-    sections[sections.length - 1].data.push(workout);
-  }
-
-  return sections;
-}
-
-export default function TrainingHome() {
+export default function StartWorkoutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [history] = useState(() => createWorkoutHistory(workoutsApi.listWorkouts));
-  const { items: workouts, loading, loadingMore, hasMore, error } = useSyncExternalStore(
-    history.subscribe, history.getSnapshot,
+  const [hub] = useState(() =>
+    createProgramsHub({ listPrograms: programsApi.listPrograms, getProgram: programsApi.getProgram }),
+  );
+  const { programs, activeProgram, error: programsError, loading: programsLoading } = useSyncExternalStore(
+    hub.subscribe,
+    hub.getSnapshot,
+  );
+  const [starter] = useState(() =>
+    createWorkoutStarter({
+      isCheckinEnabled: isReadinessCheckinEnabled,
+      getTodayReadiness: readinessApi.getTodayReadiness,
+      startEmptyWorkout: () => workoutsApi.startWorkout(),
+      startFromTemplate: programsApi.startWorkoutFromTemplate,
+      setActiveWorkout,
+    }),
   );
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [activeProgram, setActiveProgram] = useState<ProgramDetail | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [starting, setStarting] = useState(false);
-  // State only updates on the next render, so a fast double tap could pass a
-  // `starting` check twice. The refs close that gap.
-  const startingRef = useRef(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  // State only updates on the next render, so a fast double tap could stack two
+  // copies of a screen; the ref closes that gap. (Starting has its own guard.)
   const navigatingRef = useRef(false);
 
-  /** Navigates at most once per visit to this screen: a double tap must not stack two copies. */
+  /** Navigates at most once per visit to this screen. */
   const go = (navigate: () => void) => {
     if (navigatingRef.current) return;
     navigatingRef.current = true;
     navigate();
   };
 
-  const load = useCallback(async () => {
-    // See src/workout/resolveActiveWorkout.ts for what this reconciles and
-    // why (Adım 20, PROJE_1_CODEX_INCELEME.md, Bölüm 8 madde H3): the local
-    // pointer is a device key, so a stale one — left by a workout finished
-    // elsewhere, deleted, or belonging to a different account previously
-    // signed in on this device — must not be taken at face value.
-    setActiveId(
-      await resolveActiveWorkoutId({
+  // Re-run on every focus so a workout finished or a program changed elsewhere
+  // is reflected on return.
+  useFocusEffect(
+    useCallback(() => {
+      navigatingRef.current = false;
+      let cancelled = false;
+      void hub.refresh();
+      // See src/workout/resolveActiveWorkout.ts for what this reconciles and why
+      // (Adım 20): the local pointer is a device key, so a stale one — left by a
+      // workout finished elsewhere, deleted, or belonging to a different account
+      // previously signed in on this device — must not be taken at face value.
+      resolveActiveWorkoutId({
         getActiveWorkout,
         setActiveWorkout,
         clearActiveWorkout,
         getWorkout: workoutsApi.getWorkout,
         getServerActiveWorkout: workoutsApi.getActiveWorkout,
-      }),
-    );
-
-    // The active program offers a quick way to start a planned session.
-    // Isolated in its own try/catch: a programs-API hiccup must not take
-    // down the workout history this screen exists to show.
-    try {
-      const programs = await programsApi.listPrograms();
-      const active = programs.find((program) => program.is_active);
-      setActiveProgram(active ? await programsApi.getProgram(active.id) : null);
-    } catch {
-      setActiveProgram(null);
-    }
-  }, []);
-
-  // Re-run on every focus so finishing a workout is reflected on return.
-  useFocusEffect(
-    useCallback(() => {
-      navigatingRef.current = false;
-      void history.refresh();
-      void load().catch(() => undefined);
+      })
+        .then((id) => {
+          if (!cancelled) setActiveId(id);
+        })
+        .catch(() => undefined);
       return () => {
-        history.cancel();
+        cancelled = true;
+        hub.cancel();
       };
-    }, [history, load]),
+    }, [hub]),
   );
-
-  const handleRefresh = () => {
-    void history.refresh();
-    void load().catch(() => undefined);
-  };
 
   /** templateId omitted starts a free session; given, starts from that template. */
   const handleStart = async (templateId?: string) => {
-    if (startingRef.current) return;
-    startingRef.current = true;
-    setStarting(true);
-    try {
-      let showCheckin = false;
-      try {
-        if (await isReadinessCheckinEnabled()) {
-          const today = await readinessApi.getTodayReadiness();
-          showCheckin = today.id === null;
-        }
-      } catch {
-        // Fail open: a flaky check on whether today is already logged must
-        // never be the reason a workout cannot be started.
-        showCheckin = false;
-      }
-
-      if (showCheckin) {
-        router.push({
-          pathname: "/workout/checkin",
-          params: templateId ? { templateId } : {},
-        });
-        return;
-      }
-
-      const workoutId = templateId
-        ? (await programsApi.startWorkoutFromTemplate(templateId)).workout_id
-        : (await workoutsApi.startWorkout()).id;
-      await setActiveWorkout(workoutId);
-      router.push(`/workout/${workoutId}`);
-    } catch {
-      // Errors surface on the workout screen itself; nothing useful to show
-      // here beyond letting the user tap again.
-    } finally {
-      startingRef.current = false;
-      setStarting(false);
+    setStartError(null);
+    const outcome = await starter(templateId, () => setStarting(true));
+    if (outcome.kind === "ignored") return; // the running start owns the busy state
+    setStarting(false);
+    if (outcome.kind === "checkin") {
+      router.push({
+        pathname: "/workout/checkin",
+        params: outcome.templateId ? { templateId: outcome.templateId } : {},
+      });
+    } else if (outcome.kind === "started") {
+      router.push(`/workout/${outcome.workoutId}`);
+    } else {
+      setStartError(outcome.message);
     }
   };
 
-  const topBar = (
-    <View style={[styles.topBar, { paddingTop: insets.top }]}>
-      <View style={styles.topBarRow}>
-        <Text accessibilityRole="header" style={styles.topBarTitle}>
-          Training
-        </Text>
+  const researchButton = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Research, explore training research"
+      style={({ pressed }) => [styles.researchButton, pressed && styles.rowPressed]}
+      onPress={() => go(() => router.push("/research"))}
+    >
+      <Ionicons name="library-outline" size={18} color={light.text} />
+      <Text style={styles.researchButtonText}>Research</Text>
+    </Pressable>
+  );
+
+  const listHeader = (
+    <View>
+      {activeId ? (
+        <View>
+          <View style={styles.progressRow}>
+            <View style={styles.progressDot} />
+            <Text style={styles.progressLabel}>Workout in progress</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Resume workout"
+            style={({ pressed }) => [styles.primary, pressed && styles.primaryPressed]}
+            onPress={() => go(() => router.push(`/workout/${activeId}`))}
+          >
+            <Ionicons name="play" size={16} color={light.onPrimary} />
+            <Text style={styles.primaryText}>Resume workout</Text>
+          </Pressable>
+        </View>
+      ) : (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Open profile"
-          hitSlop={4}
-          onPress={() => go(() => router.navigate("/profile"))}
-          style={({ pressed }) => [styles.profileButton, pressed && styles.profileButtonPressed]}
+          accessibilityLabel="Start an Empty Workout"
+          accessibilityState={{ busy: starting, disabled: starting }}
+          style={({ pressed }) => [
+            styles.primary,
+            pressed && styles.primaryPressed,
+            starting && styles.primaryBusy,
+          ]}
+          onPress={() => void handleStart()}
+          disabled={starting}
         >
-          <Ionicons name="person-outline" size={20} color={light.text} />
+          {starting ? (
+            <ActivityIndicator color={light.onPrimary} />
+          ) : (
+            <Text style={styles.primaryText}>Start an Empty Workout</Text>
+          )}
         </Pressable>
-      </View>
+      )}
+
+      {startError ? (
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.errorText}>
+          {startError}
+        </Text>
+      ) : null}
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Create program"
+        accessibilityHint="Opens a form to name a new program"
+        style={({ pressed }) => [styles.secondary, pressed && styles.rowPressed]}
+        onPress={() => go(() => router.push("/program/new"))}
+      >
+        <Ionicons name="add" size={20} color={light.text} />
+        <Text style={styles.secondaryText}>Create program</Text>
+      </Pressable>
+
+      <Text accessibilityRole="header" style={styles.sectionTitle}>
+        My programs
+      </Text>
+
+      {/* Hidden while a session is active, as before: a second session is not offered from here. */}
+      {!activeId && activeProgram ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Start from a template in ${activeProgram.name}`}
+          accessibilityHint="Choose a template to start from"
+          accessibilityState={{ disabled: starting }}
+          style={({ pressed }) => [
+            styles.templateRow,
+            pressed && styles.rowPressed,
+            starting && styles.primaryBusy,
+          ]}
+          onPress={() => setSheetVisible(true)}
+          disabled={starting}
+        >
+          <View style={styles.templateText}>
+            <Text style={styles.caption}>Start from a template</Text>
+            <Text numberOfLines={2} style={styles.templateName}>
+              {activeProgram.name}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
+        </Pressable>
+      ) : null}
+
+      {programsError ? (
+        <View style={styles.errorBanner}>
+          <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.errorBannerText}>
+            {programs === null ? programsError : `Could not refresh: ${programsError}`}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Try loading programs again"
+            disabled={programsLoading}
+            style={styles.retry}
+            onPress={() => void hub.refresh()}
+          >
+            {programsLoading ? (
+              <ActivityIndicator color={light.text} size="small" />
+            ) : (
+              <Text style={styles.retryText}>Try again</Text>
+            )}
+          </Pressable>
+        </View>
+      ) : null}
+
+      {programs === null && !programsError ? (
+        <ActivityIndicator
+          color={light.textSecondary}
+          accessibilityLabel="Loading programs"
+          style={styles.loading}
+        />
+      ) : null}
     </View>
   );
 
-  if (loading && workouts.length === 0) {
-    return (
-      <View style={styles.screen}>
-        {topBar}
-        <View style={styles.centered}>
-          <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading workouts" />
-        </View>
-      </View>
-    );
-  }
-
-  const sections = groupByDay(workouts);
-
   return (
     <View style={styles.screen}>
-      {topBar}
-      <SectionList
+      <TabTopBar title="Start Workout" trailing={researchButton} />
+
+      <FlatList
         style={styles.list}
         contentContainerStyle={styles.content}
-        sections={sections}
+        data={programs ?? []}
         keyExtractor={(item) => item.id}
-        stickySectionHeadersEnabled={false}
-        onEndReached={() => { void history.loadMore(); }}
-        onEndReachedThreshold={0.4}
         refreshControl={
           <RefreshControl
-            refreshing={loading}
-            onRefresh={handleRefresh}
+            // Only a pull shows the spinner; the focus reload is silent.
+            refreshing={false}
+            onRefresh={() => void hub.refresh()}
             tintColor={light.textSecondary}
           />
         }
-        ListHeaderComponent={
-          <View>
-            {activeId ? (
-              <View>
-                <View style={styles.progressRow}>
-                  <View style={styles.progressDot} />
-                  <Text style={styles.progressLabel}>Workout in progress</Text>
-                </View>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Resume workout"
-                  style={({ pressed }) => [styles.primary, pressed && styles.primaryPressed]}
-                  onPress={() => go(() => router.push(`/workout/${activeId}`))}
-                >
-                  <Ionicons name="play" size={16} color={light.onPrimary} />
-                  <Text style={styles.primaryText}>Resume workout</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Start workout"
-                  accessibilityState={{ busy: starting, disabled: starting }}
-                  style={({ pressed }) => [
-                    styles.primary,
-                    pressed && styles.primaryPressed,
-                    starting && styles.primaryBusy,
-                  ]}
-                  onPress={() => void handleStart()}
-                  disabled={starting}
-                >
-                  {starting ? (
-                    <ActivityIndicator color={light.onPrimary} />
-                  ) : (
-                    <Text style={styles.primaryText}>Start workout</Text>
-                  )}
-                </Pressable>
-
-                {activeProgram ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Start from a template in ${activeProgram.name}`}
-                    accessibilityHint="Choose a template to start from"
-                    accessibilityState={{ disabled: starting }}
-                    style={({ pressed }) => [
-                      styles.programRow,
-                      pressed && styles.rowPressed,
-                      starting && styles.primaryBusy,
-                    ]}
-                    onPress={() => setSheetVisible(true)}
-                    disabled={starting}
-                  >
-                    <View style={styles.programText}>
-                      <Text style={styles.caption}>Start from a template</Text>
-                      <Text numberOfLines={2} style={styles.programName}>
-                        {activeProgram.name}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
-                  </Pressable>
-                ) : null}
-              </>
-            )}
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Research, explore training research"
-              style={({ pressed }) => [styles.researchRow, pressed && styles.rowPressed]}
-              onPress={() => go(() => router.push("/research"))}
-            >
-              <View style={styles.researchText}>
-                <Text style={styles.researchTitle}>Research</Text>
-                <Text style={styles.caption}>Explore training research</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
-            </Pressable>
-
-            <Text accessibilityRole="header" style={styles.sectionTitle}>
-              Recent workouts
-            </Text>
-
-            {error === "refresh" ? (
-              <View style={styles.errorBanner}>
-                <Text accessibilityRole="alert" style={styles.errorText}>
-                  Could not refresh your history.
-                </Text>
-                <Pressable accessibilityRole="button" style={styles.retry} onPress={handleRefresh}>
-                  <Text style={styles.retryText}>Try again</Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </View>
-        }
+        ListHeaderComponent={listHeader}
         ListEmptyComponent={
-          !error ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>No workouts yet</Text>
-              <Text style={styles.emptyText}>Start one and it will show up here.</Text>
-            </View>
+          programs !== null && !programsError ? (
+            <Text style={styles.empty}>No programs yet. Create one to plan your training days.</Text>
           ) : null
         }
-        ListFooterComponent={
-          <View style={styles.historyFooter}>
-            {error === "more" ? (
-              <>
-                <Text style={styles.errorText}>Could not load older workouts.</Text>
-                <Pressable accessibilityRole="button" style={styles.retry}
-                  onPress={() => { void history.loadMore(true); }}>
-                  <Text style={styles.retryText}>Try again</Text>
-                </Pressable>
-              </>
-            ) : loadingMore ? (
-              <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading older workouts" />
-            ) : !error && !loading && hasMore ? (
-              <Pressable accessibilityRole="button" style={styles.retry}
-                onPress={() => { void history.loadMore(); }}>
-                <Text style={styles.retryText}>Load older workouts</Text>
-              </Pressable>
-            ) : !error && !loading && workouts.length > 0 ? (
-              <Text style={styles.caption}>All workouts loaded</Text>
-            ) : null}
-          </View>
-        }
-        renderSectionHeader={({ section }) => (
-          <Text style={styles.dayHeader}>{section.title}</Text>
+        renderItem={({ item, index }) => (
+          <ProgramRow
+            program={item}
+            first={index === 0}
+            last={index === (programs?.length ?? 0) - 1}
+            onOpen={() => go(() => router.push(`/program/${item.id}`))}
+          />
         )}
-        renderItem={({ item, index, section }) => {
-          const meta = cardMetaFor(item);
-          const title = item.title ?? "Workout";
-          const first = index === 0;
-          const last = index === section.data.length - 1;
-          return (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${title}, ${meta.text}, ${item.total_sets} sets`}
-              style={({ pressed }) => [
-                styles.workoutRow,
-                first && styles.rowFirst,
-                last ? styles.rowLast : styles.rowDivider,
-                pressed && styles.rowPressed,
-              ]}
-              onPress={() => go(() => router.push(`/workout/${item.id}`))}
-            >
-              <View style={styles.workoutMain}>
-                <Text numberOfLines={2} style={styles.workoutTitle}>
-                  {title}
-                </Text>
-                <View style={styles.workoutMetaRow}>
-                  <Ionicons name={meta.icon} size={14} color={light.textSecondary} />
-                  <Text style={styles.workoutMetaText}>{meta.text}</Text>
-                </View>
-              </View>
-              <View style={styles.workoutStats}>
-                {/* Sets as the API counts them, not tonnage: tonnage is
-                    dominated by whichever muscles happen to move the most
-                    weight, so a leg day always dwarfs an arm day regardless
-                    of how good either was. */}
-                <Text style={styles.workoutSets}>{item.total_sets}</Text>
-                <Text style={styles.caption}>sets</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={light.textSecondary} />
-            </Pressable>
-          );
-        }}
       />
 
       <Modal
@@ -454,11 +298,7 @@ export default function TrainingHome() {
         {/* Neither Pressable is an accessibility element itself: an accessible parent
             swallows its children on iOS, which turned the whole sheet into one element
             ("Start from a template, <program>, <template>") with no template to choose. */}
-        <Pressable
-          accessible={false}
-          style={styles.sheetBackdrop}
-          onPress={() => setSheetVisible(false)}
-        >
+        <Pressable accessible={false} style={styles.sheetBackdrop} onPress={() => setSheetVisible(false)}>
           {/* A Pressable with its own onPress, even a no-op, is what keeps a
               tap inside the sheet from also being read as a tap on the
               backdrop behind it. */}
@@ -498,28 +338,65 @@ export default function TrainingHome() {
   );
 }
 
+/** One program in a single grouped list: the first row rounds the top, the last the bottom. */
+function ProgramRow({
+  program,
+  first,
+  last,
+  onOpen,
+}: {
+  program: ProgramSummary;
+  first: boolean;
+  last: boolean;
+  onOpen: () => void;
+}) {
+  const active = program.is_active;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={active ? `${program.name}, active program` : program.name}
+      accessibilityHint="Opens the program"
+      style={({ pressed }) => [
+        styles.row,
+        first && styles.rowFirst,
+        last && styles.rowLast,
+        !last && styles.rowDivider,
+        pressed && styles.rowPressed,
+      ]}
+      onPress={onOpen}
+    >
+      <View style={styles.rowMain}>
+        {/* The word, not the dot alone, says which program is active. */}
+        {active ? (
+          <View style={styles.activeRow}>
+            <View style={styles.activeDot} />
+            <Text style={styles.activeText}>Active program</Text>
+          </View>
+        ) : null}
+        <Text numberOfLines={2} style={styles.rowTitle}>
+          {program.name}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: light.background },
   list: { flex: 1 },
   content: { paddingHorizontal: 16, paddingBottom: 32 },
-  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  topBar: { backgroundColor: light.background, paddingHorizontal: 16 },
-  topBarRow: {
-    minHeight: 56,
+  researchButton: {
+    minHeight: MIN_TOUCH,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-  },
-  topBarTitle: { flexShrink: 1, color: light.text, fontSize: 28, fontWeight: "700" },
-  profileButton: {
-    width: MIN_TOUCH,
-    height: MIN_TOUCH,
+    columnGap: 6,
+    paddingHorizontal: 12,
     borderRadius: MIN_TOUCH / 2,
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: light.surface,
   },
-  profileButtonPressed: { backgroundColor: light.pressed },
+  researchButtonText: { color: light.text, fontSize: 15, fontWeight: "600" },
 
   primary: {
     minHeight: 52,
@@ -539,88 +416,76 @@ const styles = StyleSheet.create({
   progressDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: light.positive },
   progressLabel: { flexShrink: 1, color: light.positive, fontSize: 13, fontWeight: "600" },
 
-  programRow: {
-    minHeight: 56,
+  // Directly beneath the primary action; quieter than it so there is still one obvious next step.
+  secondary: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    justifyContent: "center",
+    gap: 8,
     marginTop: 10,
     backgroundColor: light.surface,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
-  programText: { flex: 1, gap: 2 },
-  programName: { color: light.text, fontSize: 16, fontWeight: "600" },
-  caption: { color: light.textSecondary, fontSize: 13 },
+  secondaryText: { flexShrink: 1, color: light.text, fontSize: 17, fontWeight: "600" },
 
-  researchRow: {
+  sectionTitle: { color: light.text, fontSize: 20, fontWeight: "700", marginTop: 28, marginBottom: 8 },
+  caption: { color: light.textSecondary, fontSize: 13 },
+  rowPressed: { backgroundColor: light.pressed },
+
+  templateRow: {
     minHeight: 56,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginTop: 24,
+    marginBottom: 16,
     backgroundColor: light.surface,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  researchText: { flex: 1, gap: 2 },
-  researchTitle: { color: light.text, fontSize: 16, fontWeight: "500" },
-  rowPressed: { backgroundColor: light.pressed },
+  templateText: { flex: 1, gap: 2 },
+  templateName: { color: light.text, fontSize: 16, fontWeight: "600" },
 
-  sectionTitle: { color: light.text, fontSize: 20, fontWeight: "700", marginTop: 28, marginBottom: 4 },
-  dayHeader: {
-    color: light.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
-    marginTop: 18,
-    marginBottom: 6,
-    marginLeft: 4,
+  loading: { marginTop: 16 },
+  empty: { color: light.textSecondary, fontSize: 14, lineHeight: 20, textAlign: "center", marginTop: 8 },
+  errorText: { color: light.danger, fontSize: 14, fontWeight: "500", marginTop: 10 },
+  errorBanner: {
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    rowGap: 4,
   },
-  // One day's workouts form a single grouped surface: the first row rounds the
-  // top, the last the bottom, and a hairline separates the rows between.
-  workoutRow: {
-    minHeight: 64,
+  errorBannerText: { color: light.danger, fontSize: 14, fontWeight: "500", lineHeight: 20 },
+  retry: {
+    minHeight: MIN_TOUCH,
+    alignSelf: "flex-start",
+    justifyContent: "center",
+    paddingRight: 12,
+  },
+  retryText: { color: light.text, fontSize: 15, fontWeight: "600" },
+
+  row: {
+    minHeight: 60,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    columnGap: 8,
     backgroundColor: light.surface,
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingLeft: 16,
+    paddingRight: 14,
   },
   rowFirst: { borderTopLeftRadius: 12, borderTopRightRadius: 12 },
   rowLast: { borderBottomLeftRadius: 12, borderBottomRightRadius: 12 },
   rowDivider: { borderBottomColor: light.separator, borderBottomWidth: StyleSheet.hairlineWidth },
-  workoutMain: { flex: 1 },
-  workoutTitle: { color: light.text, fontSize: 16, fontWeight: "600" },
-  workoutMetaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
-  workoutMetaText: { flexShrink: 1, color: light.textSecondary, fontSize: 13 },
-  workoutStats: { alignItems: "flex-end" },
-  workoutSets: { color: light.text, fontSize: 20, fontWeight: "600" },
-
-  empty: { alignItems: "center", gap: 4, paddingVertical: 32, paddingHorizontal: 16 },
-  emptyTitle: { color: light.text, fontSize: 17, fontWeight: "600" },
-  emptyText: { color: light.textSecondary, fontSize: 14, textAlign: "center" },
-
-  errorBanner: {
-    alignItems: "flex-start",
-    gap: 4,
-    marginTop: 8,
-    backgroundColor: light.surface,
-    borderRadius: 12,
-    padding: 14,
-  },
-  errorText: { color: light.danger, fontSize: 14 },
-  historyFooter: { alignItems: "center", paddingVertical: 24, gap: 8 },
-  retry: {
-    minHeight: MIN_TOUCH,
-    justifyContent: "center",
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: light.surface,
-  },
-  retryText: { color: light.text, fontSize: 15, fontWeight: "600" },
+  rowMain: { flex: 1, minWidth: 0, rowGap: 4 },
+  rowTitle: { color: light.text, fontSize: 17, fontWeight: "600" },
+  activeRow: { flexDirection: "row", alignItems: "center", columnGap: 6 },
+  activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: light.positive },
+  activeText: { color: light.positive, fontSize: 13, fontWeight: "600" },
 
   sheetBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: light.scrim },
   sheet: {

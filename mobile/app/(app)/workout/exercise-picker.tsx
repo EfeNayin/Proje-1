@@ -16,7 +16,6 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -25,24 +24,14 @@ import {
 
 import * as exercisesApi from "../../../src/api/exercises";
 import type { Category, ExerciseSummary } from "../../../src/api/exercises";
+import { CategoryChips } from "../../../src/exercises/CategoryChips";
 import { light } from "../../../src/lightTheme";
-import { radius, spacing } from "../../../src/theme";
+import { spacing } from "../../../src/theme";
 import { depositPickedExercise } from "../../../src/workout/usePickedExercise";
 
-// Adım 26: the catalogue is ~96 exercises deep and everything used to land
-// in one flat list, which made picking something a scroll-and-hope. These
-// chips are a coarser grouping than the 17-muscle taxonomy used elsewhere in
-// the app (volume screen, exercise detail) — just enough to narrow "I want a
-// chest exercise" without asking the user to know which of the 17 they mean.
-const CATEGORIES: { code: Category; label: string }[] = [
-  { code: "chest", label: "Chest" },
-  { code: "back", label: "Back" },
-  { code: "biceps", label: "Biceps" },
-  { code: "triceps", label: "Triceps" },
-  { code: "legs", label: "Legs" },
-  { code: "abs", label: "Abs" },
-  { code: "shoulders", label: "Shoulders" },
-];
+// The category chips (Adım 26) are shared with the Exercises tab; see
+// src/exercises/categories.ts. This screen is still the ONLY one that
+// deposits a pick for a workout or a program.
 
 export default function ExercisePicker() {
   const router = useRouter();
@@ -112,28 +101,7 @@ export default function ExercisePicker() {
         autoFocus
       />
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.categories}
-        contentContainerStyle={styles.categoriesContent}
-      >
-        {CATEGORIES.map(({ code, label }) => (
-          <Pressable
-            key={code}
-            // Tapping the already-selected chip clears it, same as the
-            // rating dots on the check-in screen: there must be a way back
-            // to "browsing everything" without a separate "All" chip taking
-            // up space of its own.
-            onPress={() => setCategory((current) => (current === code ? null : code))}
-            style={[styles.chip, category === code && styles.chipActive]}
-          >
-            <Text style={[styles.chipText, category === code && styles.chipTextActive]}>
-              {label}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <CategoryChips value={category} onChange={setCategory} />
 
       {loading ? (
         <ActivityIndicator color={light.textSecondary} style={styles.loading} />
@@ -174,26 +142,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
   },
-  // A horizontal ScrollView has no intrinsic height of its own — without one
-  // set here, its cross-axis size is ambiguous and each chip's rounded
-  // background stretches to fill it (default cross-axis alignItems is
-  // "stretch"), which is what made the pills render as a cut-off, ghosted
-  // sliver instead of a clean rounded chip. A fixed height plus centering
-  // the row's content removes that ambiguity.
-  categories: { flexGrow: 0, height: 44, marginBottom: spacing.md },
-  categoriesContent: { gap: spacing.sm, paddingRight: spacing.md, alignItems: "center" },
-  chip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    borderColor: light.separator,
-    borderWidth: 1,
-    backgroundColor: light.surface,
-    alignSelf: "center",
-  },
-  chipActive: { backgroundColor: light.primary, borderColor: light.primary },
-  chipText: { color: light.textSecondary, fontSize: 14, fontWeight: "600" },
-  chipTextActive: { color: light.onPrimary },
   loading: { marginTop: spacing.lg },
   list: { paddingBottom: spacing.xl },
   empty: { color: light.textSecondary, textAlign: "center", marginTop: spacing.lg },

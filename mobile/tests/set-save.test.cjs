@@ -297,7 +297,8 @@ test('confirmed finish still leaves the screen when local pointer cleanup fails'
   const harness = finishHarness(async () => ({}), async () => { throw new Error('Storage unavailable'); });
   harness.render(); await settle();
   harness.confirm()(); await settle();
-  assert.deepEqual(harness.routes, ['dismiss', '/']);
+  // Finishing returns to the tabs on History, where the finished session is the newest row.
+  assert.deepEqual(harness.routes, ['dismiss', '/history']);
 });
 
 test('repeated finish confirmation sends once and synchronously blocks a stale add callback', async () => {
@@ -325,7 +326,7 @@ test('failed server finish retains the session and releases the lock for an expl
   harness.confirm()(); await settle();
   assert.equal(calls, 2);
   assert.equal(cleanups, 1);
-  assert.deepEqual(harness.routes, ['dismiss', '/']);
+  assert.deepEqual(harness.routes, ['dismiss', '/history']);
 });
 
 // Rest timer lifecycle on the real screen callbacks (the countdown itself is covered by rest-timer.test.cjs).

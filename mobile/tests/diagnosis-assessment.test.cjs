@@ -269,7 +269,8 @@ test('every action leads to a screen or a research entry that exists', () => {
     '/profile/weight-history': 'app/(app)/profile/weight-history.tsx',
     '/profile/nutrition-goals': 'app/(app)/profile/nutrition-goals.tsx',
     '/volume': 'app/(app)/(tabs)/volume.tsx',
-    '/': 'app/(app)/(tabs)/index.tsx',
+    // "Review training records" must open the completed sessions, which live on the History tab.
+    '/history': 'app/(app)/(tabs)/history.tsx',
   };
   for (const action of actions) {
     const href = A.hrefFor(action.target);

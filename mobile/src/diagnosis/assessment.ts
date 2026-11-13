@@ -131,7 +131,8 @@ export function hrefFor(target: ActionTarget): string {
     case "volume":
       return "/volume";
     case "training-records":
-      return "/";
+      // Completed sessions live on the History tab ("/" is Start Workout now).
+      return "/history";
     case "research":
       return `/research/${target.id}`;
   }
@@ -164,7 +165,7 @@ const openVolume: AssessmentAction = {
 };
 const reviewTraining: AssessmentAction = {
   label: "Review training records",
-  hint: "Opens your recorded workouts on the Training tab",
+  hint: "Opens your recorded workouts on the History tab",
   target: { kind: "training-records" },
 };
 const research = (id: string, label: string): AssessmentAction => ({

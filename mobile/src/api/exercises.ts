@@ -27,19 +27,22 @@ export type ExerciseDetail = ExerciseSummary & {
   muscles: MuscleInvolvement[];
 };
 
-type ExerciseList = {
+export type ExerciseList = {
   items: ExerciseSummary[];
   total: number;
   limit: number;
   offset: number;
 };
 
+/** `offset` pages through the matches; the backend caps `limit` at 100. */
 export function searchExercises(
   query: string,
   category?: Category | null,
-  limit = 50
+  limit = 50,
+  offset = 0,
 ): Promise<ExerciseList> {
   const params = new URLSearchParams({ limit: String(limit) });
+  if (offset > 0) params.set("offset", String(offset));
   // The backend search is accent-insensitive, so "gogus" finds "Göğüs" and
   // the user does not have to switch keyboards.
   if (query.trim()) params.set("q", query.trim());

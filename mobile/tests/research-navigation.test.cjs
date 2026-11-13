@@ -10,13 +10,13 @@ const read = (file) => readFileSync(path.join(root, file), 'utf8').replace(/\r\n
 // These are source-level guards, not a navigation run: they pin the decisions
 // that make Research's back behaviour work, so a refactor cannot silently drop one.
 
-test('Training opens Research with push, so the tabs stay underneath it in the stack', () => {
+test('Start Workout opens Research with push, so the tabs stay underneath it in the stack', () => {
   const home = read('app/(app)/(tabs)/index.tsx');
   assert.match(home, /router\.push\("\/research"\)/);
   assert.doesNotMatch(home, /router\.(replace|navigate)\("\/research"\)/);
 });
 
-test('app stack is anchored on the tabs, so a deep link to Research still has Training under it', () => {
+test('app stack is anchored on the tabs, so a deep link to Research still has the tabs under it', () => {
   const layout = read('app/(app)/_layout.tsx');
   assert.match(layout, /export const unstable_settings = \{\s*anchor: "\(tabs\)",?\s*\};/);
 });

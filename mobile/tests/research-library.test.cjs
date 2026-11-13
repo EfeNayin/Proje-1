@@ -416,7 +416,7 @@ test('the live PubMed feed is untouched in behaviour and is not queried by the l
   }
 });
 
-test('the Training home keeps its Research entry', () => {
+test('the Start Workout home keeps its Research entry', () => {
   const home = read('app/(app)/(tabs)/index.tsx');
   assert.match(home, /router\.push\("\/research"\)/);
   assert.match(home, /Research, explore training research/);

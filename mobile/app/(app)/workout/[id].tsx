@@ -955,8 +955,10 @@ function SaveAsTemplateModal({
                   <Pressable
                     style={styles.sheetCreateProgram}
                     onPress={() => {
+                      // The creation form is a screen of its own (Programs is no longer a tab),
+                      // pushed over this workout so Back returns here.
                       onClose();
-                      router.push("/programs");
+                      router.push("/program/new");
                     }}
                   >
                     <Text style={styles.sheetCreateProgramText}>Create a program</Text>
@@ -1259,8 +1261,10 @@ export default function ActiveWorkoutScreen() {
     // Server completion is authoritative; local cleanup must not trap us here.
     await clearActiveWorkout().catch(() => undefined);
     await clearTemplateSaveRequest(id).catch(() => undefined);
+    // Back to the tabs, on History: the session that was just finished is the newest
+    // row there (History reloads whenever it gains focus), which is the confirmation.
     router.dismissAll();
-    router.replace("/");
+    router.replace("/history");
   }, [id, router, userId]);
 
   const confirmFinish = () => {
