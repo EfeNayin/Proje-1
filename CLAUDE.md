@@ -94,15 +94,16 @@ sayısı yazmıyoruz çünkü hızla eskiyor ve yanlış güven verir.
 Backend (backend/app/, ruff+mypy strict temiz olmalı — bkz. `app/domains/`
 ve `app/models/` gerçek listesi için):
 - core/: config, database (async), security (JWT+bcrypt, jti claim'li), exceptions
-- models/: 18 uygulama tablosu — users, refresh_tokens, muscle_groups,
+- models/: 19 uygulama tablosu — users, refresh_tokens, muscle_groups,
   exercises, exercise_muscle_groups, workouts, sets, set_save_requests,
   programs, workout_templates, template_exercises, template_save_requests,
   readiness_logs, body_measurements, coach_athlete_links, coach_invites,
-  program_offers, workout_feedback
-- domains/ (11 domain): auth (register/login/refresh), users (GET/PATCH /me),
+  program_offers, workout_feedback, example_program_copy_requests
+- domains/ (12 domain): auth (register/login/refresh), users (GET/PATCH /me),
   exercises (katalog arama+filtre), workouts (workout+set CRUD, başlangıç
   plan anlık görüntüsü), programs (program/şablon CRUD, idempotent şablon
-  kaydetme), readiness (günlük toparlanma kaydı), body (kilo ölçümü),
+  kaydetme), example_programs (3 örnek program: önizleme + idempotent, pasif,
+  bağımsız kopya; içerik catalogue.py'de düz veri), readiness (günlük toparlanma kaydı), body (kilo ölçümü),
   nutrition (beslenme hedefi hesaplama), analytics (haftalık hacim +
   dönemsel değerlendirme/"teşhis"), research (PubMed yayın kayıtları),
   coaching (antrenör modu, davet, bağlantı ve antrenman paylaşım rızası,
