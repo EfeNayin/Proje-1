@@ -15,6 +15,8 @@ const root = path.resolve(__dirname, '..');
 const { createWorkoutStarter } = loadTs('src/workout/workoutStarter.ts');
 const { createProgramsHub } = loadTs('src/programs/programsHub.ts');
 const { createProgramCreator } = loadTs('src/programs/programActions.ts');
+const exampleDisplay = loadTs('src/programs/exampleDisplay.ts');
+const exampleLibraryModule = loadTs('src/programs/exampleLibrary.ts');
 const { light } = loadTs('src/lightTheme.ts');
 
 // ------------------------------------------------------------- starting a workout
@@ -181,10 +183,11 @@ test('only the newest refresh may apply; leaving the screen drops an answer stil
 function hubWorld({
   programs = [], details = {}, activeId = null, checkinEnabled = false, today = { id: 1 },
   listFails = false, startEmpty = async () => ({ id: 'empty-1' }),
+  examples = [], examplesFail = false,
 } = {}) {
   const hooks = h.createHooks();
   const pushes = [];
-  const spies = { active: [], template: [], empty: 0, activate: 0, listCalls: 0 };
+  const spies = { active: [], template: [], empty: 0, activate: 0, listCalls: 0, exampleList: 0, exampleCopy: 0 };
   const router = { push: (href) => pushes.push(h.plain(href)) };
   const screen = h.loadFile('app/(app)/(tabs)/index.tsx', {
     globals: { React: { createElement: h.createElement } },
@@ -200,6 +203,10 @@ function hubWorld({
         startWorkoutFromTemplate: async (templateId) => { spies.template.push(templateId); return { workout_id: `from-${templateId}` }; },
         activateProgram: () => { spies.activate++; },
       },
+      '../../../src/api/examplePrograms': {
+        listExamplePrograms: async () => { spies.exampleList++; if (examplesFail) throw new Error('404'); return examples; },
+        copyExampleProgram: async () => { spies.exampleCopy++; return { id: 'copy' }; },
+      },
       '../../../src/api/readiness': { getTodayReadiness: async () => today },
       '../../../src/api/workouts': {
         startWorkout: async () => { spies.empty++; return startEmpty(); },
@@ -207,6 +214,8 @@ function hubWorld({
       },
       '../../../src/lightTheme': { light },
       '../../../src/navigation/TabTopBar': { TabTopBar: 'TabTopBar' },
+      '../../../src/programs/exampleDisplay': exampleDisplay,
+      '../../../src/programs/exampleLibrary': exampleLibraryModule,
       '../../../src/programs/programsHub': { createProgramsHub },
       '../../../src/workout/activeWorkout': { clearActiveWorkout: async () => {}, getActiveWorkout: async () => null, setActiveWorkout: async (id) => { spies.active.push(id); } },
       '../../../src/workout/readinessPreference': { isReadinessCheckinEnabled: async () => checkinEnabled },
@@ -221,6 +230,7 @@ function hubWorld({
     list: (tree) => h.nodes(tree).find((node) => node.type === 'FlatList'),
     header: (tree) => world.list(tree).props.ListHeaderComponent,
     topBar: (tree) => h.nodes(tree).find((node) => node.type === 'TabTopBar'),
+    footer: (tree) => world.list(tree).props.ListFooterComponent,
     sheet: (tree) => h.nodes(tree).find((node) => node.type === 'Modal'),
   };
   return world;

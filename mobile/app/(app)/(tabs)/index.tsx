@@ -33,12 +33,16 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import * as exampleApi from "../../../src/api/examplePrograms";
+import type { ExampleSummary } from "../../../src/api/examplePrograms";
 import * as programsApi from "../../../src/api/programs";
 import type { ProgramSummary } from "../../../src/api/programs";
 import * as readinessApi from "../../../src/api/readiness";
 import * as workoutsApi from "../../../src/api/workouts";
 import { light } from "../../../src/lightTheme";
 import { TabTopBar } from "../../../src/navigation/TabTopBar";
+import { cardAccessibilityLabel, cardMeta } from "../../../src/programs/exampleDisplay";
+import { UNAVAILABLE_MESSAGE, createExampleLibrary } from "../../../src/programs/exampleLibrary";
 import { createProgramsHub } from "../../../src/programs/programsHub";
 import { clearActiveWorkout, getActiveWorkout, setActiveWorkout } from "../../../src/workout/activeWorkout";
 import { isReadinessCheckinEnabled } from "../../../src/workout/readinessPreference";
@@ -57,6 +61,14 @@ export default function StartWorkoutScreen() {
     hub.subscribe,
     hub.getSnapshot,
   );
+  // The example section has its own store: if it is unavailable (an older backend, a network
+  // problem) only that section says so, and everything above it keeps working.
+  const [library] = useState(() => createExampleLibrary({ listExamples: exampleApi.listExamplePrograms }));
+  const {
+    examples,
+    unavailable: examplesUnavailable,
+    loading: examplesLoading,
+  } = useSyncExternalStore(library.subscribe, library.getSnapshot);
   const [starter] = useState(() =>
     createWorkoutStarter({
       isCheckinEnabled: isReadinessCheckinEnabled,
@@ -88,6 +100,7 @@ export default function StartWorkoutScreen() {
       navigatingRef.current = false;
       let cancelled = false;
       void hub.refresh();
+      void library.refresh();
       // See src/workout/resolveActiveWorkout.ts for what this reconciles and why
       // (Adım 20): the local pointer is a device key, so a stale one — left by a
       // workout finished elsewhere, deleted, or belonging to a different account
@@ -106,8 +119,9 @@ export default function StartWorkoutScreen() {
       return () => {
         cancelled = true;
         hub.cancel();
+        library.cancel();
       };
-    }, [hub]),
+    }, [hub, library]),
   );
 
   /** templateId omitted starts a free session; given, starts from that template. */
@@ -274,6 +288,15 @@ export default function StartWorkoutScreen() {
           />
         }
         ListHeaderComponent={listHeader}
+        ListFooterComponent={
+          <ExamplePrograms
+            examples={examples}
+            unavailable={examplesUnavailable}
+            loading={examplesLoading}
+            onRetry={() => void library.refresh()}
+            onOpen={(id) => go(() => router.push({ pathname: "/example-program/[id]", params: { id } }))}
+          />
+        }
         ListEmptyComponent={
           programs !== null && !programsError ? (
             <Text style={styles.empty}>No programs yet. Create one to plan your training days.</Text>
@@ -334,6 +357,93 @@ export default function StartWorkoutScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+    </View>
+  );
+}
+
+/**
+ * Example programs, after My programs. Each card shows its level and weekly frequency and
+ * opens a preview; looking creates nothing. Unavailable (an older backend answers 404, or
+ * the request failed) is shown here, inside the section, with its own retry.
+ */
+function ExamplePrograms({
+  examples,
+  unavailable,
+  loading,
+  onRetry,
+  onOpen,
+}: {
+  examples: ExampleSummary[] | null;
+  unavailable: boolean;
+  loading: boolean;
+  onRetry: () => void;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <View>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>
+        Example programs
+      </Text>
+      <Text style={styles.sectionNote}>
+        Starting points you can add to your programs and edit. Browsing adds nothing.
+      </Text>
+
+      {unavailable ? (
+        <View style={styles.errorBanner}>
+          <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.errorBannerText}>
+            {UNAVAILABLE_MESSAGE}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Try loading example programs again"
+            disabled={loading}
+            style={styles.retry}
+            onPress={onRetry}
+          >
+            {loading ? (
+              <ActivityIndicator color={light.text} size="small" />
+            ) : (
+              <Text style={styles.retryText}>Try again</Text>
+            )}
+          </Pressable>
+        </View>
+      ) : null}
+
+      {examples === null && !unavailable ? (
+        <ActivityIndicator
+          color={light.textSecondary}
+          accessibilityLabel="Loading example programs"
+          style={styles.loading}
+        />
+      ) : null}
+
+      {(examples ?? []).map((example, index, all) => (
+        <Pressable
+          key={example.id}
+          accessibilityRole="button"
+          accessibilityLabel={cardAccessibilityLabel(example)}
+          accessibilityHint="Opens a preview. Nothing is added until you choose to"
+          style={({ pressed }) => [
+            styles.row,
+            index === 0 && styles.rowFirst,
+            index === all.length - 1 && styles.rowLast,
+            index < all.length - 1 && styles.rowDivider,
+            pressed && styles.rowPressed,
+          ]}
+          onPress={() => onOpen(example.id)}
+        >
+          <View style={styles.rowMain}>
+            <Text style={styles.exampleMeta}>{cardMeta(example)}</Text>
+            <Text numberOfLines={2} style={styles.rowTitle}>
+              {example.name}
+            </Text>
+            <Text numberOfLines={3} style={styles.exampleSummary}>
+              {example.summary}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -432,6 +542,9 @@ const styles = StyleSheet.create({
   secondaryText: { flexShrink: 1, color: light.text, fontSize: 17, fontWeight: "600" },
 
   sectionTitle: { color: light.text, fontSize: 20, fontWeight: "700", marginTop: 28, marginBottom: 8 },
+  sectionNote: { color: light.textSecondary, fontSize: 13, lineHeight: 18, marginBottom: 8 },
+  exampleMeta: { color: light.textSecondary, fontSize: 13, fontWeight: "600" },
+  exampleSummary: { color: light.textSecondary, fontSize: 14, lineHeight: 19 },
   caption: { color: light.textSecondary, fontSize: 13 },
   rowPressed: { backgroundColor: light.pressed },
 
