@@ -71,9 +71,12 @@ API farklılıkları için `AGENTS.md` dosyasındaki notu izleyin.
 ## Yerel iOS UI smoke testi (Maestro)
 
 `e2e/` altında, **simülatörde gerçek native UI** ile çalışan tek bir atlet
-yolculuğu vardır: giriş → Training → antrenman başlat → "Barbell Bench Press"
+yolculuğu vardır: giriş → Start Workout → "Start an Empty Workout" → "Barbell Bench Press"
 seç → ağırlık + tekrar gir (RIR boş) → set kaydet → antrenmanı bitir →
-geçmişten aç → set hâlâ orada. Bu bir **smoke testidir**; koç akışlarını,
+History sekmesinde açılır → geçmişten aç → set hâlâ orada. (Sekmeler: Profile, History,
+Start Workout, Exercises, Volume; programlar Start Workout içindeki "My programs"
+bölümündedir. Maestro akışları bu etiketlere göre güncellendi ama bu değişiklikten sonra
+**çalıştırılmadı** — simülatör gerektirir.) Bu bir **smoke testidir**; koç akışlarını,
 VoiceOver'ı, Dynamic Type'ı veya fiziksel cihazı kapsamaz. Expo Go (SDK 57)
 üzerinde çalışır, dev client değildir.
 
@@ -159,7 +162,7 @@ gerçek dokunuşlarla yapılır, tek simülatörde hesaplar sırayla (eşzamanl�
    (1. sürüm "Accepted", 2. sürüm "Waiting for answer").
 5. Sporcu 2. sürümü okur ("kopyan aktif; bunu eklersen yenisi aktif olur, eskisi kapatılır, silinmez"
    açıklaması ve yeni 6–12 tekrar reçetesi görünür), ekler ("Added, and it is now your active
-   program…"); Programs sekmesinde iki "Coach Base" kopyası ve "Athlete Own" listelenir, yalnız yenisi
+   program…"); Start Workout sekmesindeki "My programs" listesinde iki "Coach Base" kopyası ve "Athlete Own" listelenir, yalnız yenisi
    aktif.
 6. Sporcu açık kalan antrenmanı sürdürür, 3 set girer ve bitirir; sonra **aktif (2. sürüm) kopyadan**
    ikinci bir antrenman başlatıp bitirir.
@@ -243,7 +246,7 @@ Bu akışla bulunup **düzeltilen gerçek hatalar** (ekran görüntüsü incelem
 ağacında "görünür" olmak engelsiz olmak demek değildir): (1) davet önizlemesinde klavye "Connect"
 kararını örtüyordu → önizleme gelince klavye kapanır; (2) geri bildirim yazarken Save/Cancel/karakter
 sayacı klavyenin altında kalıyordu → klavye açılınca ve içerik büyüyünce form sona kaydırılır;
-(3) Training ekranındaki **"Start from a template" sayfasında** üst `Pressable` erişilebilir öğe
+(3) Start Workout (eski Training) ekranındaki **"Start from a template" sayfasında** üst `Pressable` erişilebilir öğe
 olduğundan tüm sayfa tek öğe ("Start from a template, Program, Şablon") oluyor, şablonlar tek tek
 seçilemiyordu (VoiceOver ve Maestro) → iki kapsayıcı `accessible={false}`, her şablon satırı kendi
 `accessibilityLabel`'ına sahip. Aynı kalıp `workout/[id].tsx` içindeki "Save as template" sayfasında da

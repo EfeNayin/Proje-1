@@ -42,6 +42,50 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 90: Beş sekmeli gezinme — Profile, History, Start Workout, Exercises, Volume — 13 Kasım 2026
+
+Dal: `feat/workout-navigation` (taban `dac3f33`, Adım 89'un Google düzeltmesi önce push'landı). Yalnız mobil; backend, API, şema ve bağımlılık değişmedi. Görünür sekme sırası kullanıcı onayıyla: **Profile, History, Start Workout, Exercises, Volume**; Start Workout ortadaki sekme ve açılış ekranı.
+
+**Ne değişti**
+- **History** (`(tabs)/history.tsx`): eski Training ekranındaki "Recent workouts" listesi taşındı; aynı `createWorkoutHistory` ve aynı kartlar. Yalnız biten antrenmanlar, yeni → eski, yerel gün gruplama; boş ve otomatik kapanmış seanslar dahil; süre metinleri aynı. Satır, mevcut antrenman ekranını açar. Metinler/gruplama `src/workout/historyDisplay.ts`'e taşındı (söz dizimi değişmedi).
+- **Start Workout** (`(tabs)/index.tsx`): en üstte "Start an Empty Workout" (açık seans varsa "Resume workout"), hemen altında "Create program", sonra "My programs". Başlatma mantığı `src/workout/workoutStarter.ts`, program listesi `src/programs/programsHub.ts`. Research, başlık çubuğundaki "Research, explore training research" düğmesinde. Şablondan başlatma (başlangıç planı anlık görüntüsü + isteğe bağlı hazırlık check-in'i) aynı yoldan.
+- **Programs sekmesi kalktı.** `(tabs)/programs.tsx` gizli bir sekme (`href: null`) ve `<Redirect href="/" />`; eski `/programs` bağlantısı çalışır. Programa girişin tüm yolları Start Workout'tan.
+- **Create program**: yeni `program/new.tsx`; mevcut `createProgramCreator` (doğrulama + çift gönderim koruması) yeniden kullanıldı. "Save as template → Create a program" artık sekme rotasını yığmak yerine bu ekranı `push` ediyor.
+- **Exercises** (`(tabs)/exercises.tsx`, `exercise/[id].tsx`): gerçek katalog, aynı arama API'si ve kategori tanımları (`src/exercises/categories.ts`, `CategoryChips` seçiciyle paylaşılıyor). Sayfalama `offset` ile — tüm eşleşmeler ulaşılabilir; yükleniyor/boş/hata ayrı. Satır **yalnız detay** açar; seçici posta kutusuna (`depositPickedExercise`) hiç dokunmaz — başka bir forma egzersiz bırakamaz. Seçme hâlâ yalnız `workout/exercise-picker.tsx`'te.
+- **Finish** artık `router.dismissAll(); router.replace("/history")`: biten seans History'de görünür.
+- **Teşhis ekranı**: "Review training records" eskiden `/` açıyordu (artık Start Workout) → `/history`'ye çevrildi, ipucu "…on the History tab". Bu, taşımanın gözden kaçan bir yan etkisiydi; testte (`diagnosis-assessment`) ekranın varlığı kontrol ediliyor.
+
+**Kararlar**
+- `unstable_settings = { anchor: "index" }`: bildirilen sıraya göre Router Profile'dan açılırdı; açılış sekmesi açıkça sabitlendi.
+- History süzmesi **sayfalamadan sonra**: ofset sunucu satırlarına göre ilerler; bir satır gizlense bile sayfalama kaymaz/atlamaz.
+- Başlatıcı: check-in sorgusu hata verirse açık geçer; `setActiveWorkout` yazımı başarısız olursa sunucudaki seans yine açılır (sunucunun "aktif antrenman"ı bunu telafi ediyor).
+- Beş sekmeye sığması için sekme etiketi sabit 10 pt (`tabBarAllowFontScaling: false`); okunan ad tam kalır. Yazı büyütme sekme çubuğunda **uygulanmıyor** — bilinçli ödün.
+- Egzersiz seçicisinin 50 sonuç sınırı değiştirilmedi (kapsam dışı); yalnız yeni tarayıcı sayfalıyor.
+- Antrenör akışları, koç tarafından hazırlanan program kısıtları ve sporcu/koç ekranlarına dokunulmadı.
+- Maestro akışları yeni etiketlere çevrildi ("Start an Empty Workout", "History, tab.*", "Start Workout, tab.*"; "Recent workouts" → "Load older workouts|All workouts loaded"). **Çalıştırılmadı** (simülatör gerekir).
+
+**Otomatik sonuçlar**
+- Yeni testler: `workout-history-tab` 12, `start-workout-hub` 27, `exercise-browser` 16, `tab-timer-draft` 5 (+ `tab-layout`, `set-save`, `diagnosis-assessment`, `e2e-tooling` güncellemeleri). Kapsam: >20 geçmiş ve gizlenen satırla sayfalama, program oluşturma + şablondan başlatma, Save as template yönlendirmesi, bağımsız egzersiz tarayıcısı, yarım yazılmış ağırlık/tekrar ile sayaç dönüşü.
+- Tam takım `node --test tests/*.test.cjs`: **970 test, 968 geçti, 2 kaldı** — ikisi de `tests/appearance.test.cjs` içinde, Windows yol ayracı (`\` / `/`) kaynaklı, bu adımdan önce de vardı, ilgisiz. `npx tsc --noEmit` 0 hata; `npx expo lint` 0 hata/uyarı; `git diff --check` temiz.
+- `npx expo export --platform web` başarıyla paketledi; çıktıda `history`, `exercises`, `programs`, `program/new`, `exercise/[id]` rotaları var — rota ağacı geçerli.
+
+**Gerçek Windows tarayıcı kontrolü: YAPILMADI.** Docker daemon'u kapalıydı (yerel backend yok) ve hosted staging'de izinsiz hesap açılmadı; giriş olmadan sekmelere ulaşılamaz. Yukarıdaki web paketleme yalnız derlemeyi/rota ağacını doğrular, ekranları değil.
+
+**Fiziksel iPhone kontrolü: YAPILMADI.** Kontrol listesi:
+1. Giriş → ilk açılan sekme "Start Workout"; altta sırayla "Profile", "History", "Start Workout", "Exercises", "Volume". Küçük iPhone'da "Start Workout" etiketi kesiliyor mu?
+2. "Start Workout": "Start an Empty Workout" → (check-in varsa "Skip") → bir set gir → geri çık → üstte "Resume workout".
+3. "Create program" → "New program name" → "Create this program" → program ayrıntısı açılır; aynı ada çift dokunuş tek program yapar.
+4. "My programs": etkin program "…, active program"; karta dokun → ayrıntı; "Start from a template in …" ile şablondan başlat.
+5. Antrenmanda "Finish workout" → "Finish" → **History** sekmesine iner, seans en üstte; satıra dokun → salt okunur antrenman.
+6. "History": 20'den fazla antrenman varsa "Load older workouts"; sonunda "All workouts loaded"; çek-yenile.
+7. "Exercises": "Search exercises", kategori çipleri, "Load more exercises"; satır → ayrıntı ("Add exercise" ile eklemek yalnız antrenman içindeki seçiciden).
+8. Sayaç: bir set kaydedip dinlenme sayacını başlat, yarım ağırlık/tekrar yaz, her beş sekmeye gez — sekme çubuğunun üstünde "Rest timer, … Return to workout" şeridi; dokun → antrenmana döner, yazdığın ağırlık/tekrar yerinde. Şerit küçük iPhone'da çubuğun üstüne sığıyor mu?
+9. "Start Workout" başlığında "Research, explore training research" → Araştırma açılır, geri → Start Workout.
+10. Diagnosis → "Review training records" → History açılır.
+11. Antrenör: "Save as template" → "Create a program" yeni ekranı açar; koç hazırladığı programlar ve sporcu ekranları eskisi gibi.
+
+**Sınırlar:** TestFlight / Expo Update yayını ayrı teslimat adımı, yapılmadı. Örnek programlar, sadeleştirilmiş Research metni, egzersiz görselleri ve klavye plaka kısayolları ayrı görevler. Anchor/gizli sekme yönlendirmesi ve Finish'in `dismissAll` + `replace` sırası cihazda doğrulanmadı.
+
 ### Adım 89: Google modülü olmayan yapıda (My Expo Go) Google paketinin yüklenmemesi — 13 Kasım 2026
 
 Dal: `feat/barbell-plate-calculator` (taban `7c4b308`). Yalnız mobil; bağımlılık, backend ve sağlayıcı ayarları değişmedi. Önceki incelemede gözden geçirilmiş, commit'lenmemiş iki dosya bu adımda doğrulanıp kaydedildi: `src/social/nativeProviders.ts`, `tests/google-native-module.test.cjs`.

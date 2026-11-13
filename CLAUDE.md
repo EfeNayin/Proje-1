@@ -115,8 +115,11 @@ Mobil (mobile/, Expo SDK 57, TypeScript strict sıfır hata):
 - src/auth/AuthContext: kalıcı oturum, bağlantı hatasında oturumu koruma
 - src/workout/: activeWorkout (yarım kalan seans cihazda), restPreference
 - app/(auth)/: login, register
-- app/(app)/(tabs)/: index (training home + geçmiş sayfalama), programs,
-  volume, profile
+- app/(app)/(tabs)/: beş görünür sekme, sırayla profile, history (biten
+  antrenmanlar + sayfalama), index (Start Workout: boş antrenman/Resume,
+  Create program, My programs, Research; açılış sekmesi), exercises (katalog
+  tarayıcısı + detay), volume. `programs` gizli bir yönlendirme rotasıdır
+  (eski /programs linki için), ayrı sekme değildir.
 - app/(app)/workout/: [id] (canlı loglama, başlangıç planı, şablona
   kaydetme), checkin, exercise-picker
 - app/(app)/program/: [id], template/[id]
