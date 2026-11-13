@@ -42,6 +42,16 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 89: Google modülü olmayan yapıda (My Expo Go) Google paketinin yüklenmemesi — 13 Kasım 2026
+
+Dal: `feat/barbell-plate-calculator` (taban `7c4b308`). Yalnız mobil; bağımlılık, backend ve sağlayıcı ayarları değişmedi. Önceki incelemede gözden geçirilmiş, commit'lenmemiş iki dosya bu adımda doğrulanıp kaydedildi: `src/social/nativeProviders.ts`, `tests/google-native-module.test.cjs`.
+
+- **Sorun:** `@react-native-google-signin/google-signin` paketi yüklenirken `TurboModuleRegistry.getEnforcing("RNGoogleSignin")` çağırıyor; Google'ın native modülü olmayan yapıda (My Expo Go) paketi yalnızca `require` etmek bile hata fırlatıyordu. Bu hata `try/catch` ile yutulmaya güveniyordu ve ekrana ulaştı.
+- **Düzeltme:** `loadGoogle` paketi `require` etmeden **önce** native tarafa `TurboModuleRegistry.get("RNGoogleSignin")` ile soruyor (`get` fırlatmaz, `null` döner; yine de `try/catch` içinde). Modül yoksa Google girişi "kullanılamıyor" sayılıyor, paket hiç yüklenmiyor; e-posta ve Apple girişi etkilenmiyor. Modülü olan iOS yapısında yol ve yapılandırma aynı.
+- **Test:** `tests/google-native-module.test.cjs` 9 test (gerçek `nativeProviders.ts`, native parçaları kaydeden taklitlerle): modül yok → paket 0 kez yüklenir; fırlatan sorgu "yok" sayılır; modüllü iOS yolu ve yapılandırma aynı; iptal/kod yok sonuçları aynı; iOS dışı platformlar sorgulamaz; Apple bağımsız; kaynakta `get` var, `getEnforcing` yok ve sorgu `require`'dan önce.
+- **Doğrulama:** odaklı test 9/9; `tsc --noEmit` 0 hata; `expo lint` 0 hata/uyarı; `git diff --check` temiz. Tam takım bu adımda koşulmadı (değişiklik tek dosya); sonraki adımda (navigasyon) tam takım koşuluyor.
+- **Cihazda denenmedi:** My Expo Go'da açılışın hatasız olduğu ve imzalı yapıda Google düğmesinin hâlâ çalıştığı fiziksel doğrulama bekliyor. Taklitler gerçek native kayıt defterinin davranışını değil, kodun ona nasıl sorduğunu sınar.
+
 ### Adım 88: Aktif antrenmanda barbell plaka hesaplayıcı — 9 Kasım 2026
 
 **Amaç:** Verilen toplam ağırlık için barın **her iki yanına** hangi plakaların takılacağını göstermek. Yalnız bu iş; ısınma seti üretimi ayrı bir görev. Dal: `feat/barbell-plate-calculator` (taban `2c22886`). Yalnız mobil; backend, API, şema ve yeni bağımlılık yok.

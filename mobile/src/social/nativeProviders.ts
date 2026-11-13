@@ -15,7 +15,7 @@
  *    a Google session left behind on the device would be one more credential to keep.
  */
 
-import { Platform } from "react-native";
+import { Platform, TurboModuleRegistry } from "react-native";
 
 import { SocialCancelledError, SocialUnavailableError } from "./errors";
 import { subscribeToRevocation } from "./revocation";
@@ -62,8 +62,26 @@ function loadApple(): AppleModule | null {
   }
 }
 
+/**
+ * Whether this build contains Google's native module. Asked of the native side directly,
+ * BEFORE the JavaScript package is required: the package calls
+ * `TurboModuleRegistry.getEnforcing("RNGoogleSignin")` while it loads, so in a build
+ * without the module (My Expo Go) merely requiring it throws, and relying on catching that
+ * is how the error reached the screen. `get` returns null instead of throwing.
+ */
+function googleNativeModulePresent(): boolean {
+  try {
+    return TurboModuleRegistry.get("RNGoogleSignin") != null;
+  } catch {
+    return false;
+  }
+}
+
 function loadGoogle(): GoogleModule | null {
   if (Platform.OS !== "ios") return null;
+  // Without the native module the package must never be loaded: Google sign-in is
+  // simply unavailable, and email and Apple sign-in carry on.
+  if (!googleNativeModulePresent()) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy: the module may be absent from this build
     return require("@react-native-google-signin/google-signin") as GoogleModule;
