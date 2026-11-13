@@ -43,6 +43,42 @@ class TemplateSaveRequest(Base):
     created_at: Mapped[created_at]
 
 
+class ExampleProgramCopyRequest(Base):
+    """Durable receipt of one "add this example program to my programs" attempt.
+
+    Keyed by (user, client-chosen request id), written in the SAME transaction as
+    the copied program, so a receipt exists exactly when the copy does. A retry with
+    the same id finds it and returns the original program instead of making another.
+
+    example_id/example_version record what the first request asked for; a retry that
+    names something else is refused. program_id is SET NULL when the user later
+    deletes the copy, so the receipt survives (and a replay can say so) but never
+    brings the program back.
+    """
+
+    __tablename__ = "example_program_copy_requests"
+
+    user_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    request_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    example_id: Mapped[str] = mapped_column(Text, nullable=False)
+    example_version: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    program_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("programs.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[created_at]
+
+    __table_args__ = (
+        CheckConstraint("example_version > 0", name="example_copy_requests_version_check"),
+        Index(
+            "idx_example_copy_requests_program",
+            "program_id",
+            postgresql_where=text("program_id IS NOT NULL"),
+        ),
+    )
+
+
 class Program(Base):
     """A user's named collection of training-day templates.
 

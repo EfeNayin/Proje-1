@@ -533,6 +533,13 @@ async def _populate(
         },
     )
     assert saved.status_code in (200, 201), saved.text
+    # An example program added to the user's own programs (a receipt and a copied program).
+    copied = await client.put(
+        f"/example-programs/requests/{uuid4()}",
+        headers=who.headers,
+        json={"example_id": "beginner-full-body-ab", "version": 1},
+    )
+    assert copied.status_code == 201, copied.text
 
     # Readiness and body measurements.
     assert (
@@ -565,6 +572,7 @@ class TestEverythingTheAccountOwnsIsDeleted:
             "workout_templates",
             "template_exercises",
             "template_save_requests",
+            "example_program_copy_requests",
             "readiness_logs",
             "body_measurements",
             "coach_invites",
@@ -1072,6 +1080,7 @@ class TestEveryReferenceToAUserHasADecision:
         ("coach_athlete_links", "ended_by_id", "SET NULL"),
         ("coach_invites", "accepted_by_id", "SET NULL"),
         ("coach_invites", "coach_id", "CASCADE"),
+        ("example_program_copy_requests", "user_id", "CASCADE"),
         ("exercises", "created_by", "SET NULL"),
         ("password_reset_challenges", "user_id", "CASCADE"),
         ("program_lineages", "coach_id", "CASCADE"),

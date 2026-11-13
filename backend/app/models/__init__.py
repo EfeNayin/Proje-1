@@ -15,7 +15,13 @@ from app.models.coaching import (
 )
 from app.models.exercise import Exercise, ExerciseMuscleGroup, MuscleGroup
 from app.models.identity import SocialNonce, SocialSignupChallenge, UserIdentity
-from app.models.program import Program, TemplateExercise, TemplateSaveRequest, WorkoutTemplate
+from app.models.program import (
+    ExampleProgramCopyRequest,
+    Program,
+    TemplateExercise,
+    TemplateSaveRequest,
+    WorkoutTemplate,
+)
 from app.models.readiness import ReadinessLog
 from app.models.recovery import PasswordResetChallenge
 from app.models.user import RefreshToken, User
@@ -26,6 +32,7 @@ __all__ = [
     "BodyMeasurement",
     "CoachAthleteLink",
     "CoachInvite",
+    "ExampleProgramCopyRequest",
     "Exercise",
     "ExerciseMuscleGroup",
     "MuscleGroup",
