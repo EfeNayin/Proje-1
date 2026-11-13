@@ -191,9 +191,9 @@ appId: host.exp.Exponent
 - inputText: ${E2E_PASSWORD_FRESH}
 - tapOn: "Sign in"
 - extendedWaitUntil:
-    visible: "Start workout"
+    visible: "Start an Empty Workout"
     timeout: 30000
-- tapOn: "Start workout"
+- tapOn: "Start an Empty Workout"
 - extendedWaitUntil:
     visible: "How are you feeling today?"
     timeout: 15000

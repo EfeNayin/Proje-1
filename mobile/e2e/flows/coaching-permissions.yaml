@@ -192,7 +192,7 @@ appId: host.exp.Exponent
 - assertNotVisible: "Add set"
 - assertNotVisible: "Add exercise"
 - assertNotVisible: "Delete.*"
-- assertNotVisible: "Start workout"
+- assertNotVisible: "Start an Empty Workout"
 - takeScreenshot: 09-coach-workout-detail
 
 # ══ Coach: write feedback on this workout (only the coach's own text is editable) ══
@@ -339,7 +339,7 @@ appId: host.exp.Exponent
 - takeScreenshot: 10-athlete-sharing-off-again
 - tapOn: "Back"
 # Turning sharing off ends the coach's access, not what the coach already wrote to the athlete.
-- tapOn: "Training, tab.*"
+- tapOn: "History, tab.*"
 - runFlow:
     file: steps/open-fixture-workout.yaml
 - scrollUntilVisible:

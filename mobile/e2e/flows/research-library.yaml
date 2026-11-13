@@ -1,6 +1,6 @@
 appId: host.exp.Exponent
 ---
-# Turkish research library: open it from Training, search, open a topic, go back,
+# Turkish research library: open it from Start Workout, search, open a topic, go back,
 # clear the query, try a question the library does not cover, and tap a source link.
 # Self-contained on purpose (the Expo Go introduction handling is copied from
 # smoke-workout.yaml). Run with scripts/run.sh flows/research-library.yaml.
@@ -49,10 +49,10 @@ appId: host.exp.Exponent
 - inputText: ${E2E_PASSWORD}
 - tapOn: "Sign in"
 - extendedWaitUntil:
-    visible: "Start workout"
+    visible: "Start an Empty Workout"
     timeout: 30000
 
-# ── open the library from Training ──
+# ── open the library from Start Workout ──
 - scrollUntilVisible:
     element: "Research, explore training research"
     timeout: 15000

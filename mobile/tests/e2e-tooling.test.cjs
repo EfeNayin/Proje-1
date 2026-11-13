@@ -29,7 +29,7 @@ test('e2e flow: real controls only - no coordinates, sleeps or deep-link navigat
 
 test('e2e flow: covers the athlete journey with RIR left blank and a duplicate-save guard', () => {
   const source = flow();
-  for (const step of ['"Sign in"', '"Start workout"', '"Add exercise"', '"Finish workout"', '"Barbell Bench Press.*"']) {
+  for (const step of ['"Sign in"', '"Start an Empty Workout"', '"Add exercise"', '"Finish workout"', '"Barbell Bench Press.*"']) {
     assert.ok(source.includes(step), step);
   }
   assert.doesNotMatch(source, /Recorded RIR/);

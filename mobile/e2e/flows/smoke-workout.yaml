@@ -58,12 +58,12 @@ appId: host.exp.Exponent
 - tapOn: "Sign in"
 
 - extendedWaitUntil:
-    visible: "Start workout"
+    visible: "Start an Empty Workout"
     timeout: 30000
-- takeScreenshot: 03-training
+- takeScreenshot: 03-start-workout
 
 # ── start a workout ──
-- tapOn: "Start workout"
+- tapOn: "Start an Empty Workout"
 - extendedWaitUntil:
     visible: "How are you feeling today?"
     timeout: 15000
@@ -214,8 +214,9 @@ appId: host.exp.Exponent
 - tapOn: "Finish"
 
 # ── reopen the completed workout from history ──
+# Finishing lands on the History tab, which lists completed sessions only.
 - extendedWaitUntil:
-    visible: "Recent workouts"
+    visible: "Load older workouts|All workouts loaded"
     timeout: 20000
 - extendedWaitUntil:
     visible: ".*, 2 sets"
