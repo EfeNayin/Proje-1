@@ -42,6 +42,66 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 93: Ortak egzersiz tarayıcısı ve yalnız-primary kas filtresi (egzersiz yeniden tasarımının 1. teslimi) — 14 Kasım 2026
+
+Dal: `feat/shared-exercise-browser` (taban `0fe7e28`, Adım 92). Backend ve mobil birlikte değişti; şema, migration ve bağımlılık değişmedi. **Proje sahibinin bildirdiğine göre** Adım 92'deki Araştırma ekranının telefon kontrolü geçti; bunu sahibinin raporu olarak kaydediyorum, ben telefonda doğrulamadım.
+
+Egzersiz yeniden tasarımının hedefi: anatomik küçük görseller, bağımsız bilgi düğmesi, animasyonlu anlatım, ekipman filtresi ve döndürülebilir kadın/erkek kas seçici. **Bu adım yalnız katalog anlamını ve ortak taramayı kurar**; görsel/animasyon ve 360° model sonraki teslimlerdir (aşağıda "Kalan iş").
+
+**Önceki görsel görevi (başlamadı):** `feat/exercise-images` dalı, stash veya ek worktree yoktu; çalışma ağacı temizdi. Yalnız kaynak araştırması yapıldı, depoya hiçbir görsel girmedi: Everkinetic (`everkinetic/data` @ `446bb9a`) aynı çizerin tutarlı siyah-beyaz çizimlerini iki pozisyonla sunuyor; arşivlenmiş özgün site görselleri CC BY-SA 3.0 ile lisanslıyor (wger de aynı görselleri "Everkinetic, CC-BY-SA 3" olarak işaretliyor), GitHub kopyası 4.0 diyor. Sekiz pilot hareketten yedisi için uygun çift bulundu; **Cable Crunch için yalnız oturarak varyant var** (boşluk). BY-SA'nın "aynı lisansla paylaş" şartı ticari ürün için sahibinin bilinçli kararını gerektirir; karar verilmedi.
+
+**1. Kas filtresi sunucuda yalnız primary**
+- `backend/app/domains/exercises/service.py`: `muscle` ve `category` filtreleri artık `ExerciseMuscleGroup.role == "primary"` şartını taşıyan tek bir EXISTS yardımcısını (`_trains_directly`) kullanıyor; satırlar ve `total` aynı filtreden geçtiği için sayı tutarlı.
+- Sonuç: Barbell Bench Press (göğüs primary, triceps secondary) Chest'te var, Triceps'te yok. Close-Grip Bench Press adında "bench" geçmesine rağmen triceps primary olduğu için Triceps'te var: karar ada değil saklı ilişkiye göre. Triceps listesi gerçek katalogda 6 hareket.
+- Değişmeyenler: egzersiz detayındaki secondary kaslar, haftalık hacim analitiği (zaten yalnız primary sayıyordu), `category` parametresi (API'de duruyor, artık primary-only; yeni mobil istemci kullanmıyor ama eski istemci için çalışır).
+
+**2. Katalog satırlarında primary kas bilgisi**
+- `ExerciseSummary.primary_muscles: [{name, name_tr}]`. `name` kararlı kas kodu (`front_delts`), `muscle` filtresinin kabul ettiği değerle aynı. Sıra: effectiveness azalan, sonra koda göre (detaydaki sırayla aynı, istekler arasında kararlı). Birden çok primary varsa hepsi döner (Barbell Back Squat: quads, glutes).
+- Yükleme `selectinload` ile: sayfa başına 2 ek sorgu, satır başına değil. Detay yanıtı da aynı alanı taşıyor; mevcut alanların hiçbiri kalkmadı.
+- Kas filtresi satırın kendi listesini kırpmıyor (glutes ile filtrelenen squat yine quads + glutes gösteriyor).
+
+**3. Tek ortak tarayıcı (mobil)**
+- `src/exercises/ExerciseBrowser.tsx`: arama, Muscles ve Equipment düğmeleri, sayfalı liste, yükleniyor/boş/hata durumları. Hem `(tabs)/exercises.tsx` (`mode="browse"`) hem `workout/exercise-picker.tsx` (`mode="select"`) bunu kullanıyor; iki ekranın kendi listesi, filtresi veya satırı kalmadı. Seçici iki çağırandan da (aktif antrenman `workout/[id].tsx`, şablon `program/template/[id].tsx`) aynı `usePickedExercise` yoluyla açılıyor; o kod değişmedi.
+- Yatay kategori çipleri kaldırıldı (`CategoryChips.tsx`, `categories.ts` silindi). **Muscles** paneli gerçek `/muscle-groups` kataloğunu (17 kas, Upper body / Lower body / Core başlıklarıyla) ilk açılışta bir kez yükler; yüklenemezse hata ve yeniden dene gösterir. **Equipment** paneli API'nin desteklediği beş değeri gösterir (barbell, dumbbell, machine, cable, bodyweight). Her panelde "All muscles" / "All equipment", düğme satırında filtre varken "Clear". Kas + ekipman + arama metni tek istekte birlikte gider.
+- Ekipman dürüstlüğü: `equipment: null` "kayıtlı değil" demektir, bodyweight değil. API'de null için filtre değeri yok, bu yüzden panelde "Other/None" seçeneği de yok; Bodyweight filtresi null'ları içine almaz (backend testi). Gerçek katalogda şu an null ekipman yok (26/24/16/16/14).
+- Seçici artık ilk 50 ile sınırlı değil: aynı sayfalama deposu (`exerciseBrowserStore.ts`, eski `exerciseBrowser.ts`; `ExerciseBrowser.tsx` ile yalnız harf büyüklüğüyle çakıştığı için yeniden adlandırıldı). Sunucu sayfalaması, doğru sayı, tekrar bastırma, eski yanıtların iptali ve ayrı durumlar korunuyor.
+- Paneller ayrı Modal değil, ekranın içinde sonuçların yerinde çiziliyor; liste gizleniyor ama sökülmüyor.
+
+**4. Tek ortak satır** (`src/exercises/ExerciseRow.tsx`)
+- Ad + altında yalnız primary kas etiketleri ("Quads, Glutes"). Eski "barbell · compound" alt satırı kalktı. Alan gelmezse (eski backend) kas satırı boş kalır, tahmin yok.
+- Solda 48 pt sabit küçük görsel alanı: doğrulanmış medya olmadığı için her satırda nötr kutu; ekran okuyucudan gizli. Bileşen `source` alabiliyor, medya tesliminde doldurulacak.
+- Sağda ayrı, bağımsız erişilebilir bilgi düğmesi: "How to perform [ad]". Satırın basılabilir alanının içinde değil, yanında; en az 44 pt.
+- Göz atma modunda satır da bilgi düğmesi de detayı açar, hiçbir şey seçilmez. Seçim modunda satır egzersizi **bir kez** seçer ve `router.back()` ile açan ekrana döner (çift dokunma ve kapanırken ikinci satır yok sayılır); bilgi düğmesi seçmeden detayı gösterir.
+- Seçicide detay başka rota olarak itilmiyor, **aynı ekranın içinde** gösteriliyor ("‹ Exercises" ile dönülür). Gerekçe: seçici native modal; modalın üstüne açılan ikinci ekranın nasıl sunulduğu/kapatıldığı expo-router belgelerinde tanımlı değil (okunan sayfalarda yok). Ekran içi görünümde bu belirsizlik yok ve tarayıcı sökülmediği için arama, filtre ve liste konumu korunuyor. Detay gövdesi `ExerciseDetailBody.tsx`'e taşındı; `exercise/[id].tsx` ve seçici aynı gövdeyi kullanıyor. Animasyonlu anlatım gelene kadar mevcut detay bilgisi aynen kullanılabilir.
+
+**5. Sonraki özellikler için sınırlar**
+- Seçim düz veri: `{ muscle: <kas kodu> | null, equipment }`. `FilterPanel` yalnız değer bildirir; anatomik model aynı kas kodunu vererek listenin yerini alabilir, tarayıcı ve API değişmez.
+- **Cardio ve Full Body eklenmedi, çünkü dürüstçe eklenemez:** ikisi de kas grubu değil ve katalogda egzersizi böyle sınıflandıran alan yok. Gerekenler: `exercises` tablosuna açık bir sınıflandırma (ör. `movement_class`: strength / cardio / full_body, ya da ayrı etiket tablosu), Alembic migration, mevcut 96 hareketin elle sınıflandırılması ve yeni filtre parametresi. "Full body" primary kas sayısından türetilemez (deadlift üç primary taşır ama bu onu full-body yapmaz); kardiyo hareketleri eklenirse set×tekrar×kg modeline ve MEV/MAV/MRV hacim sayımına girmemeleri gerekir, bu ayrı bir veri modeli kararıdır.
+
+**Dağıtım sırası:** iki sıra da güvenli. Yeni mobil + eski backend: filtre çalışır ama secondary eşleşmeleri de gelir, satırlarda kas etiketi görünmez. Eski mobil + yeni backend: `category` hâlâ desteklenir. Doğru davranış için backend önce dağıtılmalı. Backend dağıtımı ve mobil yayın bu adımın parçası değil.
+
+**Testler**
+- Backend (`tests/test_exercises.py`): secondary'nin eşleşmesini bekleyen eski test, yalnız-primary testine çevrildi; eklendi: kategori filtresi primary-only, filtreli `total` sayfalar arasında tutarlı, kas + ekipman + arama birlikte, bodyweight null ekipmanı içine almaz, satırlarda primary kaslar (tek, çoklu, sıra, filtreyle kırpılmama), detayda secondary korunur. Yeni testler uygulamadan önce yazıldı ve 9'u beklendiği gibi kırmızıydı.
+- Mobil (`tests/exercise-browser.test.cjs`): depo (130 kayıt 50'şer sayfa, filtreli 104 kayıt, eski yanıtlar, tekrar eden satır, üç ayrı durum), API parametreleri, ekipman listesinin backend `Literal`'ı ile birebir aynı olması, kas seçeneklerinin katalogdan gelmesi, çoklu primary etiketi; ortak bileşen iki modda (birleşik filtre, panel, All/Clear, sayfalama, boş/hata, satır, bağımsız bilgi düğmesi); gerçek iki ekran (sekme: detay bir kez açılır, pick yok; seçici: tek seçim + `back()`, 50'nin ötesi, bilgi dokunuşu seçmez ve dönünce arama/filtre/liste aynı).
+
+**Doğrulama (Windows, 14 Kasım 2026)**
+- Backend: tam paket `pytest` tek başına koşuda 1479 test geçti (9 dk 20 sn). `ruff check` temiz, `mypy` (strict) 92 kaynak dosyada sorun yok, `alembic check` model-DB farkı yok. Not: önceki iki tam koşu yanlışlıkla aynı anda aynı test veritabanında çalıştı ve egzersizle ilgisiz dosyalarda 20 ve 44 hata verdi; tek başına koşu temiz olduğu için bunlar çakışma kaynaklıydı. İki pytest koşusu aynı anda çalıştırılmamalı.
+- Mobil: `node --test tests/*.test.cjs` 1012 testten 1010'u geçti; kalan ikisi Adım 92'de belgelenen, bu işten bağımsız `tests/appearance.test.cjs` Windows yol ayırıcı hataları. `npx tsc --noEmit` hata yok. `npm run lint` hata/uyarı yok (yeniden adlandırmadan sonra `expo lint`'in `.expo/cache/eslint` önbelleği eski dosya adını raporladığı için silindi). `git diff --check` temiz.
+- Export: `npx expo export --platform ios` başarılı (tek Hermes bundle). Bu yalnız paketlemenin çalıştığını gösterir, görünümü doğrulamaz.
+- Expo SDK 57 sürüm sayfası ve router/modals/stack belgeleri okundu.
+- **Yapılmadı:** tarayıcıda görsel kontrol (bu oturumda tarayıcı aracı yok), simülatör, Maestro koşusu, fiziksel iPhone, VoiceOver, Dynamic Type. Ekran testleri state ve olay akışını sürer; native yerleşimi, klavyeyi ve modal sunumu simüle etmez. `e2e/flows/smoke-workout.yaml` satırı hâlâ "Barbell Bench Press.*" ile buluyor (etiket artık "Barbell Bench Press, Chest"); akış çalıştırılmadı.
+
+**Bilinen sınırlar**
+- Seçicide detay açıkken Android donanım geri tuşu detayı değil seçicinin tamamını kapatır (hiçbir şey seçilmez). iOS'ta "‹ Exercises" düğmesi var.
+- Kas seçimi tekli (API tek `muscle` alıyor). Çoklu seçim gerekirse API ve seçim tipi birlikte genişlemeli.
+- Kas etiketleri İngilizce koddan türetiliyor ("Front Delts"); `name_tr` API'de geliyor ama arayüz dili İngilizce olduğu için kullanılmıyor.
+
+**Kalan iş (aynı yeniden tasarım)**
+- Lisanslı medya: küçük görseller ve detay görselleri (yukarıdaki Everkinetic araştırması ve BY-SA kararı).
+- Animasyonlu "nasıl yapılır" içeriği; `instructions_tr/en` hâlâ boş.
+- Döndürülebilir kadın/erkek kas modeli (Muscles panelindeki listenin yerine veya yanına).
+- Cardio / Full Body için sınıflandırma alanı (madde 5).
+
 ### Adım 92: Araştırma kütüphanesi ekranının sadeleştirilmesi — 14 Kasım 2026
 
 Dal: `fix/research-screen-copy` (taban `6f43cdc`, Adım 91). Yalnız mobil, yalnız liste ekranı (`mobile/app/(app)/research/index.tsx`); backend, API, şema, bağımlılık, konu içeriği, kaynaklar, konu detay ekranı ve yerel arama davranışı değişmedi. Proje sahibinin istediği tasarım.
