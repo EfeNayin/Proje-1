@@ -42,6 +42,53 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 99: Ücretsiz kaynakla döndürülebilir anatomik kas seçici prototipi (depo dışı, yalnız erkek) — 14 Kasım 2026
+
+Dal: `feat/shared-exercise-browser` (taban `61b7ed4`). **Kod değişmedi, bağımlılık eklenmedi, yeni dal açılmadı.** PR #1 açık. Prototip ve bütün üçüncü taraf dosyaları deponun dışında: `C:\Users\efena\Desktop\Proje-1-prototypes\anatomy-selector\`.
+
+**1. Sahip kararı**
+- **Proje sahibi varlık satın alınmayacağını, ücretsiz kaynaklarla devam edileceğini bildirdi.** Adım 98'deki satın alma önerisi bu kararla askıdadır.
+
+**2. Kaynak ve lisans**
+- Model: `organui/muscles-3d` deposundaki `muscles.glb`, commit `1c746c36d12a78c5f3fd452dbe5d29ae869cad04`, değiştirilmeden kopyalandı (SHA-256 `615ed2cf…207ce`, 5,6 MB, sıkıştırılmamış). Kaynağı BodyParts3D 3.0, © The Database Center for Life Science, **CC BY-SA 2.1 Japan**. OrganUI parçaları birleştirip sadeleştirmiş; prototip yalnız renklendiriyor.
+- three.js 0.170.0 (MIT) sayfayla birlikte yerelden sunuluyor; CDN yok.
+- Lisans metinleri, köken kaydı ve atıf: `site\licences\` (`ATTRIBUTION.txt` dahil). Sayfanın altında atıf ve lisans bağlantısı görünüyor.
+- Adım 98'deki boşluk böyle kapandı: BodyParts3D 4.0'da latissimus dorsi yok, 3.0'da var.
+
+**3. Doğrulanan kas ağları** (`scripts\verify-meshes.cjs`, GLB doğrudan okunarak)
+| Bölge | Düğüm | Üçgen | Kaynak parça | FMA |
+|---|---|---|---|---|
+| Chest | `pectoralis-major` | 5.426 | 6 | FMA9627 |
+| Biceps | `biceps-brachii` | 2.546 | 4 (uzun + kısa baş, sol + sağ) | FMA37670 |
+| Triceps | `triceps-brachii` | 4.008 | 6 (üç baş, sol + sağ) | FMA37688 |
+| Lats | `latissimus-dorsi` | 8.818 | 2 | FMA13357 |
+- Dördü ayrı düğüm ve ayrı köşe verisi. Biceps, triceps'in önünde (ön eksen +Z, ağırlık merkezi farkı 0,174). Brachialis ve coracobrachialis ayrı düğümler; yani "Biceps" etiketi bütün üst kolu kapsamıyor.
+- Doğrulama köken listesi ve geometriyle yapıldı. **Bir anatomist incelemedi.**
+
+**4. Prototip**
+- Tek sayfa (`site\index.html`). Tek parmakla sürükleme sınırsız yatay dönüş, iki parmakla yakınlaştırma, dokunma seçer ve adı gösterir, 45° döndürme düğmeleri, Reset, "Select by name" düğmeleri (`aria-pressed`, `aria-live` durum satırı). Seçili olmayan bir kasa dokununca "… is not a selectable region in this prototype." yazıyor.
+- Sunucu: `scripts\serve.cjs`, yalnız yerel ağ adresinde, port 8766, her açılışta rastgele yol, özel ağ dışı istemciler reddediliyor. Başlatma: `start-iphone-preview.cmd`.
+
+**5. Yapılan kontroller** (başsız Chrome, 390×844, gerçek dokunma olayları, yerel ağ adresi üzerinden)
+- Model yüklendi. Tek kaydırma 352°, beş kaydırma sonunda 1.904° (360° üstü dönüş çalışıyor). Sürükleme seçim yapmadı.
+- Chest, Biceps, Triceps, Lats dokunuşla ayrı ayrı doğru seçildi. Deltoid dokunuşu "seçilebilir değil" mesajı verdi.
+- Reset seçimi temizleyip öne döndürdü. Metin düğmeleri dördünü de seçti; Triceps ve Lats için model 180° döndü.
+- Sayfa kayması yok. Tek konsol hatası favicon 404.
+- Ölçüm (bu bilgisayar, Intel Iris Xe, piksel oranı 2): 130-165 fps, sürükleme sırasında en yavaş kare 6 ms, yerel ağdan yükleme ~50 ms. 301.724 üçgen, 177 kas. **Bunlar iPhone ölçümü değildir.**
+- Yapılmayanlar: fiziksel iPhone Safari (sahibin adımı), VoiceOver, Expo/React Native içinde çalıştırma.
+
+**6. Kalan sınırlar**
+- **Yalnız erkek beden. Kadın modeli yok; kadın kapsamı bitmemiş iştir** ve ücretsiz, lisansı uygun bir kaynak henüz bulunmadı.
+- Yalnız kaslar var; deri ve iskelet yok. Yalnız dört bölge bağlı; uygulamadaki 17 kas kodunun geri kalanı eşlenmedi. Bu dosyada deltoid başları tek ağ; sol ve sağ taraf birleşik.
+- CC BY-SA: uygulamada görünür atıf şart, modelde yapılacak değişiklikler aynı lisansla paylaşılmalı. Uygulama koduna etkisi yayın öncesi ayrıca değerlendirilmeli.
+- Safari'de çalışması Expo/React Native uyumluluğunu kanıtlamaz. Metin düğmeleri erişilebilirlik alternatifidir, modelin yerine geçmez.
+
+**7. Expo entegrasyon planı (ayrı iş, başlamadı)**
+- Ön koşul: sahibin iPhone'da dönüş, seçim ve akıcılığı onaylaması; PR #1'in çözülmesi. Yeni dal güncel `main`'den açılır.
+- A: `"use dom"` bileşeni, tek yeni JS bağımlılığı `three`; seçim `filters.muscle` değerine köprülenir, mevcut metin kartları kalır. Adım 97'deki statik bulguya göre yeni native derleme gerektirmeyebilir; önce Expo Go'da, sonra imzalı uygulamada Expo Update ile denenir.
+- B (A yetersiz kalırsa): `expo-gl` + `@react-three/fiber` 9; yeni imzalı derleme gerekir.
+- Model üretim için küçültülmeli (meshopt/Draco, hedef 1-2 MB) ve 17 kas koduna eşlenmeli; kadın modeli ayrı karar.
+
 ### Adım 98: RepDB görsel stili için sahip onayı, 96 hareketin eşlemesi, iPhone için yerel ağ önizlemesi, satın alma önerisi ve anatomik modelde yeni bulgu — 14 Kasım 2026
 
 Dal: `feat/shared-exercise-browser` (taban `8079db9`). **Kod değişmedi, bağımlılık eklenmedi, yeni dal açılmadı, satın alma yapılmadı.** PR #1 açık. Üçüncü taraf varlıkları ve yardımcı betikler deponun dışında: `C:\Users\efena\Desktop\Proje-1-prototypes\`.
