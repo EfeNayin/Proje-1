@@ -2,19 +2,40 @@
 
 import { apiRequest } from "./client";
 
+/** A muscle an exercise trains directly. `name` is the stable code, e.g. "front_delts". */
+export type PrimaryMuscle = {
+  name: string;
+  name_tr: string;
+};
+
 export type ExerciseSummary = {
   id: string;
   name: string;
   name_tr: string | null;
   equipment: string | null;
   is_compound: boolean;
+  /**
+   * Best fit first. Optional because a backend deployed before this field
+   * existed does not send it; rows then show no muscle line rather than a guess.
+   */
+  primary_muscles?: PrimaryMuscle[];
 };
 
-// Broad browsing categories (Adım 26): coarser than the 17-muscle taxonomy
-// used for volume analytics, so the picker can offer a handful of chips
-// instead of the full muscle breakdown. Mirrors the backend's `Category`
-// literal in app/domains/exercises/schemas.py.
-export type Category = "chest" | "back" | "biceps" | "triceps" | "legs" | "abs" | "shoulders";
+// Mirrors the backend's `Equipment` literal in app/domains/exercises/schemas.py
+// (tests/exercise-browser.test.cjs checks this, the backend and the choices in
+// src/exercises/exerciseFilters.ts against each other). An exercise whose
+// equipment is not recorded has `equipment: null`; that is not "bodyweight" and
+// there is no filter value for it.
+export type Equipment = "barbell" | "dumbbell" | "machine" | "cable" | "bodyweight";
+
+/**
+ * What the catalogue is narrowed by, next to the typed query. `muscle` is a
+ * muscle-group code from GET /muscle-groups and matches PRIMARY involvement only.
+ */
+export type ExerciseFilters = {
+  muscle: string | null;
+  equipment: Equipment | null;
+};
 
 export type MuscleInvolvement = {
   name: string;
@@ -37,7 +58,7 @@ export type ExerciseList = {
 /** `offset` pages through the matches; the backend caps `limit` at 100. */
 export function searchExercises(
   query: string,
-  category?: Category | null,
+  filters: ExerciseFilters = { muscle: null, equipment: null },
   limit = 50,
   offset = 0,
 ): Promise<ExerciseList> {
@@ -46,7 +67,8 @@ export function searchExercises(
   // The backend search is accent-insensitive, so "gogus" finds "Göğüs" and
   // the user does not have to switch keyboards.
   if (query.trim()) params.set("q", query.trim());
-  if (category) params.set("category", category);
+  if (filters.muscle) params.set("muscle", filters.muscle);
+  if (filters.equipment) params.set("equipment", filters.equipment);
   return apiRequest<ExerciseList>(`/exercises?${params.toString()}`);
 }
 

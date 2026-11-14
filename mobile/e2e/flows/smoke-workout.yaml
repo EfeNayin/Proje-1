@@ -85,7 +85,8 @@ appId: host.exp.Exponent
 - extendedWaitUntil:
     visible: "Barbell Bench Press.*"
     timeout: 15000
-# The row's accessible name also carries its "barbell · compound" subtitle.
+# The row's accessible name also carries its primary muscles ("Barbell Bench Press, Chest").
+# The information button beside it is named "How to perform ..." and does not match this.
 - tapOn: "Barbell Bench Press.*"
 - extendedWaitUntil:
     visible: "Log set"

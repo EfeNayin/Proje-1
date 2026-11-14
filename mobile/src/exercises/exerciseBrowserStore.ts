@@ -1,29 +1,29 @@
 /**
- * Paging and state for the Exercises tab's browser.
+ * Paging and state for the shared exercise browser (the Exercises tab and the
+ * workout/program exercise picker both use it through ExerciseBrowser.tsx).
  *
- * The workout picker shows the first 50 matches and stops; the browser must keep
- * EVERY matching catalogue entry reachable, so it pages with the API's `offset`.
- * It follows createWorkoutHistory's rules:
+ * EVERY matching catalogue entry must stay reachable, so it pages with the API's
+ * `offset`. It follows createWorkoutHistory's rules:
  *  - The next offset advances by the rows the server sent, not by the rows that
  *    ended up displayed, so a row seen twice can never make a page repeat or skip.
- *  - A new search, or a change of category, invalidates every older response;
+ *  - A new search, or a change of filters, invalidates every older response;
  *    a late page from the previous search can never be appended to the new one.
  *  - A failed next page keeps what is on screen and is retried explicitly at the
  *    same offset.
  *  - Loading, empty and failed are three different states (see browserView).
  *
- * It only ever READS the catalogue. Choosing an exercise for a workout or a
- * program stays in the existing picker (usePickedExercise): nothing here may
- * deposit a pick anywhere.
+ * It only ever READS the catalogue. What a tap on a row means (open the details,
+ * or choose the exercise) is decided by the screen that hosts the browser:
+ * nothing here may deposit a pick anywhere.
  */
 
-import type { Category, ExerciseList, ExerciseSummary } from "../api/exercises";
+import type { ExerciseFilters, ExerciseList, ExerciseSummary } from "../api/exercises";
 
 export const BROWSER_PAGE_SIZE = 50;
 
 export type BrowserState = {
   query: string;
-  category: Category | null;
+  filters: ExerciseFilters;
   items: ExerciseSummary[];
   /** The server's count of ALL matches, not of the loaded ones. */
   total: number;
@@ -48,7 +48,7 @@ export function browserView(state: BrowserState): BrowserView {
 
 export type ExerciseSearch = (
   query: string,
-  category: Category | null,
+  filters: ExerciseFilters,
   limit: number,
   offset: number,
 ) => Promise<ExerciseList>;
@@ -56,7 +56,7 @@ export type ExerciseSearch = (
 export function createExerciseBrowser(fetchPage: ExerciseSearch) {
   let state: BrowserState = {
     query: "",
-    category: null,
+    filters: { muscle: null, equipment: null },
     items: [],
     total: 0,
     loading: true,
@@ -72,14 +72,14 @@ export function createExerciseBrowser(fetchPage: ExerciseSearch) {
     listeners.forEach((listener) => listener());
   };
 
-  /** Starts over for this query and category: the first page replaces whatever was shown. */
-  async function search(query: string, category: Category | null): Promise<void> {
+  /** Starts over for this query and these filters: the first page replaces whatever was shown. */
+  async function search(query: string, filters: ExerciseFilters): Promise<void> {
     const request = ++generation;
     nextOffset = 0;
     // The previous rows stay until the new answer lands, so typing does not flash an empty list.
-    publish({ query, category, loading: true, loadingMore: false, error: null });
+    publish({ query, filters, loading: true, loadingMore: false, error: null });
     try {
-      const page = await fetchPage(query, category, BROWSER_PAGE_SIZE, 0);
+      const page = await fetchPage(query, filters, BROWSER_PAGE_SIZE, 0);
       if (request !== generation) return;
       nextOffset = page.offset + page.items.length;
       publish({
@@ -107,7 +107,7 @@ export function createExerciseBrowser(fetchPage: ExerciseSearch) {
     const request = generation;
     publish({ loadingMore: true, error: null });
     try {
-      const page = await fetchPage(state.query, state.category, BROWSER_PAGE_SIZE, nextOffset);
+      const page = await fetchPage(state.query, state.filters, BROWSER_PAGE_SIZE, nextOffset);
       if (request !== generation) return;
       nextOffset = page.offset + page.items.length;
       const seen = new Set(state.items.map((item) => item.id));
