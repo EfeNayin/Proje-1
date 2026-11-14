@@ -42,6 +42,26 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 92: Araştırma kütüphanesi ekranının sadeleştirilmesi — 14 Kasım 2026
+
+Dal: `fix/research-screen-copy` (taban `6f43cdc`, Adım 91). Yalnız mobil, yalnız liste ekranı (`mobile/app/(app)/research/index.tsx`); backend, API, şema, bağımlılık, konu içeriği, kaynaklar, konu detay ekranı ve yerel arama davranışı değişmedi. Proje sahibinin istediği tasarım.
+
+**Ne değişti**
+- Arama alanının üstündeki giriş paragrafı ("Direnç antrenmanı üzerine yayımlanmış araştırmalara dayanan…") kaldırıldı.
+- Arama alanının altındaki not ("Arama yalnızca cihazınızdaki bu içerikte yapılır…") kaldırıldı.
+- Arama alanının placeholder'ı kaldırıldı: boş alanda yalnız büyüteç simgesi görünür. Alanın adı erişilebilirlik etiketinden gelir ("Kütüphanede ara"); bu etiket, temizleme düğmesi, konu sayısı, sonuçlar ve gezinme aynen duruyor.
+- Kullanılmayan `intro` ve `privacy` stilleri ile `placeholderTextColor` silindi. Boşluk ayarı gerekmedi: başlık bloğunun üst dolgusu (8) ve sayı satırının üst boşluğu (16) zaten kaldırılan metinlerden bağımsızdı.
+- Bilinçli sonuç: "uzman tarafından gözden geçirilmedi / tavsiye yerine geçmez" uyarısı artık liste ekranında yok; konu detay ekranındaki bağlam ve "kişisel tavsiye değildir" metni yerinde.
+
+**Test**
+- `tests/research-library.test.cjs`: ekran testi artık kaldırılan iki cümleyi şart koşmuyor; bunun yerine erişilebilirlik etiketinin ve büyüteç simgesinin durduğunu, placeholder ile iki eski stilin bulunmadığını doğruluyor. Arama, temizleme ve gezinme doğrulamaları aynı.
+
+**Doğrulama (Windows, 14 Kasım 2026)**
+- `node --test tests/*.test.cjs`: 997 testten 995'i geçti, 2'si kaldı. Kalan ikisi `tests/appearance.test.cjs` içinde ve bu adımdan bağımsız: değişiklikler stash'lenmiş tabanda da aynı ikisi kalıyor (Windows'ta `\` yol ayırıcısı beklenen `/` ile eşleşmiyor). Bu adımda düzeltilmedi, ayrı iş.
+- `npx tsc --noEmit`: hata yok. `npm run lint`: hata/uyarı yok. `git diff --check`: temiz.
+- Expo SDK 57 sürüm sayfası okundu (React Native 0.86); `placeholder` ve `placeholderTextColor` yüklü `react-native` 0.86.3 tiplerinde isteğe bağlı.
+- **Yapılmadı:** tarayıcıda görsel kontrol (bu oturumda tarayıcı aracı yoktu), bundle export, Maestro koşusu, fiziksel iPhone, VoiceOver. `e2e/flows/research-library.yaml` alanı erişilebilirlik etiketiyle buluyor ve kaldırılan metinlere bakmıyor; yine de placeholder'sız alanda `tapOn: "Kütüphanede ara"` çalıştırılarak doğrulanmadı. Expo Update yayını ayrı adım.
+
 ### Adım 91: Start Workout'ta örnek program kütüphanesi (Example programs) — 13 Kasım 2026
 
 Dal: `feat/example-program-library` (taban `07f34b2`, Adım 90'ın push'lanmış hâli). **Proje sahibinin bildirdiğine göre** Adım 90'daki beş sekmeli yapının telefon kontrolü geçti; bu kaydı sahibinin raporu olarak tutuyorum, ben telefonda doğrulamadım. Bu adımda backend (yeni tablo + yeni domain) ve mobil birlikte değişti.
