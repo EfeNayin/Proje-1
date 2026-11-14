@@ -53,16 +53,32 @@ class MuscleInvolvement(BaseModel):
     effectiveness: int
 
 
-class ExerciseSummary(BaseModel):
-    """List-view shape. No muscle breakdown, to keep list responses small."""
+class PrimaryMuscle(BaseModel):
+    """A muscle an exercise trains directly, as shown on a catalogue row.
 
-    model_config = ConfigDict(from_attributes=True)
+    `name` is the stable muscle-group code ('front_delts'), the same value the
+    `muscle` filter accepts, so a client can send back exactly what it was
+    shown. `name_tr` is the Turkish display label.
+    """
+
+    name: str
+    name_tr: str
+
+
+class ExerciseSummary(BaseModel):
+    """List-view shape.
+
+    Carries the primary muscles only (no secondary ones, no effectiveness), so
+    a row can name what the exercise is for without one detail request per row.
+    Ordered best fit first, then by code: see service.primary_muscles.
+    """
 
     id: UUID
     name: str
     name_tr: str | None
     equipment: str | None
     is_compound: bool
+    primary_muscles: list[PrimaryMuscle]
 
 
 class ExerciseDetail(ExerciseSummary):
@@ -96,11 +112,17 @@ class ExerciseQuery(BaseModel):
     muscle: str | None = Field(
         default=None,
         max_length=30,
-        description="Muscle group code, e.g. 'chest'.",
+        description=(
+            "Muscle group code, e.g. 'chest'. Matches exercises that train it as a "
+            "PRIMARY muscle; secondary involvement does not match."
+        ),
     )
     category: Category | None = Field(
         default=None,
-        description="Broad browsing category, e.g. 'legs'. Coarser than `muscle`.",
+        description=(
+            "Broad browsing category, e.g. 'legs'. Coarser than `muscle`; primary "
+            "involvement only, like `muscle`."
+        ),
     )
     limit: int = Field(default=50, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
