@@ -19,6 +19,7 @@ from httpx import AsyncClient
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domains.analytics.service import _classify
 from app.models import Exercise, Set, User, Workout
 
 WEEK_BOUNDARIES_SQL = text("""
@@ -230,3 +231,33 @@ class TestDirectVolumeCounting:
         )
 
         assert working_volume == Decimal("800.00")  # 100 x 8, warmup ignored
+
+
+class TestClassify:
+    """Direct unit tests of `_classify` — no database needed, unlike the rest
+    of this file. Added for Adım 17 (PROJE_1_CODEX_INCELEME.md): a muscle
+    with no published MEV/MAV/MRV used to be classified "optimal", which is a
+    verdict this code has no basis for. Every current seed muscle has all
+    three landmarks, so this path is otherwise untested by the API-level
+    tests above.
+    """
+
+    def test_zero_sets_is_untrained_regardless_of_landmarks(self) -> None:
+        assert _classify(0, mev=8, mav=14, mrv=22) == "untrained"
+        assert _classify(0, mev=None, mav=None, mrv=None) == "untrained"
+
+    def test_missing_any_landmark_is_no_reference_not_optimal(self) -> None:
+        """Partial landmark data is as unusable as no landmark data — the
+        classification needs all three to say anything."""
+        assert _classify(5, mev=None, mav=None, mrv=None) == "no_reference"
+        assert _classify(5, mev=None, mav=14, mrv=22) == "no_reference"
+        assert _classify(5, mev=8, mav=None, mrv=22) == "no_reference"
+        assert _classify(5, mev=8, mav=14, mrv=None) == "no_reference"
+
+    def test_published_landmarks_still_classify_normally(self) -> None:
+        """The fix only changes the missing-landmark path; a muscle with
+        real numbers is judged exactly as before."""
+        assert _classify(5, mev=8, mav=14, mrv=22) == "below_mev"
+        assert _classify(10, mev=8, mav=14, mrv=22) == "optimal"
+        assert _classify(18, mev=8, mav=14, mrv=22) == "high"
+        assert _classify(25, mev=8, mav=14, mrv=22) == "above_mrv"

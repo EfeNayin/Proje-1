@@ -151,14 +151,9 @@ class Exercise(Base):
 class ExerciseMuscleGroup(Base):
     """How much a given exercise loads a given muscle. The heart of analytics.
 
-    Each performed set is distributed across muscles by percentage. For
-    example a bench press set counts as 0.65 sets of chest, 0.20 of triceps
-    and 0.15 of front delts. "Weekly chest sets" is then the sum of those
-    fractional contributions rather than a raw set count.
-
-    Per exercise, contribution_pct values are expected to add up to 100.
-    That invariant is enforced in the application layer (a plain CHECK
-    cannot span multiple rows).
+    Primary links count each working set once toward direct weekly volume.
+    Secondary links describe involvement but do not add direct sets.
+    Effectiveness is a 1-5 catalogue rating, not a fractional set multiplier.
     """
 
     __tablename__ = "exercise_muscle_groups"

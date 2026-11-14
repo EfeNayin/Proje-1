@@ -1,0 +1,210 @@
+/**
+ * The transitions between accounts: sign in, sign up, sign out, forced expiry
+ * and the launch-time restore. They live here, not in AuthContext, so the order
+ * of their awaits can be tested without rendering anything.
+ *
+ * The rules they follow:
+ *  - Leaving an account is immediate. The screens and every private store drop
+ *    the account before any storage or network work starts; nothing waits on the
+ *    Keychain, and nothing waits on the server.
+ *  - Every transition moves the auth epoch on (see api/client.ts), so requests,
+ *    refreshes and sign-in answers still in flight for the earlier account are
+ *    obsolete and cannot write tokens, clear tokens or reach a caller.
+ *  - A new account's tokens are written only after the previous account's
+ *    sign-out cleanup has finished, so a late delete cannot remove them.
+ *  - A provider sign-in (Google, Apple) is one transition from the moment its sheet
+ *    opens: the epoch moves on before the native prompt, so a sheet that returns late,
+ *    after another sign-in or a sign-out, finds its epoch gone and changes nothing.
+ *  - A confirmed account deletion ends the session like a sign-out, minus the
+ *    server call (there is no session left to end), and only for the sign-in the
+ *    deletion was made under: a deletion that was answered late, after another
+ *    account signed in, changes nothing about that account.
+ */
+
+import * as authApi from "../api/auth";
+import type { AuthResponse, RegisterInput, UserProfile } from "../api/auth";
+import type { OnboardingOffer, SocialSignInResponse } from "../api/social";
+import { advanceAuthEpoch, currentAuthEpoch, persistTokens, SessionChangedError } from "../api/client";
+import { clearTokens, takeRefreshToken } from "../api/tokens";
+import { clearActiveWorkout } from "../workout/activeWorkout";
+import { restoreSession } from "./restoreSession";
+import type { RestoredSession } from "./restoreSession";
+
+export type AccountView =
+  | { status: "signedIn"; user: UserProfile }
+  | { status: "signedOut"; user: null };
+
+/** How a provider sign-in ended: signed in, or a new identity that must finish onboarding first. */
+export type ProviderSignInResult =
+  | { kind: "signedIn" }
+  | { kind: "onboarding"; offer: OnboardingOffer };
+
+export type SessionHooks = {
+  /** Drops everything private to the account: coaching lists, pending answers, shown codes. */
+  resetAccountState: () => void;
+  /** Shows this state. Called synchronously, never after an await that the caller of a transition does not control. */
+  apply: (view: AccountView) => void;
+  /** The account was deleted on the server (not merely signed out). Lets the sign-in screen say so. */
+  announceDeletion?: () => void;
+};
+
+/**
+ * What a sign-out achieved. Two separate facts, on purpose:
+ *  - `localClear`: this device holds no tokens and no active-workout pointer any more.
+ *  - `revocation`: whether the server confirmed ending the session. It settles
+ *    after the sign-out has already completed, is never awaited by the UI, and is
+ *    attempted once; "unconfirmed" means the refresh token stays valid on the
+ *    server until it expires (14 days), though no copy of it remains here.
+ */
+export type SignOutResult = {
+  localClear: boolean;
+  revocation: Promise<"confirmed" | "unconfirmed" | "none">;
+};
+
+export function createSessionController(hooks: SessionHooks) {
+  // The previous account's cleanup (tokens, active-workout pointer). Never rejects.
+  let cleanup: Promise<void> = Promise.resolve();
+
+  function leaveAccount(): void {
+    advanceAuthEpoch();
+    hooks.resetAccountState();
+    hooks.apply({ status: "signedOut", user: null });
+  }
+
+  /**
+   * Clears what this device keeps for the account: the tokens and the active-workout
+   * pointer. Returns the newest refresh token it took (for a server sign-out) and
+   * whether everything was cleared. Never rejects.
+   */
+  async function clearDevice(): Promise<{ refreshToken: string | null; localClear: boolean }> {
+    let localClear = true;
+    let refreshToken: string | null = null;
+    const finished = (async () => {
+      try {
+        // One queued step: it reads the newest refresh token (including one whose
+        // write was still pending) and clears both tokens, so nothing can land in
+        // between. It is what lets the server end this session.
+        refreshToken = await takeRefreshToken();
+      } catch {
+        try {
+          await clearTokens();
+        } catch {
+          localClear = false;
+        }
+      }
+      try {
+        // A device key, not scoped to an account (see workout/activeWorkout.ts):
+        // left in place it would point the next account at this one's workout.
+        // Preferences such as rest length are per-device and stay.
+        await clearActiveWorkout();
+      } catch {
+        localClear = false;
+      }
+    })();
+    cleanup = finished;
+    await finished;
+    return { refreshToken, localClear };
+  }
+
+  async function signOut(): Promise<SignOutResult> {
+    // Before any await: the epoch moves on, the stores reset, the screens leave.
+    leaveAccount();
+
+    const { refreshToken, localClear } = await clearDevice();
+
+    // Best effort, once, and not awaited: signing out on this device must not
+    // depend on the network, and nothing is retried in the background where it
+    // could outlive this session.
+    const revocation: SignOutResult["revocation"] = refreshToken
+      ? authApi.logout(refreshToken).then(
+          () => "confirmed" as const,
+          () => "unconfirmed" as const,
+        )
+      : Promise.resolve("none" as const);
+    return { localClear, revocation };
+  }
+
+  /**
+   * The server confirmed (204) that the account made under sign-in `epoch` is gone.
+   * Leaves it at once, clears the device and sends no sign-out: its sessions went
+   * with it, and the token is not worth a request. `applied` is false, and nothing
+   * is touched, when that sign-in is already over (signed out, expired or replaced
+   * by another account while the deletion was running).
+   */
+  async function accountDeleted(epoch: number): Promise<{ applied: boolean; localClear: boolean }> {
+    if (currentAuthEpoch() !== epoch) return { applied: false, localClear: true };
+    leaveAccount();
+    hooks.announceDeletion?.();
+    const { localClear } = await clearDevice();
+    return { applied: true, localClear };
+  }
+
+  /** The API client gave up on the session (refresh rejected). The epoch has moved on already. */
+  function sessionExpired(): void {
+    cleanup = clearActiveWorkout().catch(() => undefined);
+    hooks.resetAccountState();
+    hooks.apply({ status: "signedOut", user: null });
+  }
+
+  async function finishSignIn(epoch: number, result: AuthResponse): Promise<void> {
+    await cleanup;
+    if (!(await persistTokens(result.tokens, epoch))) throw new SessionChangedError();
+    if (currentAuthEpoch() !== epoch) throw new SessionChangedError();
+    hooks.apply({ status: "signedIn", user: result.user });
+  }
+
+  async function establish(request: () => Promise<AuthResponse>): Promise<void> {
+    // A new sign-in supersedes whatever an earlier attempt, or the previous
+    // account, still has in flight.
+    const epoch = advanceAuthEpoch();
+    await finishSignIn(epoch, await request());
+  }
+
+  /**
+   * `request` opens the provider's sheet and sends what it returned to the server. The
+   * epoch is taken first, so everything after (the sheet, the network, the Keychain
+   * write) belongs to this attempt only. A new identity yields an offer and signs
+   * nothing in; the account exists only once onboarding is completed (or linked).
+   */
+  async function signInWithProvider(
+    request: () => Promise<SocialSignInResponse>,
+  ): Promise<ProviderSignInResult> {
+    const epoch = advanceAuthEpoch();
+    const result = await request();
+    if (result.status === "onboarding") {
+      if (currentAuthEpoch() !== epoch) throw new SessionChangedError();
+      return { kind: "onboarding", offer: result.onboarding };
+    }
+    await finishSignIn(epoch, result);
+    return { kind: "signedIn" };
+  }
+
+  function signIn(email: string, password: string): Promise<void> {
+    return establish(() => authApi.login(email, password));
+  }
+
+  function signUp(input: RegisterInput): Promise<void> {
+    return establish(() => authApi.register(input));
+  }
+
+  /** The launch-time restore, or null when the account changed while it ran. */
+  async function restore(): Promise<RestoredSession | null> {
+    const epoch = currentAuthEpoch();
+    const restored = await restoreSession();
+    return currentAuthEpoch() === epoch ? restored : null;
+  }
+
+  return {
+    signIn,
+    signUp,
+    signInWithProvider,
+    /** Finishes onboarding or links to an existing account: both end signed in. */
+    establish,
+    signOut,
+    accountDeleted,
+    sessionExpired,
+    restore,
+  };
+}
+
+export type SessionController = ReturnType<typeof createSessionController>;

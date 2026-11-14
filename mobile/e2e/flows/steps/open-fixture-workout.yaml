@@ -1,0 +1,12 @@
+# From the athlete's History tab, opens the finished fixture workout "Avery Push Fixture" from
+# the history list and waits for it to be on screen. Requires a signed-in athlete on the tab bar.
+appId: host.exp.Exponent
+---
+- tapOn: "History, tab.*"
+- extendedWaitUntil:
+    visible: "Avery Push Fixture, .*"
+    timeout: 20000
+- tapOn: "Avery Push Fixture, .*"
+- extendedWaitUntil:
+    visible: "Edit workout"
+    timeout: 20000

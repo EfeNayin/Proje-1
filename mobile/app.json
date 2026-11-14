@@ -1,14 +1,27 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Aures",
+    "slug": "aures",
     "version": "1.0.0",
     "orientation": "portrait",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/751aebe3-68ef-4617-ac03-9060ce2d0d81"
+    },
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
-    "userInterfaceStyle": "automatic",
+    "scheme": "aures",
+    "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.efenayin.aures",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false
+        },
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -43,6 +56,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "751aebe3-68ef-4617-ac03-9060ce2d0d81"
+      }
+    },
+    "owner": "efe_nayn"
   }
 }

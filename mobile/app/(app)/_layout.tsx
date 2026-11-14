@@ -7,9 +7,24 @@
  */
 
 import { Redirect, Stack } from "expo-router";
+import { StyleSheet, View } from "react-native";
 
 import { useAuth } from "../../src/auth/AuthContext";
-import { colors } from "../../src/theme";
+import { lightHeaderOptions } from "../../src/lightHeaderOptions";
+import { light } from "../../src/lightTheme";
+import { RestTimerOverlay } from "../../src/workout/RestTimerPill";
+
+/**
+ * Deep links (and reloads) that land on a screen below the tabs, such as
+ * /research, have no history of their own, so the stack would show no back
+ * control. Anchoring on (tabs) puts the tabs — Start Workout first — underneath
+ * the linked screen, and the native back arrow, swipe-back gesture and Android
+ * back button all return there. In-app navigation is unaffected: router.push
+ * from a tab already stacks on top of it.
+ */
+export const unstable_settings = {
+  anchor: "(tabs)",
+};
 
 export default function AppLayout() {
   const { status } = useAuth();
@@ -19,34 +34,67 @@ export default function AppLayout() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerStyle: { backgroundColor: colors.background },
-        headerTintColor: colors.text,
-        headerShadowVisible: false,
-        contentStyle: { backgroundColor: colors.background },
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="workout/[id]" options={{ title: "Workout" }} />
-      <Stack.Screen
-        name="workout/exercise-picker"
-        options={{ title: "Add exercise", presentation: "modal" }}
-      />
-      <Stack.Screen
-        name="workout/checkin"
-        options={{ title: "Check-in", presentation: "modal" }}
-      />
-      <Stack.Screen name="program/[id]" options={{ title: "Program" }} />
-      <Stack.Screen name="program/template/[id]" options={{ title: "Template" }} />
-      <Stack.Screen
-        name="profile/edit"
-        options={{ title: "Edit Profile", presentation: "modal" }}
-      />
-      <Stack.Screen name="profile/personal-details" options={{ title: "Personal Details" }} />
-      <Stack.Screen name="profile/weight-history" options={{ title: "Weight History" }} />
-      <Stack.Screen name="profile/preferences" options={{ title: "Preferences" }} />
-      <Stack.Screen name="profile/nutrition-goals" options={{ title: "Nutrition Goals" }} />
-    </Stack>
+    <View style={styles.root}>
+      <Stack
+        // Every screen in this area is light. The header and the page behind it
+        // are set once here rather than per screen, so a pushed screen never
+        // flashes a different colour while it mounts.
+        screenOptions={{
+          ...lightHeaderOptions,
+          // Arrow only: without this iOS shows the previous screen's title, which for
+          // screens pushed from the tabs is the raw route name "(tabs)".
+          headerBackButtonDisplayMode: "minimal",
+          contentStyle: { backgroundColor: light.background },
+        }}
+      >
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="diagnosis" options={{ title: "Diagnosis" }} />
+        <Stack.Screen name="daily-checkin" options={{ title: "Daily check-in" }} />
+        <Stack.Screen name="research/index" options={{ title: "Araştırma" }} />
+        <Stack.Screen name="research/[id]" options={{ title: "Konu" }} />
+        <Stack.Screen name="research/pubmed" options={{ title: "PubMed yayınları" }} />
+        <Stack.Screen name="coaching/athletes" options={{ title: "My Athletes" }} />
+        <Stack.Screen name="coaching/coaches" options={{ title: "My Coaches" }} />
+        <Stack.Screen name="coaching/athlete/[linkId]/index" options={{ title: "Athlete" }} />
+        <Stack.Screen name="coaching/athlete/[linkId]/workout/[workoutId]" options={{ title: "Workout" }} />
+        <Stack.Screen name="coaching/athlete/[linkId]/send-program" options={{ title: "Send program" }} />
+        <Stack.Screen name="coaching/athlete/[linkId]/programs/index" options={{ title: "Program management" }} />
+        <Stack.Screen name="coaching/athlete/[linkId]/programs/[lineageId]/index" options={{ title: "Prepared program" }} />
+        <Stack.Screen name="coaching/athlete/[linkId]/programs/[lineageId]/publish" options={{ title: "Review and publish" }} />
+        <Stack.Screen name="coaching/athlete/[linkId]/programs/[lineageId]/version/[version]" options={{ title: "Published version" }} />
+        <Stack.Screen name="coaching/programs-received" options={{ title: "Received programs" }} />
+        <Stack.Screen name="coaching/program-offer/[offerId]" options={{ title: "Program" }} />
+        <Stack.Screen name="workout/[id]" options={{ title: "Workout" }} />
+        <Stack.Screen
+          name="workout/exercise-picker"
+          options={{ title: "Add exercise", presentation: "modal" }}
+        />
+        <Stack.Screen
+          name="workout/checkin"
+          options={{ title: "Check-in", presentation: "modal" }}
+        />
+        {/* Draws its own bar (back arrow, delete, editable name); a native header too would show the name twice. */}
+        <Stack.Screen name="program/[id]" options={{ title: "Program", headerShown: false }} />
+        <Stack.Screen name="program/new" options={{ title: "New program" }} />
+        <Stack.Screen name="program/template/[id]" options={{ title: "Template" }} />
+        <Stack.Screen name="exercise/[id]" options={{ title: "Exercise" }} />
+        <Stack.Screen name="example-program/[id]" options={{ title: "Example program" }} />
+        <Stack.Screen
+          name="profile/edit"
+          options={{ title: "Edit Profile", presentation: "modal" }}
+        />
+        <Stack.Screen name="profile/personal-details" options={{ title: "Personal Details" }} />
+        <Stack.Screen name="profile/weight-history" options={{ title: "Weight History" }} />
+        <Stack.Screen name="profile/preferences" options={{ title: "Preferences" }} />
+        <Stack.Screen name="profile/delete-account" options={{ title: "Delete account" }} />
+        <Stack.Screen name="profile/nutrition-goals" options={{ title: "Nutrition Goals" }} />
+      </Stack>
+      {/* The rest countdown over a past workout's page; the tabs carry their own. */}
+      <RestTimerOverlay />
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

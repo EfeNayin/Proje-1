@@ -7,9 +7,15 @@ Two things get disproportionate attention here:
   screen still looks right and only the history list is wrong.
 """
 
+import asyncio
 from typing import Any
+from uuid import UUID
 
+import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Workout
 
 
 async def _create_workout(
@@ -322,6 +328,169 @@ class TestSetNumbering:
         ).json()
 
         assert [s["set_number"] for s in body["sets"]] == [1, 2]
+
+
+class TestConcurrentSetMutations:
+    """Regression tests for the race fixed in Adım 18 (PROJE_1_CODEX_INCELEME.md):
+    `_load_owned_workout(..., for_update=True)` now takes a row lock on the
+    workout before any set add/edit/delete.
+
+    Real concurrency: the `client` fixture opens a fresh `AsyncSession` per
+    request (see `_override_get_db` in conftest.py), so `asyncio.gather`
+    genuinely overlaps two Postgres transactions here, not two sequential
+    calls. But two overlapping *coroutines* are not the same as two
+    overlapping *SQL statements* — on a local, sub-millisecond database
+    round-trip, the event loop can easily run request A's whole handler
+    to completion before request B's first `await` ever yields back to it,
+    which makes a bare `asyncio.gather` test pass whether or not the lock
+    exists (a first version of these tests did exactly that: it kept
+    passing after the fix was reverted, which means it never actually
+    exercised the race — see the proof-of-race check below).
+
+    The tests here instead force the interleaving deterministically, using
+    `monkeypatch` to insert a real `await asyncio.sleep()` inside the exact
+    window the bug lived in. That widens the race window to something the
+    scheduler cannot avoid hitting, so the test fails reliably without the
+    fix and passes reliably with it — both directions were checked by hand
+    against this codebase before writing this comment.
+    """
+
+    async def test_a_slow_totals_recompute_does_not_lose_the_other_requests_set(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        bench_press_id: str,
+        squat_id: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Before the fix: both requests would independently compute
+        `old_total + their own set` during the delay, then commit; whichever
+        commit landed last silently overwrote the other's contribution to
+        total_volume_kg/total_sets — the set row itself was never lost, only
+        the denormalised totals drifted. `_load_owned_workout(for_update=True)`
+        makes the second request's row lock wait for the first request's
+        *entire* transaction, sleep included, so its own recompute always
+        starts from data that already includes the first request's set.
+        """
+        import app.domains.workouts.service as workout_service
+
+        original_recalculate = workout_service._recalculate_totals
+
+        async def slow_recalculate_totals(db: AsyncSession, workout: Workout) -> None:
+            await original_recalculate(db, workout)
+            await asyncio.sleep(0.3)
+
+        monkeypatch.setattr(workout_service, "_recalculate_totals", slow_recalculate_totals)
+
+        workout = await _create_workout(client, auth_headers)
+
+        first, second = await asyncio.gather(
+            client.post(
+                f"/workouts/{workout['id']}/sets",
+                headers=auth_headers,
+                json={"exercise_id": bench_press_id, "weight_kg": 100, "reps": 8},
+            ),
+            client.post(
+                f"/workouts/{workout['id']}/sets",
+                headers=auth_headers,
+                json={"exercise_id": squat_id, "weight_kg": 140, "reps": 5},
+            ),
+        )
+        assert first.status_code == 201, first.text
+        assert second.status_code == 201, second.text
+
+        detail = (
+            await client.get(f"/workouts/{workout['id']}", headers=auth_headers)
+        ).json()
+
+        assert detail["total_sets"] == 2
+        assert detail["total_volume_kg"] == "1500.00"  # 100*8 + 140*5
+        assert len(detail["sets"]) == 2
+
+    async def test_a_slow_set_number_lookup_does_not_double_assign(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        bench_press_id: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`_next_set_number` has the same read-then-write shape as the
+        totals recompute above, and the same fix covers it: before the fix,
+        both requests could read max=0 during the delay and both insert
+        set_number 1."""
+        import app.domains.workouts.service as workout_service
+
+        original_next_set_number = workout_service._next_set_number
+
+        async def slow_next_set_number(
+            db: AsyncSession, workout_id: UUID, exercise_id: UUID
+        ) -> int:
+            number = await original_next_set_number(db, workout_id, exercise_id)
+            await asyncio.sleep(0.3)
+            return number
+
+        monkeypatch.setattr(workout_service, "_next_set_number", slow_next_set_number)
+
+        workout = await _create_workout(client, auth_headers)
+
+        first, second = await asyncio.gather(
+            client.post(
+                f"/workouts/{workout['id']}/sets",
+                headers=auth_headers,
+                json={"exercise_id": bench_press_id, "weight_kg": 100, "reps": 8},
+            ),
+            client.post(
+                f"/workouts/{workout['id']}/sets",
+                headers=auth_headers,
+                json={"exercise_id": bench_press_id, "weight_kg": 100, "reps": 7},
+            ),
+        )
+        assert first.status_code == 201, first.text
+        assert second.status_code == 201, second.text
+
+        detail = (
+            await client.get(f"/workouts/{workout['id']}", headers=auth_headers)
+        ).json()
+
+        numbers = sorted(s["set_number"] for s in detail["sets"])
+        assert numbers == [1, 2]
+        assert detail["total_sets"] == 2
+
+    async def test_two_concurrent_adds_both_land_in_the_total(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        bench_press_id: str,
+        squat_id: str,
+    ) -> None:
+        """No injected delay: a basic end-to-end sanity check that ordinary
+        concurrent use still works. This one is timing-dependent and, on its
+        own, does not prove the fix does anything — see the class docstring
+        and the two tests above for the actual regression coverage."""
+        workout = await _create_workout(client, auth_headers)
+
+        first, second = await asyncio.gather(
+            client.post(
+                f"/workouts/{workout['id']}/sets",
+                headers=auth_headers,
+                json={"exercise_id": bench_press_id, "weight_kg": 100, "reps": 8},
+            ),
+            client.post(
+                f"/workouts/{workout['id']}/sets",
+                headers=auth_headers,
+                json={"exercise_id": squat_id, "weight_kg": 140, "reps": 5},
+            ),
+        )
+        assert first.status_code == 201, first.text
+        assert second.status_code == 201, second.text
+
+        detail = (
+            await client.get(f"/workouts/{workout['id']}", headers=auth_headers)
+        ).json()
+
+        assert detail["total_sets"] == 2
+        assert detail["total_volume_kg"] == "1500.00"  # 100*8 + 140*5
+        assert len(detail["sets"]) == 2
 
 
 class TestOwnership:

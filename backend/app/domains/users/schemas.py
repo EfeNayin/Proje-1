@@ -2,23 +2,31 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Re-exported so callers have a single obvious place to import the profile
 # shape from, even though it is defined alongside the auth responses.
 from app.domains.auth.schemas import (
+    PHONE_INPUT_MAX_LENGTH,
     ActivityLevel,
     Gender,
     NutritionGoalKind,
     SupportedLocale,
     Username,
     UserProfile,
+    normalize_phone_number,
     validate_timezone,
 )
+from app.domains.auth.social_schemas import ProviderCredential
 
-__all__ = ["UserProfile", "UserUpdate"]
+__all__ = ["DeleteAccountRequest", "UserProfile", "UserUpdate"]
+
+# Columns that are NOT NULL. Omitting one means "leave it", but sending an
+# explicit null cannot mean "clear it" and used to reach the database, which
+# refused it as a 500.
+_NOT_CLEARABLE = ("username", "is_private", "weight_unit", "timezone", "locale")
 
 
 class UserUpdate(BaseModel):
@@ -32,6 +40,9 @@ class UserUpdate(BaseModel):
 
     first_name: str | None = Field(default=None, max_length=100)
     last_name: str | None = Field(default=None, max_length=100)
+    # Contact information, unverified. Unlike the NOT NULL columns it CAN be cleared: an
+    # explicit null or a blank string removes it, an omitted field leaves it alone.
+    phone_number: str | None = Field(default=None, max_length=PHONE_INPUT_MAX_LENGTH)
     username: Username | None = None
     bio: str | None = Field(default=None, max_length=1000)
     is_private: bool | None = None
@@ -59,8 +70,47 @@ class UserUpdate(BaseModel):
     activity_level: ActivityLevel | None = None
     nutrition_goal: NutritionGoalKind | None = None
 
+    @model_validator(mode="after")
+    def required_fields_cannot_be_cleared(self) -> Self:
+        for name in _NOT_CLEARABLE:
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null; omit it to leave it unchanged")
+        return self
+
     @field_validator("timezone")
     @classmethod
     def timezone_is_known(cls, value: str | None) -> str | None:
         # None means "leave unchanged" and must skip validation.
         return value if value is None else validate_timezone(value)
+
+    @field_validator("phone_number")
+    @classmethod
+    def phone_number_is_normalized(cls, value: str | None) -> str | None:
+        # None (explicit null) and blank both clear it; the service tells "omitted" apart
+        # through model_fields_set.
+        return None if value is None else normalize_phone_number(value)
+
+class DeleteAccountRequest(BaseModel):
+    """The current password, nothing else.
+
+    The account to delete is always the signed-in one: there is no field naming a user,
+    and extra fields are refused rather than ignored so a request that tries to point
+    elsewhere fails instead of silently deleting the caller. The length bound is only
+    there so absurd input is refused before bcrypt; the password rule itself lives in
+    auth.service.password_matches. Validation errors never echo the value (see
+    main.py).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Exactly one of the two. A password account confirms with its password; an account
+    # that has none (created with Google or Apple) confirms by signing in with a provider
+    # it has linked, freshly, in the same request.
+    password: str | None = Field(default=None, min_length=1, max_length=1024)
+    provider_credential: ProviderCredential | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_confirmation(self) -> Self:
+        if (self.password is None) == (self.provider_credential is None):
+            raise ValueError("Send exactly one of password or provider_credential")
+        return self

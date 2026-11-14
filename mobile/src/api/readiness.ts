@@ -32,3 +32,17 @@ export function getTodayReadiness(): Promise<ReadinessLog> {
 export function upsertTodayReadiness(payload: ReadinessUpsert): Promise<ReadinessLog> {
   return apiRequest<ReadinessLog>("/readiness/today", { method: "PUT", body: payload });
 }
+
+export type ReadinessPatch = ReadinessUpsert & {
+  /** The day the screen was looking at: the server refuses (409) if the local day has changed. */
+  expected_log_date?: string;
+};
+
+/**
+ * Change only the sent fields of today's log. A field sent as null is cleared; a field
+ * left out keeps its value. Safe to repeat: the same fields give the same result. Never
+ * creates a workout.
+ */
+export function patchTodayReadiness(payload: ReadinessPatch): Promise<ReadinessLog> {
+  return apiRequest<ReadinessLog>("/readiness/today", { method: "PATCH", body: payload });
+}

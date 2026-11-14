@@ -12,6 +12,7 @@ from app.domains.readiness.schemas import (
     ReadinessHistoryQuery,
     ReadinessHistoryResponse,
     ReadinessLogRead,
+    ReadinessPatch,
     ReadinessUpsert,
 )
 
@@ -40,6 +41,24 @@ async def upsert_today(
     db: DbSession,
 ) -> ReadinessLogRead:
     return await service.upsert_today(db, current_user, payload)
+
+
+@router.patch(
+    "/today",
+    response_model=ReadinessLogRead,
+    summary="Change only the sent fields of today's readiness log",
+    description=(
+        "Unlike PUT, fields that are not sent keep their value; a field sent as null is "
+        "cleared. Never creates a workout. `expected_log_date` makes the call fail with "
+        "409 if the user's local day is no longer that day."
+    ),
+)
+async def patch_today(
+    payload: ReadinessPatch,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> ReadinessLogRead:
+    return await service.patch_today(db, current_user, payload)
 
 
 @router.get(

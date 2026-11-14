@@ -1,0 +1,517 @@
+import { apiRequest } from "./client";
+import type { UserProfile } from "./auth";
+
+/**
+ * Coach mode, invites and coach-athlete connections.
+ *
+ * The caller is always the signed-in account (taken from the access token by
+ * the backend); no function here sends a user id. The backend decides who may
+ * do what; hiding a screen is only a convenience.
+ */
+
+/** What one side may see of the other. No email, no training data. */
+export type Person = {
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+};
+
+/** `person` is the athlete in a coach's list and the coach in an athlete's. */
+export type Connection = {
+  id: string;
+  person: Person;
+  connected_at: string;
+  /**
+   * Whether the athlete lets the coach read their completed workouts. Off for
+   * every new connection; only the athlete can change it.
+   */
+  shares_workouts: boolean;
+};
+
+export type InviteCreated = {
+  id: string;
+  /** Shown once; the backend keeps only a hash. */
+  code: string;
+  expires_at: string;
+};
+
+export type InvitePreview = {
+  coach: Person;
+  expires_at: string;
+};
+
+export function enableCoach(): Promise<UserProfile> {
+  return apiRequest<UserProfile>("/coaching/enable", { method: "POST" });
+}
+
+export function createInvite(): Promise<InviteCreated> {
+  return apiRequest<InviteCreated>("/coaching/invites", { method: "POST" });
+}
+
+// The code goes in the body, not the URL, so it stays out of access logs.
+export function previewInvite(code: string): Promise<InvitePreview> {
+  return apiRequest<InvitePreview>("/coaching/invites/preview", {
+    method: "POST",
+    body: { code },
+  });
+}
+
+export function acceptInvite(code: string): Promise<Connection> {
+  return apiRequest<Connection>("/coaching/invites/accept", { method: "POST", body: { code } });
+}
+
+export async function listAthletes(): Promise<Connection[]> {
+  return (await apiRequest<{ items: Connection[] }>("/coaching/athletes")).items;
+}
+
+export async function listCoaches(): Promise<Connection[]> {
+  return (await apiRequest<{ items: Connection[] }>("/coaching/coaches")).items;
+}
+
+export function endConnection(linkId: string): Promise<void> {
+  return apiRequest<void>(`/coaching/links/${linkId}`, { method: "DELETE" });
+}
+
+/** The athlete's per-connection switch. Idempotent; returns the connection as the athlete sees it. */
+export function setWorkoutSharing(linkId: string, enabled: boolean): Promise<Connection> {
+  return apiRequest<Connection>(`/coaching/links/${linkId}/workout-sharing`, {
+    method: "PUT",
+    body: { enabled },
+  });
+}
+
+/** A completed session in a coach's list. No notes, no volume. */
+export type AthleteWorkoutSummary = {
+  id: string;
+  title: string | null;
+  performed_at: string;
+  finished_at: string;
+  /** false: Finish was pressed (real duration). true: closed when a later session started. null: unknown. */
+  finished_automatically: boolean | null;
+  /** Working sets; warm-ups are not counted. */
+  total_sets: number;
+};
+
+export type AthleteWorkoutPage = {
+  items: AthleteWorkoutSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AthleteSet = {
+  set_number: number;
+  weight_kg: string;
+  reps: number;
+  /** null: not recorded. 0 is a real value. */
+  rir: number | null;
+  is_warmup: boolean;
+};
+
+export type AthleteExercise = {
+  exercise_id: string;
+  name: string;
+  sets: AthleteSet[];
+};
+
+export type AthleteWorkoutDetail = AthleteWorkoutSummary & { exercises: AthleteExercise[] };
+
+// The athlete is named by the connection id only; the backend finds the person
+// from it and checks the caller is that connection's coach.
+export function listAthleteWorkouts(
+  linkId: string,
+  limit: number,
+  offset: number,
+): Promise<AthleteWorkoutPage> {
+  return apiRequest<AthleteWorkoutPage>(
+    `/coaching/athletes/${linkId}/workouts?limit=${limit}&offset=${offset}`,
+  );
+}
+
+export function getAthleteWorkout(linkId: string, workoutId: string): Promise<AthleteWorkoutDetail> {
+  return apiRequest<AthleteWorkoutDetail>(`/coaching/athletes/${linkId}/workouts/${workoutId}`);
+}
+
+/**
+ * One earlier completed session of an exercise: the athlete's recorded working
+ * sets only (never warm-ups, reps > 0), in set order.
+ */
+export type AthleteExerciseSession = {
+  workout_id: string;
+  title: string | null;
+  performed_at: string;
+  sets: AthleteSet[];
+};
+
+export type AthleteExerciseHistoryPage = {
+  items: AthleteExerciseSession[];
+  /** Opaque; the backend accepts it only for the same connection, workout and exercise. */
+  next_cursor: string | null;
+};
+
+/**
+ * Earlier sessions of one exercise, opened from a completed workout. The athlete
+ * is named by the connection id only; the backend re-checks the connection, the
+ * sharing switch and the workout/exercise on every page.
+ */
+export function getAthleteExerciseHistory(
+  linkId: string,
+  workoutId: string,
+  exerciseId: string,
+  cursor: string | null,
+  limit = 10,
+): Promise<AthleteExerciseHistoryPage> {
+  const after = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+  return apiRequest<AthleteExerciseHistoryPage>(
+    `/coaching/athletes/${linkId}/workouts/${workoutId}/exercises/${exerciseId}/history?limit=${limit}${after}`,
+  );
+}
+
+/**
+ * A coach's feedback on one completed workout of a sharing athlete. One entry
+ * per connection and workout. `version` is what an edit or delete must name;
+ * the backend refuses (409) when the entry changed since it was read.
+ */
+export type CoachFeedback = {
+  id: string;
+  body: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CoachFeedbackResult = { feedback: CoachFeedback | null };
+
+/** The coach's own entry for this workout, or none. Re-checks the connection and sharing. */
+export function getCoachFeedback(linkId: string, workoutId: string): Promise<CoachFeedbackResult> {
+  return apiRequest<CoachFeedbackResult>(`/coaching/athletes/${linkId}/workouts/${workoutId}/feedback`);
+}
+
+/**
+ * Safe to repeat with the same request id and the same text: the backend returns
+ * the entry it already made. A changed text must use a new request id.
+ */
+export function createCoachFeedback(
+  linkId: string,
+  workoutId: string,
+  requestId: string,
+  body: string,
+): Promise<CoachFeedback> {
+  return apiRequest<CoachFeedback>(
+    `/coaching/athletes/${linkId}/workouts/${workoutId}/feedback/requests/${requestId}`,
+    { method: "PUT", body: { body } },
+  );
+}
+
+export function updateCoachFeedback(
+  linkId: string,
+  workoutId: string,
+  body: string,
+  expectedVersion: number,
+): Promise<CoachFeedback> {
+  return apiRequest<CoachFeedback>(`/coaching/athletes/${linkId}/workouts/${workoutId}/feedback`, {
+    method: "PATCH",
+    body: { body, expected_version: expectedVersion },
+  });
+}
+
+export function deleteCoachFeedback(
+  linkId: string,
+  workoutId: string,
+  expectedVersion: number,
+): Promise<void> {
+  return apiRequest<void>(
+    `/coaching/athletes/${linkId}/workouts/${workoutId}/feedback?expected_version=${expectedVersion}`,
+    { method: "DELETE" },
+  );
+}
+
+/** Feedback one of the athlete's own workouts received; `coach` is the author's public name. */
+export type ReceivedFeedback = {
+  id: string;
+  coach: Person;
+  body: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReceivedFeedbackList = { items: ReceivedFeedback[] };
+
+export function getReceivedFeedback(workoutId: string): Promise<ReceivedFeedbackList> {
+  return apiRequest<ReceivedFeedbackList>(`/coaching/workouts/${workoutId}/feedback`);
+}
+
+/** The one reporting window every card in a response is counted over: start <= performed_at < end. */
+export type ActivityWindow = { start: string; end: string; days: number };
+
+export type AthleteActivity = {
+  /** The most recent completed workout, all time; independent of the window. */
+  latest_workout: { title: string | null; performed_at: string } | null;
+  /** Completed workouts inside the window. */
+  workouts_in_window: number;
+  /** Working sets (not warm-ups, reps > 0) in those workouts. */
+  working_sets_in_window: number;
+};
+
+export type AthleteOverviewItem = Connection & {
+  /** null: the athlete is not sharing, so nothing is available. That is not zero. */
+  activity: AthleteActivity | null;
+};
+
+export type AthleteOverviewPage = {
+  items: AthleteOverviewItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  window: ActivityWindow;
+};
+
+/**
+ * One page of the roster with each sharing athlete's recorded activity. Pass
+ * the first page's `window.end` as `asOf` when asking for later pages so every
+ * card is counted over the same window.
+ */
+export function getAthleteOverview(
+  limit: number,
+  offset: number,
+  asOf?: string,
+): Promise<AthleteOverviewPage> {
+  const query = `limit=${limit}&offset=${offset}${asOf ? `&as_of=${encodeURIComponent(asOf)}` : ""}`;
+  return apiRequest<AthleteOverviewPage>(`/coaching/athletes/overview?${query}`);
+}
+
+// ── Program offers ───────────────────────────────────────────────────────
+// A coach sends a frozen copy of one of their programs; the athlete decides
+// whether to keep an independent copy. Offers hang off one connection, so they
+// vanish with it. Nothing here names an owner: the backend takes the caller
+// from the token and the connection or offer id.
+
+export type OfferStatus = "pending" | "accepted" | "declined" | "superseded";
+
+export type OfferExercise = {
+  exercise_id: string;
+  exercise_name: string;
+  exercise_order: number;
+  target_sets: number;
+  target_reps_min: number | null;
+  target_reps_max: number | null;
+  /** 0 is a real target; null means none was set. */
+  target_rir: number | null;
+  target_rpe: string | null;
+  notes: string | null;
+};
+
+export type OfferTemplate = {
+  name: string;
+  day_order: number;
+  notes: string | null;
+  exercises: OfferExercise[];
+};
+
+export type OfferProgram = {
+  name: string;
+  notes: string | null;
+  templates: OfferTemplate[];
+};
+
+type OfferBase = {
+  id: string;
+  status: OfferStatus;
+  program_name: string;
+  template_count: number;
+  exercise_count: number;
+  sent_at: string;
+  responded_at: string | null;
+  /** Which published version of a prepared program this is; null for a standalone offer. */
+  version: number | null;
+  /** Set when a newer version replaced this one before it was answered. */
+  superseded_at: string | null;
+};
+
+/**
+ * The coach's view of one sent offer. It never says which program the athlete ended up
+ * with, or whether it is active: "accepted" only means they added a copy.
+ */
+export type SentOffer = OfferBase & { lineage_id: string | null };
+export type SentOfferDetail = SentOffer & { program: OfferProgram };
+export type SentOfferPage = { items: SentOffer[]; total: number; limit: number; offset: number };
+
+export type ReceivedOffer = OfferBase & {
+  coach: Person;
+  /** The athlete's own copy once accepted; null while pending or declined (or after deleting it). */
+  program_id: string | null;
+  /** Once accepted: whether accepting made the new copy the active program, as recorded then. */
+  activated: boolean | null;
+};
+
+/**
+ * What accepting would do to the athlete's programs, as of this read (the decision is
+ * made again when they accept). With `replaces_active_copy` the copy of an earlier
+ * accepted version is active now: it is kept, switched off, and the new copy takes over.
+ */
+export type AcceptanceEffect = {
+  kind: "inactive_copy" | "replaces_active_copy";
+  replaces_version: number | null;
+  replaces_program_name: string | null;
+  keeps_active_program_name: string | null;
+};
+
+export type ReceivedOfferDetail = ReceivedOffer & {
+  program: OfferProgram;
+  /** Only while the offer is waiting for an answer. */
+  acceptance: AcceptanceEffect | null;
+};
+export type ReceivedOfferPage = {
+  items: ReceivedOffer[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+/**
+ * What sending this program to this athlete would offer right now, built by the
+ * backend. `fingerprint` identifies exactly this content: the send is accepted
+ * only while it still matches.
+ */
+export type ProgramPreview = { program: OfferProgram; fingerprint: string };
+
+export function getProgramPreview(linkId: string, programId: string): Promise<ProgramPreview> {
+  return apiRequest<ProgramPreview>(`/coaching/athletes/${linkId}/program-preview/${programId}`);
+}
+
+/**
+ * Confirm the previewed content. The backend rebuilds the program itself and
+ * refuses (412) if it no longer matches `fingerprint`. Safe to repeat with the
+ * same request id: the backend returns the offer it already made.
+ */
+export function sendProgramOffer(
+  linkId: string,
+  requestId: string,
+  programId: string,
+  fingerprint: string,
+): Promise<SentOfferDetail> {
+  return apiRequest<SentOfferDetail>(`/coaching/athletes/${linkId}/program-offers/${requestId}`, {
+    method: "PUT",
+    body: { program_id: programId, fingerprint },
+  });
+}
+
+export function listSentOffers(linkId: string, limit: number, offset: number): Promise<SentOfferPage> {
+  return apiRequest<SentOfferPage>(
+    `/coaching/athletes/${linkId}/program-offers?limit=${limit}&offset=${offset}`,
+  );
+}
+
+export function listReceivedOffers(limit: number, offset: number): Promise<ReceivedOfferPage> {
+  return apiRequest<ReceivedOfferPage>(`/coaching/program-offers?limit=${limit}&offset=${offset}`);
+}
+
+export function getReceivedOffer(offerId: string): Promise<ReceivedOfferDetail> {
+  return apiRequest<ReceivedOfferDetail>(`/coaching/program-offers/${offerId}`);
+}
+
+/** Safe to repeat: an offer already accepted returns the same copy. */
+export function acceptOffer(offerId: string): Promise<ReceivedOfferDetail> {
+  return apiRequest<ReceivedOfferDetail>(`/coaching/program-offers/${offerId}/accept`, {
+    method: "POST",
+  });
+}
+
+export function declineOffer(offerId: string): Promise<ReceivedOfferDetail> {
+  return apiRequest<ReceivedOfferDetail>(`/coaching/program-offers/${offerId}/decline`, {
+    method: "POST",
+  });
+}
+
+// ── Prepared programs ────────────────────────────────────────────────────
+// A coach prepares one program for ONE connection and publishes it as numbered,
+// immutable versions. The coach edits the draft with the ordinary program
+// endpoints; publishing freezes it as an offer (see above).
+
+export type LineageSummary = {
+  id: string;
+  /** The coach's editable draft: an ordinary program they own. */
+  draft_program_id: string;
+  name: string;
+  /** Who it is for. */
+  athlete: Person;
+  created_at: string;
+  latest_version: number | null;
+  latest_status: OfferStatus | null;
+  pending_version: number | null;
+};
+
+export type LineageList = { items: LineageSummary[] };
+
+export type LineageDetail = LineageSummary & {
+  /** False only when the draft equals the newest published version. */
+  has_unpublished_changes: boolean;
+  /** Newest first. */
+  versions: SentOffer[];
+};
+
+export type LineageCreateInput = { name?: string; from_program_id?: string };
+
+/** What publishing would send right now, the number it would get and the version it would replace. */
+export type LineagePreview = ProgramPreview & {
+  lineage_id: string;
+  athlete: Person;
+  version: number;
+  replaces_version: number | null;
+};
+
+const lineagesPath = (linkId: string) => `/coaching/athletes/${linkId}/program-lineages`;
+
+export function listLineages(linkId: string): Promise<LineageList> {
+  return apiRequest<LineageList>(lineagesPath(linkId));
+}
+
+/** Safe to repeat with the same request id: the backend returns the preparation it already made. */
+export function createLineage(
+  linkId: string,
+  requestId: string,
+  input: LineageCreateInput,
+): Promise<LineageDetail> {
+  return apiRequest<LineageDetail>(`${lineagesPath(linkId)}/${requestId}`, {
+    method: "PUT",
+    body: input,
+  });
+}
+
+export function getLineage(linkId: string, lineageId: string): Promise<LineageDetail> {
+  return apiRequest<LineageDetail>(`${lineagesPath(linkId)}/${lineageId}`);
+}
+
+/** Only a preparation that was never published can be discarded. */
+export function discardLineage(linkId: string, lineageId: string): Promise<void> {
+  return apiRequest<void>(`${lineagesPath(linkId)}/${lineageId}`, { method: "DELETE" });
+}
+
+export function getLineagePreview(linkId: string, lineageId: string): Promise<LineagePreview> {
+  return apiRequest<LineagePreview>(`${lineagesPath(linkId)}/${lineageId}/preview`);
+}
+
+/**
+ * Confirm the previewed content. The backend rebuilds the draft itself and refuses (412)
+ * if it, or the number it would get, no longer matches `fingerprint`. Safe to repeat
+ * with the same request id.
+ */
+export function publishLineageVersion(
+  linkId: string,
+  lineageId: string,
+  requestId: string,
+  fingerprint: string,
+): Promise<SentOfferDetail> {
+  return apiRequest<SentOfferDetail>(`${lineagesPath(linkId)}/${lineageId}/versions/${requestId}`, {
+    method: "PUT",
+    body: { fingerprint },
+  });
+}
+
+export function getLineageVersion(
+  linkId: string,
+  lineageId: string,
+  version: number,
+): Promise<SentOfferDetail> {
+  return apiRequest<SentOfferDetail>(`${lineagesPath(linkId)}/${lineageId}/versions/${version}`);
+}

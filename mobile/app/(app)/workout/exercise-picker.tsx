@@ -1,131 +1,100 @@
 /**
- * Exercise picker.
+ * Exercise picker, opened from an active workout and from a program template.
  *
- * Search is server-side and accent-insensitive, so "gogus" finds "Göğüs" —
- * on a phone most people do not switch to a Turkish keyboard mid-set.
+ * The list, the search and the Muscles / Equipment filters are the shared
+ * browser (src/exercises/ExerciseBrowser.tsx), the same one the Exercises tab
+ * uses, so every matching exercise is reachable here too. This screen only
+ * decides what a tap means here:
+ *  - the row CHOOSES the exercise, once, and goes back;
+ *  - the information button shows the exercise's details and chooses nothing.
  *
  * Caller-agnostic: it does not need to know who opened it or why. It
  * deposits the choice for usePickedExercise() to collect and goes back,
- * resuming whichever screen was open rather than recreating it — see
- * usePickedExercise for why that distinction matters.
+ * resuming whichever screen was open rather than recreating it, so an unsaved
+ * workout or template draft is still there (see usePickedExercise).
+ *
+ * The details are drawn inside this screen instead of being pushed as another
+ * route. This screen is a native modal; what a second screen opened on top of a
+ * modal looks like, and how it is dismissed, is not something expo-router's
+ * documentation defines, while a view in the same screen has no such question.
+ * The browser stays mounted underneath (only hidden), so the query, the filters
+ * and the list position are untouched when the details are closed.
  */
 
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Stack, useRouter } from "expo-router";
+import { useRef, useState } from "react";
+import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 
-import * as exercisesApi from "../../../src/api/exercises";
 import type { ExerciseSummary } from "../../../src/api/exercises";
-import { colors, radius, spacing } from "../../../src/theme";
+import { ExerciseBrowser } from "../../../src/exercises/ExerciseBrowser";
+import { ExerciseDetailBody } from "../../../src/exercises/ExerciseDetailBody";
+import { light } from "../../../src/lightTheme";
 import { depositPickedExercise } from "../../../src/workout/usePickedExercise";
+
+const MIN_TOUCH = 44;
 
 export default function ExercisePicker() {
   const router = useRouter();
-
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ExerciseSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    // Debounced: without this every keystroke fires a request and the
-    // responses can arrive out of order, making the list flicker.
-    const handle = setTimeout(() => {
-      setLoading(true);
-      exercisesApi
-        .searchExercises(query)
-        .then((data) => {
-          if (!cancelled) setResults(data.items);
-        })
-        .catch(() => {
-          if (!cancelled) setResults([]);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    }, 250);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(handle);
-    };
-  }, [query]);
+  const [infoId, setInfoId] = useState<string | null>(null);
+  const chosen = useRef(false);
 
   const choose = (exercise: ExerciseSummary) => {
-    depositPickedExercise({ id: exercise.id, name: exercise.name_tr ?? exercise.name });
+    // One pick per visit: a double tap, or a second row tapped while the screen
+    // is closing, must not replace the pick or pop a second screen.
+    if (chosen.current) return;
+    chosen.current = true;
+    // English name, matching what the workout/program APIs already return
+    // for a logged set (workouts/service.py, programs/service.py both send
+    // exercise.name, never name_tr).
+    depositPickedExercise({ id: exercise.id, name: exercise.name });
     router.back();
   };
 
   return (
     <View style={styles.screen}>
-      <TextInput
-        style={styles.search}
-        value={query}
-        onChangeText={setQuery}
-        placeholder="Search exercises"
-        placeholderTextColor={colors.textMuted}
-        autoCapitalize="none"
-        autoCorrect={false}
-        autoFocus
+      {/* The modal header comes from the app Stack; this makes it light too. */}
+      <Stack.Screen
+        options={{
+          headerStyle: { backgroundColor: light.surface },
+          headerTintColor: light.text,
+          headerTitleStyle: { color: light.text },
+          headerShadowVisible: false,
+        }}
       />
-
-      {loading ? (
-        <ActivityIndicator color={colors.accent} style={styles.loading} />
-      ) : (
-        <FlatList
-          data={results}
-          keyExtractor={(item) => item.id}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={<Text style={styles.empty}>No matches.</Text>}
-          renderItem={({ item }) => (
-            <Pressable style={styles.row} onPress={() => choose(item)}>
-              <View style={styles.rowMain}>
-                <Text style={styles.rowTitle}>{item.name_tr ?? item.name}</Text>
-                <Text style={styles.rowMeta}>
-                  {[item.equipment, item.is_compound ? "compound" : "isolation"]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </Text>
-              </View>
-            </Pressable>
-          )}
+      <View style={[styles.fill, infoId !== null && styles.hidden]}>
+        <ExerciseBrowser
+          mode="select"
+          autoFocus
+          onRowPress={choose}
+          onInfo={(exercise) => {
+            // The search field is focused when the picker opens; left up, its
+            // keyboard would cover the lower half of the details.
+            Keyboard.dismiss();
+            setInfoId(exercise.id);
+          }}
         />
-      )}
+      </View>
+      {infoId !== null ? (
+        <View style={styles.fill}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back to exercises"
+            style={styles.back}
+            onPress={() => setInfoId(null)}
+          >
+            <Text style={styles.backText}>‹ Exercises</Text>
+          </Pressable>
+          <ExerciseDetailBody id={infoId} selecting />
+        </View>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background, padding: spacing.md },
-  search: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
-    fontSize: 16,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  loading: { marginTop: spacing.lg },
-  list: { paddingBottom: spacing.xl },
-  empty: { color: colors.textMuted, textAlign: "center", marginTop: spacing.lg },
-  row: {
-    paddingVertical: spacing.md,
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  rowMain: { flex: 1 },
-  rowTitle: { color: colors.text, fontSize: 16 },
-  rowMeta: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+  screen: { flex: 1, backgroundColor: light.background, paddingTop: 16 },
+  fill: { flex: 1 },
+  hidden: { display: "none" },
+  back: { minHeight: MIN_TOUCH, alignSelf: "flex-start", justifyContent: "center", paddingHorizontal: 16 },
+  backText: { color: light.text, fontSize: 16, fontWeight: "600" },
 });

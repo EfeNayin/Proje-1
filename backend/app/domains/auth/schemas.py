@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 from zoneinfo import available_timezones
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 # bcrypt hashes at most 72 BYTES and silently ignores the rest. Two passwords
 # sharing their first 72 bytes would therefore be interchangeable, so we
@@ -49,6 +49,65 @@ Username = Annotated[
 
 Password = Annotated[str, Field(min_length=8, max_length=72, examples=["s3cret-passphrase"])]
 
+# ── Phone number (optional, unverified contact information) ──
+# Stored as E.164: "+", the country calling code, the subscriber number, digits only, at
+# most 15 of them (ITU-T E.164). The rule is structural. It does NOT know which numbers
+# exist, what length a country uses, or whether the number is reachable (that needs a
+# numbering-plan library and, for the last one, a verification flow, neither of which
+# exists here), so it is contact information the owner typed, never proof of anything.
+# The mobile client applies the same rule (mobile/src/account/phoneNumber.ts); keep the two
+# in step, and the shared cases in tests/test_phone_number.py and
+# mobile/tests/phone-number.test.cjs.
+PHONE_INPUT_MAX_LENGTH = 40
+_PHONE_MIN_DIGITS = 8
+_PHONE_MAX_DIGITS = 15
+_PHONE_SEPARATORS = " \t-.()"
+PHONE_COUNTRY_CODE_HINT = (
+    "Start with the country code, for example +90 532 123 45 67. "
+    "Spaces, hyphens, dots and parentheses are allowed."
+)
+
+
+def normalize_phone_number(value: str) -> str | None:
+    """"+90 (532) 123-45-67" -> "+905321234567"; blank -> None; anything else -> ValueError.
+
+    Messages never contain the value: validation errors reach logs and clients.
+    """
+    text = value.strip()
+    if not text:
+        return None
+    if text.startswith("00"):  # the international call prefix many countries dial instead of +
+        text = "+" + text[2:]
+    if not text.startswith("+"):
+        raise ValueError(f"Phone number needs an explicit country code. {PHONE_COUNTRY_CODE_HINT}")
+    digits = "".join(character for character in text[1:] if character not in _PHONE_SEPARATORS)
+    # ASCII digits only: str.isdigit() also accepts other scripts' digits and superscripts.
+    if not digits or any(character not in "0123456789" for character in digits):
+        raise ValueError(
+            f"Phone number may contain only digits after the +. {PHONE_COUNTRY_CODE_HINT}"
+        )
+    if digits[0] == "0":
+        raise ValueError(f"A country code never starts with 0. {PHONE_COUNTRY_CODE_HINT}")
+    if not _PHONE_MIN_DIGITS <= len(digits) <= _PHONE_MAX_DIGITS:
+        raise ValueError(
+            f"Phone number must have {_PHONE_MIN_DIGITS} to {_PHONE_MAX_DIGITS} digits "
+            "including the country code."
+        )
+    return "+" + digits
+
+
+def _fits_bcrypt(value: str) -> str:
+    if len(value.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        raise ValueError(
+            f"Password must be at most {BCRYPT_MAX_BYTES} bytes "
+            "(non-ASCII characters count as more than one byte)"
+        )
+    return value
+
+
+# The registration rules, for a password that is chosen again (password recovery).
+NewPassword = Annotated[Password, AfterValidator(_fits_bcrypt)]
+
 
 def validate_timezone(value: str) -> str:
     """Reject anything that is not an IANA timezone name.
@@ -66,6 +125,10 @@ class RegisterRequest(BaseModel):
     username: Username
     password: Password
     first_name: str | None = Field(default=None, max_length=100)
+
+    # Optional and unverified. Omitted, null and blank all mean "none", so older clients
+    # (which never send it) keep working; anything else is normalized to E.164 or refused.
+    phone_number: str | None = Field(default=None, max_length=PHONE_INPUT_MAX_LENGTH)
 
     # Clients should send the device's timezone. The default keeps signup
     # working if they do not, and matches the current primary market.
@@ -89,10 +152,43 @@ class RegisterRequest(BaseModel):
     def timezone_is_known(cls, value: str) -> str:
         return validate_timezone(value)
 
+    @field_validator("phone_number")
+    @classmethod
+    def phone_number_is_normalized(cls, value: str | None) -> str | None:
+        return None if value is None else normalize_phone_number(value)
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    # Bounded only so absurd input is refused before it reaches bcrypt (passlib
+    # raises on very long secrets, which used to surface as a 500). Deliberately
+    # far above the 72-byte registration limit; the exact rule is in
+    # service.login.
+    password: str = Field(max_length=1024)
+
+
+class PasswordRecoveryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+
+
+class PasswordRecoveryAccepted(BaseModel):
+    """The one answer to a recovery request, whether or not the address has an account."""
+
+    message: str
+    # Constants of the deployment, so they say nothing about the address.
+    code_valid_minutes: int
+    resend_after_seconds: int
+
+
+class PasswordRecoveryConfirm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    # What the person typed: spaces and hyphens are tolerated and removed by the service.
+    code: str = Field(max_length=32)
+    new_password: NewPassword
 
 
 class RefreshRequest(BaseModel):
@@ -118,6 +214,9 @@ class UserProfile(BaseModel):
     username: str
     first_name: str | None
     last_name: str | None
+    # Private contact information of the account owner: it appears only in the owner's own
+    # profile (this model is never used for anyone else) and nowhere in coach or athlete views.
+    phone_number: str | None
     bio: str | None
     is_private: bool
     weight_unit: str
@@ -129,6 +228,10 @@ class UserProfile(BaseModel):
     goal_weight_kg: Decimal | None
     activity_level: ActivityLevel | None
     nutrition_goal: NutritionGoalKind | None
+    coach_enabled: bool
+    # False for an account created with Google or Apple. The app uses it to decide how the
+    # person confirms sensitive actions (a password, or signing in with the provider again).
+    has_password: bool
     created_at: datetime
 
 

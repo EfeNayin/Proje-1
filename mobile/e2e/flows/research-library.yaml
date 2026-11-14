@@ -1,0 +1,163 @@
+appId: host.exp.Exponent
+---
+# Turkish research library: open it from Start Workout, search, open a topic, go back,
+# clear the query, try a question the library does not cover, and tap a source link.
+# Self-contained on purpose (the Expo Go introduction handling is copied from
+# smoke-workout.yaml). Run with scripts/run.sh flows/research-library.yaml.
+- launchApp
+- openLink: ${METRO_URL}
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- extendedWaitUntil:
+    visible: "Find your strength."
+    timeout: 180000
+- extendedWaitUntil:
+    visible: "Continue"
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - extendedWaitUntil:
+          visible: "Reload"
+          timeout: 10000
+      - tapOn: "Close"
+      - tapOn: "Gear Shape, Filled"
+      - extendedWaitUntil:
+          visible: "Reload"
+          timeout: 10000
+      - scrollUntilVisible:
+          element: "Tools button"
+          timeout: 15000
+      - tapOn:
+          text: "1"
+          rightOf: "Tools button"
+          index: 1
+      - tapOn: "Close"
+
+# ── sign in ──
+- tapOn:
+    id: "login-email"
+- inputText: ${E2E_EMAIL}
+- tapOn:
+    id: "login-password"
+- inputText: ${E2E_PASSWORD}
+- tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Start an Empty Workout"
+    timeout: 30000
+
+# ── open the library from Start Workout ──
+- scrollUntilVisible:
+    element: "Research, explore training research"
+    timeout: 15000
+- tapOn: "Research, explore training research"
+- extendedWaitUntil:
+    visible: "Kütüphanede ara"
+    timeout: 15000
+- assertVisible: "11 konu"
+- takeScreenshot: library-01-all-topics
+
+# ── a question, typed as a user would (Turkish letters) ──
+- tapOn: "Kütüphanede ara"
+- inputText: "Her set tükenişe gitmek şart mı?"
+- extendedWaitUntil:
+    visible: "1 konu bulundu"
+    timeout: 10000
+- assertVisible: "Her seti tükenişe kadar götürmek şart mı.*"
+- assertNotVisible: "Setler arasında ne kadar dinlenmek gerekir.*"
+- takeScreenshot: library-02-failure-result
+
+# ── open the topic, check the sections, go back ──
+- tapOn: "Her seti tükenişe kadar götürmek şart mı.*"
+- extendedWaitUntil:
+    visible: "Kısa yanıt"
+    timeout: 10000
+- assertVisible: "Kaynaklara dayalı Türkçe açıklama · kişisel tavsiye değildir"
+- scrollUntilVisible:
+    element: "Sınırlamalar"
+    timeout: 10000
+- scrollUntilVisible:
+    element: "PubMed kaydı"
+    timeout: 10000
+- takeScreenshot: library-03-detail-sources
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible: "1 konu bulundu"
+    timeout: 10000
+- assertVisible: "Her seti tükenişe kadar götürmek şart mı.*"
+
+# ── clearing the query brings the full list back, nothing stale ──
+- tapOn: "Aramayı temizle"
+- extendedWaitUntil:
+    visible: "11 konu"
+    timeout: 10000
+- takeScreenshot: library-04-cleared
+
+# ── a question the library does not cover: no result, no closest topic ──
+- tapOn: "Kütüphanede ara"
+- inputText: "kreatin kaç gram"
+- extendedWaitUntil:
+    visible: "Bu soruyla eşleşen içerik yok."
+    timeout: 10000
+- assertVisible: "Kütüphanede bulunmayan sözcükler: kreatin.*"
+- assertNotVisible: "Her seti tükenişe kadar götürmek şart mı.*"
+- assertNotVisible: "Kas gelişimi için haftada kaç set yapılmalı.*"
+- takeScreenshot: library-05-unsupported
+# The keyboard covers the notice's button; the field's own clear button stays reachable.
+- hideKeyboard
+- tapOn: "Aramayı temizle ve tüm konuları göster"
+- extendedWaitUntil:
+    visible: "11 konu"
+    timeout: 10000
+
+# ── an ASCII-only query finds the same topic ──
+- tapOn: "Kütüphanede ara"
+- inputText: "ISINMA"
+- extendedWaitUntil:
+    visible: "Isınma gerekli mi.*"
+    timeout: 10000
+- tapOn: "Aramayı temizle"
+
+# ── the PubMed feed is a separate screen under the same Research entry ──
+- scrollUntilVisible:
+    element: "PubMed yayınları \\(İngilizce\\)"
+    timeout: 15000
+- tapOn: "PubMed yayınları \\(İngilizce\\)"
+- extendedWaitUntil:
+    visible: "PubMed yayınları"
+    timeout: 15000
+- takeScreenshot: library-06-pubmed-feed
+- tapOn: "Back"
+# The list keeps its scroll position, so the search field is above the fold.
+- extendedWaitUntil:
+    visible: "PubMed yayınları \\(İngilizce\\)"
+    timeout: 10000
+- scrollUntilVisible:
+    element: "Kütüphanede ara"
+    direction: UP
+    timeout: 15000
+
+# ── an external source link opens the in-app browser, and closing it returns ──
+- tapOn: "Kütüphanede ara"
+- inputText: "uyku"
+- extendedWaitUntil:
+    visible: "Uyku ve toparlanma.*"
+    timeout: 10000
+- tapOn: "Uyku ve toparlanma.*"
+- extendedWaitUntil:
+    visible: "Kısa yanıt"
+    timeout: 10000
+- scrollUntilVisible:
+    element: "PubMed kaydı"
+    timeout: 60000
+    speed: 70
+- tapOn:
+    text: "PubMed kaydı"
+    index: 0
+- takeScreenshot: library-07-external-link

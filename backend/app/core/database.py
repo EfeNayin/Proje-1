@@ -9,12 +9,22 @@ from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+from app.core.dburl import engine_arguments
 
-# echo=True → geliştirmede çalışan her SQL'i logla (üretimde kapalı, gürültü yapar).
+# echo=True → geliştirmede çalışan her SQL'i logla (yalnızca development'ta; staging
+# dahil diğer ortamlarda kapalı). hide_parameters her ortamda açık: bağlı
+# parametreler e-posta, bcrypt şifre hash'i, refresh token hash'i ve sağlık
+# verisi taşır ve log'a düşmemeli (SQL metni yine görünür).
+_url, _connect_args = engine_arguments(settings.DATABASE_URL)
 engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=not settings.is_production,
+    _url,
+    connect_args=_connect_args,
+    echo=settings.is_development,
+    hide_parameters=True,
     pool_pre_ping=True,  # bağlantı havuzundaki ölü bağlantıları kullanmadan önce yakala
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_recycle=settings.DB_POOL_RECYCLE_SECONDS,
 )
 
 # expire_on_commit=False: commit sonrası obje alanlarına erişince otomatik

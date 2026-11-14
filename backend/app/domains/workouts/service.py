@@ -12,16 +12,25 @@ Two invariants this module is responsible for:
    looked fine.
 """
 
+import base64
+import binascii
+import hashlib
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import NotFoundError, ValidationAppError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationAppError
+from app.domains.programs.schemas import WorkoutTemplateRead
 from app.domains.workouts.schemas import (
+    ExerciseHistoryCursor,
+    ExerciseHistoryQuery,
+    ExerciseHistoryResponse,
+    PreviousExerciseSession,
     SetCreate,
     SetRead,
     SetUpdate,
@@ -32,22 +41,46 @@ from app.domains.workouts.schemas import (
     WorkoutSummary,
     WorkoutUpdate,
 )
-from app.models import Exercise, Set, Workout
+from app.models import Exercise, Set, SetSaveRequest, Workout
 
 
 async def _load_owned_workout(
-    db: AsyncSession, workout_id: UUID, user_id: UUID, *, with_sets: bool = False
+    db: AsyncSession,
+    workout_id: UUID,
+    user_id: UUID,
+    *,
+    with_sets: bool = False,
+    for_update: bool = False,
 ) -> Workout:
     """Fetch a workout that belongs to this user, or raise 404.
 
     A workout owned by someone else reports 404 rather than 403: telling the
     caller "this exists but is not yours" would leak which ids are real.
+
+    for_update=True takes a row lock (`SELECT ... FOR UPDATE`) on the
+    workout. Every set mutation (add/update/delete, see below) passes this:
+    two concurrent requests against the same workout — two devices, a
+    client retry, a double-tapped "add set" button — would otherwise each
+    read the sets table, compute total_volume_kg/total_sets independently,
+    and commit; the second commit overwrites the first, silently dropping
+    its contribution from the totals even though the set row itself is
+    safely stored (see `_recalculate_totals`). Recomputing from scratch on
+    every mutation guards against incremental drift, but on its own does
+    nothing against this: it is still a plain read-then-write with no
+    ordering guarantee between two transactions. The lock forces the second
+    request to wait until the first has fully committed (insert + recompute)
+    before it starts its own read, so its recompute always sees the first
+    request's change. It also serialises `_next_set_number`, which has the
+    same read-then-write shape and would otherwise let two concurrent adds
+    to the same exercise both claim set_number 1.
     """
     stmt = select(Workout).where(Workout.id == workout_id, Workout.user_id == user_id)
     if with_sets:
         # Eager load; a lazy load outside the await context raises
         # MissingGreenlet under async SQLAlchemy.
         stmt = stmt.options(selectinload(Workout.sets).selectinload(Set.exercise))
+    if for_update:
+        stmt = stmt.with_for_update()
 
     workout = await db.scalar(stmt)
     if workout is None:
@@ -98,9 +131,7 @@ async def _assert_exercises_exist(db: AsyncSession, exercise_ids: set[UUID]) -> 
     if not exercise_ids:
         return
 
-    found = set(
-        (await db.scalars(select(Exercise.id).where(Exercise.id.in_(exercise_ids)))).all()
-    )
+    found = set((await db.scalars(select(Exercise.id).where(Exercise.id.in_(exercise_ids)))).all())
     missing = exercise_ids - found
     if missing:
         raise ValidationAppError(
@@ -143,13 +174,142 @@ async def _to_detail(db: AsyncSession, workout: Workout) -> WorkoutDetail:
         total_volume_kg=workout.total_volume_kg,
         total_sets=workout.total_sets,
         template_id=workout.template_id,
+        template_snapshot=(
+            WorkoutTemplateRead.model_validate(workout.template_snapshot)
+            if workout.template_snapshot is not None
+            else None
+        ),
         finished_at=workout.finished_at,
+        finished_automatically=workout.finished_automatically,
         is_private=workout.is_private,
         sets=[_to_set_read(row) for row in rows],
     )
 
 
 # ── Workouts ─────────────────────────────────────────────────────────────
+
+
+async def get_previous_exercise_session(
+    db: AsyncSession, user_id: UUID, workout_id: UUID, exercise_id: UUID
+) -> PreviousExerciseSession | None:
+    page = await get_exercise_history(
+        db, user_id, workout_id, exercise_id, ExerciseHistoryQuery(limit=1)
+    )
+    return page.items[0] if page.items else None
+
+
+async def earlier_exercise_sessions(
+    db: AsyncSession,
+    athlete_id: UUID,
+    exercise_id: UUID,
+    *,
+    before: datetime,
+    after: tuple[datetime, UUID] | None,
+    limit: int,
+    load_exercise: bool = False,
+) -> tuple[list[tuple[Workout, list[Set]]], bool]:
+    """One page of an athlete's earlier closed sessions of an exercise.
+
+    The single definition of "history" shared by the athlete's own panel and
+    the coach's read-only one. It performs NO authorisation: the caller must
+    already have established that it may read `athlete_id`'s workouts.
+
+    A session is included when it belongs to the athlete, started strictly
+    before `before`, is closed, and has at least one working set (not a warm-up,
+    reps > 0) of exactly this exercise id. Only those working sets are returned.
+    Order is performed_at DESC, id DESC; `after` is the (performed_at, id) of
+    the last session already shown and only narrows the result. Returns the
+    page and whether older sessions remain. Two queries however many sessions
+    or sets there are.
+    """
+    eligible_sets = (
+        Set.exercise_id == exercise_id,
+        Set.is_warmup.is_(False),
+        Set.reps > 0,
+    )
+    stmt = select(Workout).where(
+        Workout.user_id == athlete_id,
+        Workout.performed_at < before,
+        Workout.finished_at.is_not(None),
+        select(Set.id).where(Set.workout_id == Workout.id, *eligible_sets).exists(),
+    )
+    if after is not None:
+        stmt = stmt.where(tuple_(Workout.performed_at, Workout.id) < after)
+    workouts = (
+        await db.scalars(
+            stmt.order_by(Workout.performed_at.desc(), Workout.id.desc()).limit(limit + 1)
+        )
+    ).all()
+    page = workouts[:limit]
+    if not page:
+        return [], False
+    set_stmt = (
+        select(Set)
+        .where(Set.workout_id.in_([workout.id for workout in page]), *eligible_sets)
+        .order_by(Set.set_number, Set.id)
+    )
+    if load_exercise:
+        set_stmt = set_stmt.options(selectinload(Set.exercise))
+    grouped: dict[UUID, list[Set]] = {workout.id: [] for workout in page}
+    for row in (await db.scalars(set_stmt)).all():
+        grouped[row.workout_id].append(row)
+    return [(workout, grouped[workout.id]) for workout in page], len(workouts) > limit
+
+
+async def get_exercise_history(
+    db: AsyncSession,
+    user_id: UUID,
+    workout_id: UUID,
+    exercise_id: UUID,
+    query: ExerciseHistoryQuery,
+) -> ExerciseHistoryResponse:
+    """Earlier closed sessions, newest first, with a stable date/UUID cursor.
+
+    The cursor only narrows the owned reference query; it grants no access.
+    Equal reference start times are excluded, as in the previous-session API.
+    """
+    current = await _load_owned_workout(db, workout_id, user_id)
+    if await db.get(Exercise, exercise_id) is None:
+        raise NotFoundError("Exercise not found")
+    after: tuple[datetime, UUID] | None = None
+    if query.cursor is not None:
+        try:
+            cursor = ExerciseHistoryCursor.model_validate_json(
+                base64.b64decode(query.cursor, altchars=b"-_", validate=True)
+            )
+        except (ValueError, binascii.Error) as exc:
+            raise ValidationAppError("Invalid exercise history cursor") from exc
+        after = (cursor.performed_at, cursor.workout_id)
+    sessions, has_more = await earlier_exercise_sessions(
+        db,
+        user_id,
+        exercise_id,
+        before=current.performed_at,
+        after=after,
+        limit=query.limit,
+        load_exercise=True,
+    )
+    next_cursor = None
+    if has_more:
+        last = sessions[-1][0]
+        next_cursor = base64.urlsafe_b64encode(
+            ExerciseHistoryCursor(performed_at=last.performed_at, workout_id=last.id)
+            .model_dump_json()
+            .encode()
+        ).decode()
+    return ExerciseHistoryResponse(
+        items=[
+            PreviousExerciseSession(
+                workout_id=workout.id,
+                title=workout.title,
+                performed_at=workout.performed_at,
+                finished_automatically=workout.finished_automatically,
+                sets=[_to_set_read(row) for row in rows],
+            )
+            for workout, rows in sessions
+        ],
+        next_cursor=next_cursor,
+    )
 
 
 async def close_dangling_workouts(db: AsyncSession, user_id: UUID) -> None:
@@ -170,11 +330,10 @@ async def close_dangling_workouts(db: AsyncSession, user_id: UUID) -> None:
     now = datetime.now(UTC)
     for workout in dangling:
         workout.finished_at = now
+        workout.finished_automatically = True
 
 
-async def create_workout(
-    db: AsyncSession, user_id: UUID, payload: WorkoutCreate
-) -> WorkoutDetail:
+async def create_workout(db: AsyncSession, user_id: UUID, payload: WorkoutCreate) -> WorkoutDetail:
     """Log a session, optionally with all of its sets in one request."""
     await _assert_exercises_exist(db, {s.exercise_id for s in payload.sets})
     await close_dangling_workouts(db, user_id)
@@ -276,6 +435,7 @@ async def finish_workout(db: AsyncSession, user_id: UUID, workout_id: UUID) -> W
 
     if workout.finished_at is None:
         workout.finished_at = datetime.now(UTC)
+        workout.finished_automatically = False
         await db.commit()
 
     return await _to_detail(db, workout)
@@ -308,10 +468,34 @@ async def get_active_workout(db: AsyncSession, user_id: UUID) -> WorkoutDetail |
 
 
 async def add_set(
-    db: AsyncSession, user_id: UUID, workout_id: UUID, payload: SetCreate
+    db: AsyncSession,
+    user_id: UUID,
+    workout_id: UUID,
+    payload: SetCreate,
+    request_id: UUID | None = None,
 ) -> WorkoutDetail:
     """Append a set and refresh the workout's totals."""
-    workout = await _load_owned_workout(db, workout_id, user_id)
+    workout = await _load_owned_workout(db, workout_id, user_id, for_update=True)
+    if request_id is not None:
+        canonical = payload.model_dump(mode="json")
+        canonical["weight_kg"] = format(payload.weight_kg, ".2f")
+        canonical["rpe"] = format(payload.rpe, ".1f") if payload.rpe is not None else None
+        request_hash = hashlib.sha256(
+            json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        # The owned-workout lock serializes both receipt lookup and set creation.
+        receipt = await db.get(SetSaveRequest, (workout_id, request_id))
+        if receipt is not None:
+            if receipt.request_hash != request_hash:
+                raise ConflictError("This set request was already used with different details.")
+            # Return today's log, not an old snapshot that could undo later edits
+            # in the client. A deleted set remains deleted.
+            detail = await _to_detail(db, workout)
+            await db.commit()
+            return detail
+        db.add(
+            SetSaveRequest(workout_id=workout_id, request_id=request_id, request_hash=request_hash)
+        )
     await _assert_exercises_exist(db, {payload.exercise_id})
 
     db.add(
@@ -329,9 +513,10 @@ async def add_set(
 
     await db.flush()
     await _recalculate_totals(db, workout)
+    detail = await _to_detail(db, workout)
     await db.commit()
 
-    return await _to_detail(db, workout)
+    return detail
 
 
 async def update_set(
@@ -342,11 +527,9 @@ async def update_set(
     Ownership is checked through the workout, so a set id from someone else's
     session cannot be reached even by guessing (ids are sequential integers).
     """
-    workout = await _load_owned_workout(db, workout_id, user_id)
+    workout = await _load_owned_workout(db, workout_id, user_id, for_update=True)
 
-    target = await db.scalar(
-        select(Set).where(Set.id == set_id, Set.workout_id == workout.id)
-    )
+    target = await db.scalar(select(Set).where(Set.id == set_id, Set.workout_id == workout.id))
     if target is None:
         raise NotFoundError("Set not found")
 
@@ -365,11 +548,9 @@ async def delete_set(
     db: AsyncSession, user_id: UUID, workout_id: UUID, set_id: int
 ) -> WorkoutDetail:
     """Remove a set, then close the gap it leaves in the numbering."""
-    workout = await _load_owned_workout(db, workout_id, user_id)
+    workout = await _load_owned_workout(db, workout_id, user_id, for_update=True)
 
-    target = await db.scalar(
-        select(Set).where(Set.id == set_id, Set.workout_id == workout.id)
-    )
+    target = await db.scalar(select(Set).where(Set.id == set_id, Set.workout_id == workout.id))
     if target is None:
         raise NotFoundError("Set not found")
 

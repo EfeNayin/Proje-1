@@ -23,7 +23,7 @@
  */
 
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 
 export type PickedExercise = {
   id: string;
@@ -59,7 +59,9 @@ export function usePickedExercise(onPick: (exercise: PickedExercise) => void): {
   // closure most renders (it usually captures a setState call), and
   // resubscribing the effect every render would be wasteful.
   const onPickRef = useRef(onPick);
-  onPickRef.current = onPick;
+  useLayoutEffect(() => {
+    onPickRef.current = onPick;
+  }, [onPick]);
 
   useFocusEffect(
     useCallback(() => {

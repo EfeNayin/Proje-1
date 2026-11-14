@@ -30,6 +30,9 @@ export const statusColors = {
   optimal: "#3ddc84",
   high: "#4aa3f0",
   above_mrv: "#ff6b6b",
+  // Neutral, same tone as textMuted — deliberately not the "optimal" green:
+  // there is no published range to say this count is fine against.
+  no_reference: "#8b93a3",
 } as const;
 
 export const statusLabels = {
@@ -38,6 +41,21 @@ export const statusLabels = {
   optimal: "Optimal",
   high: "High",
   above_mrv: "Over MRV",
+  no_reference: "No reference range",
+} as const;
+
+/**
+ * Colours for diagnosis findings, by severity. Reuses the same tokens as
+ * statusColors above rather than inventing a second palette: "critical" is
+ * the same red as "above_mrv", "warning" the same amber as "below_mev",
+ * "good" the same green as "optimal". "info" (not enough data yet) gets the
+ * neutral muted tone — it isn't good or bad, just missing.
+ */
+export const findingSeverityColors = {
+  critical: statusColors.above_mrv,
+  warning: statusColors.below_mev,
+  good: statusColors.optimal,
+  info: colors.textMuted,
 } as const;
 
 export const spacing = {

@@ -12,9 +12,10 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,14 +24,28 @@ import {
   View,
 } from "react-native";
 
+import {
+  parsePhoneNumber,
+  PHONE_INPUT_MAX_LENGTH,
+  phoneNumberError,
+} from "../../../src/account/phoneNumber";
 import type { Gender, UserUpdateInput } from "../../../src/api/auth";
 import { updateMe } from "../../../src/api/auth";
 import * as bodyApi from "../../../src/api/body";
 import type { BodySummary } from "../../../src/api/body";
 import { useAuth } from "../../../src/auth/AuthContext";
-import { colors, radius, spacing } from "../../../src/theme";
+import { light } from "../../../src/lightTheme";
+import {
+  bodyWeightRangeLabel,
+  BODY_WEIGHT_MAX_KG,
+  BODY_WEIGHT_MIN_KG,
+  formatWeight,
+  formatWeightValue,
+  parseWeightInput,
+  type WeightUnit,
+} from "../../../src/units/weight";
 
-type Field = "weight" | "height" | "dob" | "gender" | "goal" | null;
+type Field = "weight" | "height" | "dob" | "gender" | "goal" | "phone" | null;
 
 const GENDER_OPTIONS: { value: Gender; label: string }[] = [
   { value: "male", label: "Male" },
@@ -81,14 +96,27 @@ function EditActions({
 }) {
   return (
     <View style={styles.editActions}>
-      <Pressable onPress={onCancel} hitSlop={8} style={styles.editAction} disabled={saving}>
-        <Ionicons name="close" size={20} color={colors.textMuted} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Cancel"
+        onPress={onCancel}
+        style={styles.editAction}
+        disabled={saving}
+      >
+        <Ionicons name="close" size={22} color={light.textSecondary} />
       </Pressable>
-      <Pressable onPress={onSave} hitSlop={8} style={styles.editAction} disabled={saving}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Save"
+        accessibilityState={{ busy: saving, disabled: saving }}
+        onPress={onSave}
+        style={styles.editAction}
+        disabled={saving}
+      >
         {saving ? (
-          <ActivityIndicator size="small" color={colors.accent} />
+          <ActivityIndicator size="small" color={light.text} />
         ) : (
-          <Ionicons name="checkmark" size={20} color={colors.accent} />
+          <Ionicons name="checkmark" size={22} color={light.text} />
         )}
       </Pressable>
     </View>
@@ -122,7 +150,13 @@ function Row({
     );
   }
   return (
-    <Pressable style={[styles.row, last && styles.rowNoBorder]} onPress={onPress}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label}, ${value}`}
+      accessibilityHint="Edit"
+      style={({ pressed }) => [styles.row, last && styles.rowNoBorder, pressed && styles.pressed]}
+      onPress={onPress}
+    >
       <Text style={styles.rowLabel}>{label}</Text>
       <Text style={styles.rowValue}>{value}</Text>
     </Pressable>
@@ -135,6 +169,8 @@ export default function PersonalDetailsScreen() {
 
   const [summary, setSummary] = useState<BodySummary | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(true);
+  // A failed request is not "no weight recorded": it gets its own value text and a retry.
+  const [summaryFailed, setSummaryFailed] = useState(false);
   const [editing, setEditing] = useState<Field>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,28 +178,62 @@ export default function PersonalDetailsScreen() {
   const [weightDraft, setWeightDraft] = useState("");
   const [heightDraft, setHeightDraft] = useState("");
   const [goalDraft, setGoalDraft] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState("");
   const [dobDay, setDobDay] = useState("");
   const [dobMonth, setDobMonth] = useState("");
   const [dobYear, setDobYear] = useState("");
 
   const loadSummary = () => {
     setLoadingSummary(true);
+    setSummaryFailed(false);
     bodyApi
       .fetchBodySummary()
       .then(setSummary)
-      .catch(() => undefined)
+      .catch(() => setSummaryFailed(true))
       .finally(() => setLoadingSummary(false));
   };
 
-  useEffect(loadSummary, []);
+  useEffect(() => {
+    let cancelled = false;
+    bodyApi.fetchBodySummary()
+      .then((data) => { if (!cancelled) setSummary(data); })
+      .catch(() => { if (!cancelled) setSummaryFailed(true); })
+      .finally(() => { if (!cancelled) setLoadingSummary(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // The phone row is the last row of the card: on a small screen the keyboard would cover its
+  // input, the save/cancel buttons and the error under it. While it is being edited the
+  // screen scrolls to the end (also when the keyboard finishes opening and when an error
+  // appears), which, with the keyboard inset below, keeps all of it above the keyboard.
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (editing !== "phone") return;
+    const reveal = () => scrollRef.current?.scrollToEnd({ animated: true });
+    const frame = requestAnimationFrame(reveal);
+    const subscription = Keyboard.addListener("keyboardDidShow", reveal);
+    return () => {
+      cancelAnimationFrame(frame);
+      subscription.remove();
+    };
+  }, [editing, error]);
 
   if (!user) return null;
 
+  const unit: WeightUnit = user.weight_unit;
+
   const startEditing = (field: Exclude<Field, null>) => {
     setError(null);
-    if (field === "weight") setWeightDraft(summary?.current_weight_kg ?? "");
+    if (field === "weight") {
+      setWeightDraft(
+        summary?.current_weight_kg ? formatWeightValue(Number(summary.current_weight_kg), unit) : "",
+      );
+    }
     if (field === "height") setHeightDraft(user.height_cm ?? "");
-    if (field === "goal") setGoalDraft(user.goal_weight_kg ?? "");
+    if (field === "phone") setPhoneDraft(user.phone_number ?? "");
+    if (field === "goal") {
+      setGoalDraft(user.goal_weight_kg ? formatWeightValue(Number(user.goal_weight_kg), unit) : "");
+    }
     if (field === "dob") {
       const parts = splitDate(user.date_of_birth);
       setDobDay(parts.day);
@@ -193,15 +263,15 @@ export default function PersonalDetailsScreen() {
   };
 
   const saveWeight = async () => {
-    const parsed = Number(weightDraft.replace(",", "."));
-    if (!Number.isFinite(parsed) || parsed < 20 || parsed > 400) {
-      setError("Enter a weight between 20 and 400 kg.");
+    const parsedKg = parseWeightInput(weightDraft, unit);
+    if (parsedKg === null || parsedKg < BODY_WEIGHT_MIN_KG || parsedKg > BODY_WEIGHT_MAX_KG) {
+      setError(`Enter a weight between ${bodyWeightRangeLabel(unit)}.`);
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      await bodyApi.upsertMeasurement({ weight_kg: parsed });
+      await bodyApi.upsertMeasurement({ weight_kg: parsedKg });
       loadSummary();
       setEditing(null);
     } catch (err) {
@@ -221,12 +291,25 @@ export default function PersonalDetailsScreen() {
   };
 
   const saveGoalWeight = async () => {
-    const parsed = Number(goalDraft.replace(",", "."));
-    if (!Number.isFinite(parsed) || parsed < 20 || parsed > 400) {
-      setError("Enter a weight between 20 and 400 kg.");
+    const parsedKg = parseWeightInput(goalDraft, unit);
+    if (parsedKg === null || parsedKg < BODY_WEIGHT_MIN_KG || parsedKg > BODY_WEIGHT_MAX_KG) {
+      setError(`Enter a weight between ${bodyWeightRangeLabel(unit)}.`);
       return;
     }
-    await savePatch({ goal_weight_kg: parsed });
+    await savePatch({ goal_weight_kg: parsedKg });
+  };
+
+  // Blank removes the number (an explicit null: omitting the field would leave it as it is);
+  // anything else is checked here with the server's own rule and sent normalized, so a
+  // mistake is named next to the field instead of after a round trip.
+  const savePhone = async () => {
+    const problem = phoneNumberError(phoneDraft);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    const parsed = parsePhoneNumber(phoneDraft);
+    await savePatch({ phone_number: parsed.kind === "valid" ? parsed.value : null });
   };
 
   const saveDob = async () => {
@@ -239,38 +322,56 @@ export default function PersonalDetailsScreen() {
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView
+      ref={scrollRef}
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      // iOS: add the keyboard's height as bottom inset so the end of the content can be
+      // scrolled above it.
+      automaticallyAdjustKeyboardInsets
+    >
       <View style={styles.goalCard}>
         <View style={styles.goalText}>
-          <Text style={styles.goalLabel}>Goal Weight</Text>
+          <Text style={styles.goalLabel}>Goal weight</Text>
           {editing === "goal" ? (
             <View style={styles.inlineForm}>
               <TextInput
                 style={styles.inlineInput}
                 value={goalDraft}
                 onChangeText={setGoalDraft}
+                accessibilityLabel={`Goal weight in ${unit}`}
                 keyboardType="decimal-pad"
                 autoFocus
                 selectTextOnFocus
               />
-              <Text style={styles.unit}>kg</Text>
+              <Text style={styles.unit}>{unit}</Text>
             </View>
           ) : (
             <Text style={styles.goalValue}>
-              {user.goal_weight_kg ? `${user.goal_weight_kg} kg` : "—"}
+              {user.goal_weight_kg ? formatWeight(Number(user.goal_weight_kg), unit) : "—"}
             </Text>
           )}
         </View>
         {editing === "goal" ? (
           <EditActions saving={saving} onCancel={cancelEditing} onSave={() => void saveGoalWeight()} />
         ) : (
-          <Pressable onPress={() => startEditing("goal")} hitSlop={8}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Change goal weight"
+            onPress={() => startEditing("goal")}
+            style={styles.changeButton}
+          >
             <Text style={styles.changeLink}>Change</Text>
           </Pressable>
         )}
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error && editing !== "phone" ? (
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
 
       <View style={styles.card}>
         <Row
@@ -278,9 +379,11 @@ export default function PersonalDetailsScreen() {
           value={
             loadingSummary
               ? "…"
-              : summary?.current_weight_kg
-                ? `${summary.current_weight_kg} kg`
-                : "—"
+              : summaryFailed && !summary
+                ? "Unavailable"
+                : summary?.current_weight_kg
+                  ? formatWeight(Number(summary.current_weight_kg), unit)
+                  : "—"
           }
           editing={editing === "weight"}
           onPress={() => startEditing("weight")}
@@ -290,11 +393,12 @@ export default function PersonalDetailsScreen() {
               style={styles.inlineInput}
               value={weightDraft}
               onChangeText={setWeightDraft}
+              accessibilityLabel={`Current weight in ${unit}`}
               keyboardType="decimal-pad"
               autoFocus
               selectTextOnFocus
             />
-            <Text style={styles.unit}>kg</Text>
+            <Text style={styles.unit}>{unit}</Text>
             <EditActions saving={saving} onCancel={cancelEditing} onSave={() => void saveWeight()} />
           </View>
         </Row>
@@ -310,6 +414,7 @@ export default function PersonalDetailsScreen() {
               style={styles.inlineInput}
               value={heightDraft}
               onChangeText={setHeightDraft}
+              accessibilityLabel="Height in centimetres"
               keyboardType="decimal-pad"
               autoFocus
               selectTextOnFocus
@@ -330,8 +435,9 @@ export default function PersonalDetailsScreen() {
               style={styles.dateInput}
               value={dobDay}
               onChangeText={setDobDay}
+              accessibilityLabel="Day of birth"
               placeholder="DD"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={light.textSecondary}
               keyboardType="number-pad"
               maxLength={2}
               autoFocus
@@ -340,8 +446,9 @@ export default function PersonalDetailsScreen() {
               style={styles.dateInput}
               value={dobMonth}
               onChangeText={setDobMonth}
+              accessibilityLabel="Month of birth"
               placeholder="MM"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={light.textSecondary}
               keyboardType="number-pad"
               maxLength={2}
             />
@@ -349,8 +456,9 @@ export default function PersonalDetailsScreen() {
               style={styles.dateInputYear}
               value={dobYear}
               onChangeText={setDobYear}
+              accessibilityLabel="Year of birth"
               placeholder="YYYY"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={light.textSecondary}
               keyboardType="number-pad"
               maxLength={4}
             />
@@ -363,12 +471,14 @@ export default function PersonalDetailsScreen() {
           value={genderLabel(user.gender)}
           editing={editing === "gender"}
           onPress={() => startEditing("gender")}
-          last
         >
           <View style={styles.genderOptions}>
             {GENDER_OPTIONS.map((option) => (
               <Pressable
                 key={option.value}
+                accessibilityRole="button"
+                accessibilityLabel={`Gender ${option.label}`}
+                accessibilityState={{ selected: user.gender === option.value, disabled: saving }}
                 style={[styles.genderChip, user.gender === option.value && styles.genderChipActive]}
                 onPress={() => void savePatch({ gender: option.value })}
                 disabled={saving}
@@ -383,127 +493,211 @@ export default function PersonalDetailsScreen() {
                 </Text>
               </Pressable>
             ))}
-            <Pressable onPress={cancelEditing} hitSlop={8} style={styles.genderCancel} disabled={saving}>
-              <Ionicons name="close" size={18} color={colors.textMuted} />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+              onPress={cancelEditing}
+              style={styles.genderCancel}
+              disabled={saving}
+            >
+              <Ionicons name="close" size={22} color={light.textSecondary} />
             </Pressable>
           </View>
         </Row>
+
+        <Row
+          label="Phone number"
+          value={user.phone_number ?? "—"}
+          editing={editing === "phone"}
+          onPress={() => startEditing("phone")}
+          last
+        >
+          <View style={[styles.inlineForm, styles.fullWidth]}>
+            <TextInput
+              style={styles.inlineInput}
+              value={phoneDraft}
+              onChangeText={setPhoneDraft}
+              testID="personal-phone-input"
+              accessibilityLabel="Phone number"
+              accessibilityHint="Include the country code. Leave empty and save to remove it."
+              keyboardType="phone-pad"
+              textContentType="telephoneNumber"
+              autoComplete="tel"
+              autoCorrect={false}
+              maxLength={PHONE_INPUT_MAX_LENGTH}
+              autoFocus
+              selectTextOnFocus
+            />
+            <EditActions saving={saving} onCancel={cancelEditing} onSave={() => void savePhone()} />
+          </View>
+          <Text style={styles.fieldHint}>
+            Only you can see this. Include the country code, e.g. +90 532 123 45 67. Leave it empty
+            and save to remove it.
+          </Text>
+          {error ? (
+            <Text
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              style={[styles.error, styles.rowError]}
+            >
+              {error}
+            </Text>
+          ) : null}
+        </Row>
       </View>
 
-      <Pressable style={styles.historyLink} onPress={() => router.push("/profile/weight-history")}>
-        <Ionicons name="trending-up" size={18} color={colors.accent} />
+      {summaryFailed && !loadingSummary ? (
+        <View style={styles.summaryError}>
+          <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.summaryErrorText}>
+            {summary
+              ? "Could not refresh your current weight. Showing the last loaded value."
+              : "Could not load your current weight."}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Try loading your current weight again"
+            style={styles.retryButton}
+            onPress={loadSummary}
+          >
+            <Text style={styles.retryText}>Try again</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="View weight history"
+        style={({ pressed }) => [styles.historyLink, pressed && styles.pressed]}
+        onPress={() => router.push("/profile/weight-history")}
+      >
+        <Ionicons name="trending-up" size={22} color={light.textSecondary} />
         <Text style={styles.historyLinkText}>View weight history</Text>
-        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
       </Pressable>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: spacing.xl },
+  screen: { flex: 1, backgroundColor: light.background },
+  content: { padding: 16, paddingBottom: 32 },
+  pressed: { backgroundColor: light.pressed },
 
   goalCard: {
+    minHeight: 76,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
+    columnGap: 12,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
   goalText: { flex: 1 },
-  goalLabel: { color: colors.textMuted, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 },
-  goalValue: { color: colors.text, fontSize: 22, fontWeight: "700", marginTop: 4 },
-  changeLink: { color: colors.accent, fontSize: 14, fontWeight: "600" },
+  goalLabel: { color: light.textSecondary, fontSize: 13 },
+  goalValue: { color: light.text, fontSize: 22, fontWeight: "700", marginTop: 4 },
+  changeButton: { minHeight: 44, minWidth: 44, alignItems: "center", justifyContent: "center" },
+  changeLink: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
 
-  error: { color: colors.danger, marginBottom: spacing.md },
+  error: { color: light.danger, fontSize: 14, lineHeight: 20, marginBottom: 16 },
+  // The editing row is a wrapping flex container, which sizes itself to its widest child's
+  // unwrapped width: without an explicit full width a long sentence pushes the input and the
+  // save/cancel buttons out of the card on a narrow screen.
+  fullWidth: { width: "100%" },
+  fieldHint: { width: "100%", color: light.textSecondary, fontSize: 13, lineHeight: 18 },
+  rowError: { width: "100%", marginBottom: 0 },
 
   card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    overflow: "hidden",
   },
   row: {
+    minHeight: 56,
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: spacing.md,
-    borderBottomColor: colors.border,
+    columnGap: 12,
+    paddingVertical: 12,
+    borderBottomColor: light.separator,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  rowEditing: { flexDirection: "column", alignItems: "stretch", gap: spacing.sm },
+  rowEditing: { flexDirection: "column", alignItems: "stretch", rowGap: 8 },
   rowNoBorder: { borderBottomWidth: 0 },
-  rowLabel: { color: colors.textMuted, fontSize: 14 },
-  rowValue: { color: colors.text, fontSize: 15, fontWeight: "500" },
+  rowLabel: { color: light.textSecondary, fontSize: 15 },
+  rowValue: { flexShrink: 1, color: light.text, fontSize: 16, textAlign: "right" },
 
-  inlineForm: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  inlineForm: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
   inlineInput: {
     flex: 1,
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
+    minWidth: 80,
+    minHeight: 44,
+    backgroundColor: light.background,
+    borderRadius: 10,
+    color: light.text,
     fontSize: 16,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  unit: { color: colors.textMuted, fontSize: 13 },
+  unit: { color: light.textSecondary, fontSize: 14 },
   dateInput: {
-    width: 52,
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
+    width: 56,
+    minHeight: 44,
+    backgroundColor: light.background,
+    borderRadius: 10,
+    color: light.text,
     fontSize: 16,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
     textAlign: "center",
   },
   dateInputYear: {
-    width: 68,
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
+    width: 72,
+    minHeight: 44,
+    backgroundColor: light.background,
+    borderRadius: 10,
+    color: light.text,
     fontSize: 16,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
     textAlign: "center",
   },
-  editActions: { flexDirection: "row", marginLeft: "auto", gap: spacing.xs },
-  editAction: { paddingHorizontal: spacing.xs },
+  editActions: { flexDirection: "row", marginLeft: "auto" },
+  editAction: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
 
-  genderOptions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, alignItems: "center" },
+  genderOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
   genderChip: {
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: light.background,
+    borderRadius: 10,
+    paddingHorizontal: 14,
   },
-  genderChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  genderChipText: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
-  genderChipTextActive: { color: colors.accentText },
-  genderCancel: { marginLeft: "auto", padding: spacing.xs },
+  genderChipActive: { backgroundColor: light.primary },
+  genderChipText: { color: light.text, fontSize: 14, fontWeight: "600" },
+  genderChipTextActive: { color: light.onPrimary },
+  genderCancel: { width: 44, height: 44, marginLeft: "auto", alignItems: "center", justifyContent: "center" },
+
+  summaryError: { marginTop: 12, marginLeft: 4 },
+  summaryErrorText: { color: light.danger, fontSize: 13, lineHeight: 18 },
+  retryButton: { minHeight: 44, alignSelf: "flex-start", justifyContent: "center" },
+  retryText: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
 
   historyLink: {
+    minHeight: 56,
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginTop: spacing.lg,
+    columnGap: 12,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    marginTop: 16,
+    overflow: "hidden",
   },
-  historyLinkText: { flex: 1, color: colors.text, fontSize: 15, fontWeight: "600" },
+  historyLinkText: { flex: 1, color: light.text, fontSize: 16 },
 });

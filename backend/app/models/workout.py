@@ -5,7 +5,7 @@ Maps to schema_v1.sql -> workouts, sets
 
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -21,6 +21,7 @@ from sqlalchemy import (
     Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,6 +31,19 @@ if TYPE_CHECKING:
     from app.models.exercise import Exercise
     from app.models.program import WorkoutTemplate
     from app.models.user import User
+
+
+class SetSaveRequest(Base):
+    """Receipts survive set deletion; retries must never resurrect deleted sets."""
+
+    __tablename__ = "set_save_requests"
+
+    workout_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("workouts.id", ondelete="CASCADE"), primary_key=True
+    )
+    request_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    request_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[created_at]
 
 
 class Workout(Base):
@@ -82,11 +96,18 @@ class Workout(Base):
         ForeignKey("workout_templates.id", ondelete="SET NULL"),
     )
 
+    # Immutable plan at session start; survives template edits and deletion.
+    # NULL means no snapshot was captured, not an empty planned exercise list.
+    template_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+
     # When the session was finished. NULL = still in progress. Device-only
     # "finished" state used to mean a lost device made every workout look
     # unfinished forever; this also makes real session duration computable
     # (finished_at - performed_at).
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # NULL: unknown for older records (or not finished). False: explicit
+    # finish action. True: closed when the next workout was started.
+    finished_automatically: Mapped[bool | None] = mapped_column(Boolean)
 
     created_at: Mapped[created_at]
     updated_at: Mapped[updated_at]
@@ -108,9 +129,7 @@ class Workout(Base):
         Index(
             "idx_workouts_template", "template_id", postgresql_where=text("template_id IS NOT NULL")
         ),
-        Index(
-            "idx_workouts_unfinished", "user_id", postgresql_where=text("finished_at IS NULL")
-        ),
+        Index("idx_workouts_unfinished", "user_id", postgresql_where=text("finished_at IS NULL")),
     )
 
     def __repr__(self) -> str:
