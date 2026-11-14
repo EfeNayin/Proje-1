@@ -24,6 +24,7 @@ const MUSCLE_GROUPS = [
   { id: 4, name: 'chest', name_tr: 'Göğüs', region: 'upper', mev: 8, mav: 14, mrv: 22 },
   { id: 5, name: 'front_delts', name_tr: 'Ön omuz', region: 'upper', mev: 0, mav: 7, mrv: 12 },
   { id: 6, name: 'triceps', name_tr: 'Triseps', region: 'upper', mev: 6, mav: 12, mrv: 18 },
+  { id: 7, name: 'biceps', name_tr: 'Pazu', region: 'upper', mev: 8, mav: 14, mrv: 20 },
 ];
 
 /**
@@ -39,15 +40,18 @@ function catalogue(count) {
       : [{ name: 'quads', name_tr: 'Ön bacak' }, { name: 'glutes', name_tr: 'Kalça' }],
   }));
   const requests = [];
+  // A one-row request is the open filter sheet asking the server how many exercises its pending
+  // choice would show. Those are kept apart from the searches that fill the list.
+  const counts = [];
   const fetchPage = async (query, filters, limit, offset) => {
-    requests.push(h.plain({ query, filters, limit, offset }));
+    (limit === 1 ? counts : requests).push(h.plain({ query, filters, limit, offset }));
     const matches = all.filter((row) =>
       (!filters.muscle || row.primary_muscles.some((muscle) => muscle.name === filters.muscle)) &&
       (!filters.equipment || row.equipment === filters.equipment) &&
       row.name.toLowerCase().includes(query.toLowerCase()));
     return { items: matches.slice(offset, offset + limit), total: matches.length, limit, offset };
   };
-  return { all, requests, fetchPage };
+  return { all, requests, counts, fetchPage };
 }
 const ids = (rows) => Array.from(rows, (row) => row.id);
 
@@ -242,9 +246,9 @@ test('the equipment choices are exactly the values the API accepts, with nothing
 
 test('the muscle choices come from the muscle-group catalogue, by stable code, grouped by region', () => {
   const options = h.plain(muscleOptions(MUSCLE_GROUPS));
-  assert.deepEqual(options.map((option) => option.value), ['chest', 'front_delts', 'triceps', 'glutes', 'quads', 'abs']);
-  assert.deepEqual(options.map((option) => option.label), ['Chest', 'Front Delts', 'Triceps', 'Glutes', 'Quads', 'Abs']);
-  assert.deepEqual(options.map((option) => option.group), ['Upper body', 'Upper body', 'Upper body', 'Lower body', 'Lower body', 'Core']);
+  assert.deepEqual(options.map((option) => option.value), ['biceps', 'chest', 'front_delts', 'triceps', 'glutes', 'quads', 'abs']);
+  assert.deepEqual(options.map((option) => option.label), ['Biceps', 'Chest', 'Front Delts', 'Triceps', 'Glutes', 'Quads', 'Abs']);
+  assert.deepEqual(options.map((option) => option.group), ['Upper body', 'Upper body', 'Upper body', 'Upper body', 'Lower body', 'Lower body', 'Core']);
   assert.deepEqual(h.plain(muscleOptions([])), []);
 });
 
@@ -307,7 +311,10 @@ function browserModules({ hooks, clock, api }) {
   const row = h.loadFile('src/exercises/ExerciseRow.tsx', {
     globals, modules: { ...common, 'expo-image': { Image: 'ExpoImage' }, './exerciseFilters': filtersModule },
   });
-  const panel = h.loadFile('src/exercises/FilterPanel.tsx', { globals, modules: common });
+  const panel = h.loadFile('src/exercises/FilterPanel.tsx', {
+    globals,
+    modules: { ...common, 'react-native-safe-area-context': { SafeAreaProvider: 'SafeAreaProvider', SafeAreaView: 'SafeAreaView' } },
+  });
   const browser = h.loadFile('src/exercises/ExerciseBrowser.tsx', {
     globals,
     modules: {
@@ -325,7 +332,7 @@ function browserModules({ hooks, clock, api }) {
 function browserWorld({ mode = 'browse', total = 130, fail = false, musclesFail = false } = {}) {
   const hooks = h.createHooks();
   const clock = timersWorld();
-  const { all, requests, fetchPage } = catalogue(total);
+  const { all, requests, counts, fetchPage } = catalogue(total);
   const state = { failing: fail, musclesFailing: musclesFail, muscleRequests: 0 };
   const rowPresses = [];
   const infoPresses = [];
@@ -336,7 +343,7 @@ function browserWorld({ mode = 'browse', total = 130, fail = false, musclesFail 
   const { browser } = browserModules({ hooks, clock, api });
   const props = { mode, onRowPress: (exercise) => rowPresses.push(exercise.id), onInfo: (exercise) => infoPresses.push(exercise.id) };
   const world = {
-    all, state, clock, requests, rowPresses, infoPresses,
+    all, state, clock, requests, counts, rowPresses, infoPresses,
     // Function components (rows, panels, filter buttons) are expanded so their nodes can be read.
     // Child components are expanded INSIDE the render so their effects run with it.
     render: () => hooks.render(() => h.expand(h.createElement(browser.ExerciseBrowser, props))),
@@ -344,6 +351,11 @@ function browserWorld({ mode = 'browse', total = 130, fail = false, musclesFail 
     search: (tree) => h.byLabel(tree, 'Search exercises'),
     row: (tree, index) => { const list = world.list(tree); return h.expand(list.props.renderItem({ item: list.props.data[index], index })); },
     press: (label) => { h.byLabel(world.render(), label).props.onPress(); return world.render(); },
+    radios: (tree) => h.nodes(tree).filter((node) => node.props?.accessibilityRole === 'radio'),
+    sheetOpen: (tree) => h.nodes(tree).some((node) => node.type === 'Modal'),
+    showButton: (tree) => h.nodes(tree).find((node) => /^Show( \d+)? results?$/.test(node.props?.accessibilityLabel ?? '')),
+    /** Press "Show results" in the open sheet and let the search it starts finish. */
+    async show() { world.showButton(world.render()).props.onPress(); return world.apply(); },
     async apply() { world.render(); clock.fire(); await h.settle(); return world.render(); },
     async open() { world.render(); clock.fire(); await h.settle(); return world.render(); },
   };
@@ -365,13 +377,13 @@ for (const mode of ['browse', 'select']) {
     await world.apply();
     assert.deepEqual(world.requests.map((request) => request.query), ['', 'exe']);
 
-    world.press('Muscles filter, all muscles');
+    world.press('Muscles filter, All Muscles');
     await h.settle();
     world.press('Chest');
-    await world.apply();
-    world.press('Equipment filter, all equipment');
+    await world.show();
+    world.press('Equipment filter, All Equipment');
     world.press('Barbell');
-    tree = await world.apply();
+    tree = await world.show();
     assert.deepEqual(world.requests.at(-1), { query: 'exe', filters: { muscle: 'chest', equipment: 'barbell' }, limit: 50, offset: 0 });
     const expected = world.all.filter((row) => row.primary_muscles[0].name === 'chest' && row.equipment === 'barbell');
     assert.deepEqual(ids(world.list(tree).props.data), ids(expected));
@@ -394,39 +406,75 @@ for (const mode of ['browse', 'select']) {
   });
 }
 
-test('the Muscles panel lists the real muscle groups, loads them once, and "All muscles" resets the filter', async () => {
+test('search is on top; under it are two equal buttons, All Equipment on the left and All Muscles on the right, and no third one', async () => {
+  const world = browserWorld();
+  const tree = await world.open();
+  const controls = h.nodes(tree).filter((node) => node.type === 'TextInput' || /filter, /.test(node.props?.accessibilityLabel ?? ''));
+  assert.deepEqual(controls.map((node) => node.props.accessibilityLabel), ['Search exercises', 'Equipment filter, All Equipment', 'Muscles filter, All Muscles']);
+  const [equipment, musclesButton] = controls.slice(1);
+  assert.deepEqual(h.texts(equipment), ['All Equipment']);
+  assert.deepEqual(h.texts(musclesButton), ['All Muscles']);
+  for (const button of [equipment, musclesButton]) assert.equal(Object.assign({}, ...[button.props.style].flat(Infinity).filter(Boolean)).flex, 1);
+  assert.equal(h.byLabel(tree, 'Clear filters'), undefined, 'resetting lives inside the sheets');
+  assert.equal(world.sheetOpen(tree), false);
+});
+
+test('the Muscles sheet opens over the list, lists the real muscle groups once, and nothing changes until Show results', async () => {
   const world = browserWorld();
   await world.open();
-  assert.equal(world.state.muscleRequests, 0, 'the muscle groups are not requested until the panel is opened');
-  let tree = world.press('Muscles filter, all muscles');
+  assert.equal(world.state.muscleRequests, 0, 'the muscle groups are not requested until the sheet is opened');
+  let tree = world.press('Muscles filter, All Muscles');
   assert.ok(h.byLabel(tree, 'Loading muscles'));
   await h.settle();
   tree = world.render();
-  const options = h.nodes(tree).filter((node) => node.props?.accessibilityRole === 'radio');
-  assert.deepEqual(options.map((node) => node.props.accessibilityLabel), ['All muscles', 'Chest', 'Front Delts', 'Triceps', 'Glutes', 'Quads', 'Abs']);
-  assert.equal(h.byLabel(tree, 'All muscles').props.accessibilityState.checked, true);
+  assert.ok(world.sheetOpen(tree));
+  assert.equal(world.list(tree).props.data.length, 50, 'the results stay on screen under the sheet');
+  assert.deepEqual(world.radios(tree).map((node) => node.props.accessibilityLabel), ['All Muscles', 'Biceps', 'Chest', 'Front Delts', 'Triceps', 'Glutes', 'Quads', 'Abs']);
+  assert.equal(h.byLabel(tree, 'All Muscles').props.accessibilityState.checked, true);
   assert.ok(h.texts(tree).includes('Upper body') && h.texts(tree).includes('Core'));
+  assert.ok(h.byLabel(tree, 'Clear Filters') && world.showButton(tree));
 
-  world.press('Quads');
-  tree = await world.apply();
+  tree = world.press('Quads');
+  assert.equal(h.byLabel(tree, 'Quads').props.accessibilityState.checked, true);
+  await world.apply();
+  assert.equal(world.requests.length, 1, 'a tapped card is only pending: the list is not searched again');
+  assert.ok(h.byLabel(world.render(), 'Muscles filter, All Muscles'), 'and the button still shows the applied filter');
+
+  tree = await world.show();
   assert.deepEqual(world.requests.at(-1).filters, { muscle: 'quads', equipment: null });
-  assert.equal(h.nodes(tree).some((node) => node.props?.accessibilityRole === 'radio'), false, 'choosing closes the panel');
+  assert.equal(world.sheetOpen(tree), false, 'Show results closes the sheet');
   assert.ok(h.texts(world.list(tree).props.ListHeaderComponent).includes('104 exercises'));
+  assert.deepEqual(h.texts(h.byLabel(tree, 'Muscles filter, Quads selected')), ['Quads']);
 
   tree = world.press('Muscles filter, Quads selected');
   assert.equal(h.byLabel(tree, 'Quads').props.accessibilityState.checked, true);
-  assert.equal(h.byLabel(tree, 'All muscles').props.accessibilityState.checked, false);
-  world.press('All muscles');
-  tree = await world.apply();
+  assert.equal(h.byLabel(tree, 'All Muscles').props.accessibilityState.checked, false);
+  world.press('All Muscles');
+  tree = await world.show();
   assert.deepEqual(world.requests.at(-1).filters, { muscle: null, equipment: null });
   assert.ok(h.texts(world.list(tree).props.ListHeaderComponent).includes('130 exercises'));
   assert.equal(world.state.muscleRequests, 1);
 });
 
-test('the Muscles panel says when the muscle groups could not be loaded and can retry; closing it changes nothing', async () => {
+test('choosing Biceps asks the server for the biceps code and nothing else: the list is whatever the server says trains it directly', async () => {
+  const world = browserWorld();
+  await world.open();
+  world.press('Muscles filter, All Muscles');
+  await h.settle();
+  world.press('Biceps');
+  const tree = await world.show();
+  assert.deepEqual(world.requests.at(-1), { query: '', filters: { muscle: 'biceps', equipment: null }, limit: 50, offset: 0 });
+  // No row in this catalogue has biceps as a primary muscle, so nothing is listed. The client adds
+  // nothing of its own and filters nothing afterwards.
+  assert.ok(h.texts(tree).includes('No exercises found'));
+  const source = h.read('src/exercises/ExerciseBrowser.tsx') + h.read('src/exercises/exerciseBrowserStore.ts');
+  assert.doesNotMatch(source, /Barbell Row|Bench Press|secondary/);
+});
+
+test('the Muscles sheet says when the muscle groups could not be loaded and can retry; closing it changes nothing', async () => {
   const world = browserWorld({ musclesFail: true });
   await world.open();
-  world.press('Muscles filter, all muscles');
+  world.press('Muscles filter, All Muscles');
   await h.settle();
   let tree = world.render();
   assert.ok(h.texts(tree).includes('Could not load the muscle list.'));
@@ -435,38 +483,112 @@ test('the Muscles panel says when the muscle groups could not be loaded and can 
   await h.settle();
   tree = world.render();
   assert.ok(h.byLabel(tree, 'Triceps'));
+  world.press('Triceps');
   world.press('Close Muscles');
   tree = await world.apply();
-  assert.equal(h.nodes(tree).some((node) => node.props?.accessibilityRole === 'radio'), false);
-  assert.equal(world.requests.length, 1, 'no new search: nothing was chosen');
+  assert.equal(world.sheetOpen(tree), false);
+  assert.equal(world.requests.length, 1, 'no new search: the pending choice was never applied');
+  assert.ok(h.byLabel(tree, 'Muscles filter, All Muscles'));
 });
 
-test('the Equipment panel offers the supported equipment, "All equipment" resets it, and Clear filters resets both', async () => {
+test('the Equipment sheet offers the supported equipment as cards in two columns', async () => {
   const world = browserWorld();
   await world.open();
-  let tree = world.press('Equipment filter, all equipment');
-  const options = h.nodes(tree).filter((node) => node.props?.accessibilityRole === 'radio');
-  assert.deepEqual(options.map((node) => node.props.accessibilityLabel), ['All equipment', 'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight']);
-  assert.equal(h.byLabel(tree, 'Clear filters'), undefined, 'nothing to clear yet');
+  const tree = world.press('Equipment filter, All Equipment');
+  assert.deepEqual(world.radios(tree).map((node) => node.props.accessibilityLabel), ['All Equipment', 'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight']);
+  const panelSource = h.read('src/exercises/FilterPanel.tsx');
+  assert.match(panelSource, /flexWrap: "wrap"/);
+  assert.match(panelSource, /width: "48\.5%"/, 'two cards per row');
+});
+
+test('dismissing a sheet by the backdrop, the close button or the system back keeps the previous filter', async () => {
+  const world = browserWorld();
+  await world.open();
+  world.press('Equipment filter, All Equipment');
   world.press('Dumbbell');
-  await world.apply();
-  world.press('Muscles filter, all muscles');
+  await world.show();
+  assert.deepEqual(world.requests.at(-1).filters, { muscle: null, equipment: 'dumbbell' });
+  const searches = world.requests.length;
+
+  const dismissals = [
+    (tree) => h.nodes(tree).find((node) => node.props?.testID === 'filter-backdrop').props.onPress(),
+    (tree) => h.byLabel(tree, 'Close Equipment').props.onPress(),
+    (tree) => h.nodes(tree).find((node) => node.type === 'Modal').props.onRequestClose(),
+  ];
+  for (const dismiss of dismissals) {
+    world.press('Equipment filter, Dumbbell selected');
+    let tree = world.press('Cable');
+    assert.equal(h.byLabel(tree, 'Cable').props.accessibilityState.checked, true);
+    dismiss(tree);
+    tree = await world.apply();
+    assert.equal(world.sheetOpen(tree), false);
+    assert.ok(h.byLabel(tree, 'Equipment filter, Dumbbell selected'));
+    assert.equal(world.requests.length, searches, 'the list was not searched again');
+    // Reopening starts from the applied filter, not from the abandoned choice.
+    tree = world.press('Equipment filter, Dumbbell selected');
+    assert.equal(h.byLabel(tree, 'Dumbbell').props.accessibilityState.checked, true);
+    assert.equal(h.byLabel(tree, 'Cable').props.accessibilityState.checked, false);
+    h.byLabel(tree, 'Close Equipment').props.onPress();
+    world.render();
+  }
+});
+
+test('Clear Filters resets only that sheet\'s filter, is pending until Show results, and keeps the search and the other filter', async () => {
+  const world = browserWorld();
+  await world.open();
+  world.press('Equipment filter, All Equipment');
+  assert.equal(h.byLabel(world.render(), 'Clear Filters').props.disabled, true, 'nothing to clear yet');
+  world.press('Dumbbell');
+  await world.show();
+  world.press('Muscles filter, All Muscles');
   await h.settle();
   world.press('Chest');
-  tree = await world.apply();
-  assert.deepEqual(world.requests.at(-1).filters, { muscle: 'chest', equipment: 'dumbbell' });
+  await world.show();
+  world.search(world.render()).props.onChangeText('exercise 1');
+  await world.apply();
+  assert.deepEqual(world.requests.at(-1), { query: 'exercise 1', filters: { muscle: 'chest', equipment: 'dumbbell' }, limit: 50, offset: 0 });
+  const searches = world.requests.length;
 
   world.press('Equipment filter, Dumbbell selected');
-  world.press('All equipment');
-  tree = await world.apply();
-  assert.deepEqual(world.requests.at(-1).filters, { muscle: 'chest', equipment: null });
+  let tree = world.press('Clear Filters');
+  assert.equal(h.byLabel(tree, 'All Equipment').props.accessibilityState.checked, true);
+  await world.apply();
+  assert.equal(world.requests.length, searches, 'clearing is pending too');
+  tree = await world.show();
+  assert.deepEqual(world.requests.at(-1), { query: 'exercise 1', filters: { muscle: 'chest', equipment: null }, limit: 50, offset: 0 });
+  assert.ok(h.byLabel(tree, 'Muscles filter, Chest selected'));
+  assert.ok(h.byLabel(tree, 'Equipment filter, All Equipment'));
+  assert.equal(world.search(tree).props.value, 'exercise 1');
+});
 
+test('Show results carries a number only when the server has counted exactly that pending search', async () => {
+  const world = browserWorld();
+  await world.open();
   world.search(world.render()).props.onChangeText('exercise 1');
-  world.press('Clear filters');
-  tree = await world.apply();
-  // Clearing the filters keeps what was typed.
-  assert.deepEqual(world.requests.at(-1), { query: 'exercise 1', filters: { muscle: null, equipment: null }, limit: 50, offset: 0 });
-  assert.equal(h.byLabel(tree, 'Clear filters'), undefined);
+  await world.apply();
+  let tree = world.press('Equipment filter, All Equipment');
+  assert.equal(world.showButton(tree).props.accessibilityLabel, 'Show results', 'no number before the server answered');
+  await h.settle();
+  tree = world.render();
+  const matching = (equipment) => world.all.filter((row) => row.name.toLowerCase().includes('exercise 1') && (!equipment || row.equipment === equipment)).length;
+  assert.equal(world.showButton(tree).props.accessibilityLabel, `Show ${matching(null)} results`);
+  assert.deepEqual(world.counts.at(-1), { query: 'exercise 1', filters: { muscle: null, equipment: null }, limit: 1, offset: 0 });
+
+  tree = world.press('Barbell');
+  assert.equal(world.showButton(tree).props.accessibilityLabel, 'Show results', 'the old number is not shown for a new choice');
+  await h.settle();
+  tree = world.render();
+  assert.equal(world.showButton(tree).props.accessibilityLabel, `Show ${matching('barbell')} results`);
+  // The number is the list's own total once applied.
+  tree = await world.show();
+  assert.ok(h.texts(world.list(tree).props.ListHeaderComponent).includes(`${matching('barbell')} exercises`));
+
+  // If the count cannot be fetched the button simply has no number.
+  world.press('Equipment filter, Barbell selected');
+  world.state.failing = true;
+  tree = world.press('Cable');
+  await h.settle();
+  assert.equal(world.showButton(world.render()).props.accessibilityLabel, 'Show results');
 });
 
 test('an empty result and a failed request look different, and the failure can be retried', async () => {
@@ -627,9 +749,11 @@ test('picker: the information button shows the details in place without choosing
   const world = screenWorld('app/(app)/workout/exercise-picker.tsx');
   let tree = await world.open();
   h.byLabel(tree, 'Search exercises').props.onChangeText('exercise 1');
-  h.byLabel(world.render(), 'Muscles filter, all muscles').props.onPress();
+  h.byLabel(world.render(), 'Muscles filter, All Muscles').props.onPress();
   world.render(); await h.settle();
   h.byLabel(world.render(), 'Quads').props.onPress();
+  world.render(); await h.settle();
+  h.nodes(world.render()).find((node) => /^Show( \d+)? results?$/.test(node.props?.accessibilityLabel ?? '')).props.onPress();
   world.render(); world.clock.fire(); await h.settle();
   tree = world.render();
   const requestsBefore = world.requests.length;

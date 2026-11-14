@@ -1,6 +1,8 @@
 /**
- * The exercise browser: search, Muscles and Equipment filters, the paged list
- * and its loading / empty / failed states. ONE implementation, used by
+ * The exercise browser: search at the top, two equal filter buttons under it
+ * (equipment on the left, muscles on the right), the paged list and its
+ * loading / empty / failed states. A filter is chosen in a bottom sheet over
+ * the list and only takes effect when "Show results" is pressed. ONE implementation, used by
  *  - the Exercises tab (mode "browse": a row opens the exercise's details), and
  *  - the workout/program exercise picker (mode "select": a row chooses it).
  *
@@ -36,7 +38,11 @@ import { EQUIPMENT_OPTIONS, NO_FILTERS, hasFilters, muscleLabel, muscleOptions }
 const MIN_TOUCH = 44;
 const DEBOUNCE_MS = 250;
 
-type Panel = "muscles" | "equipment" | null;
+type SheetKind = "equipment" | "muscles";
+/** An open filter sheet and the choice made in it that has not been applied yet. */
+type Sheet = { kind: SheetKind; pending: string | null };
+/** How many exercises the pending choice would show, as counted by the server. */
+type PendingCount = { key: string; total: number };
 type MuscleCatalogue =
   | { status: "idle" | "loading" | "error" }
   | { status: "ready"; groups: MuscleGroupSummary[] };
@@ -56,7 +62,8 @@ export function ExerciseBrowser({
   const state = useSyncExternalStore(browser.subscribe, browser.getSnapshot);
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<ExerciseFilters>(NO_FILTERS);
-  const [panel, setPanel] = useState<Panel>(null);
+  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const [pendingCount, setPendingCount] = useState<PendingCount | null>(null);
   const [muscles, setMuscles] = useState<MuscleCatalogue>({ status: "idle" });
   const firstSearch = useRef(true);
   const mounted = useRef(true);
@@ -95,11 +102,54 @@ export function ExerciseBrowser({
       });
   };
 
-  const openPanel = (next: Exclude<Panel, null>) => {
+  const openSheet = (kind: SheetKind) => {
     Keyboard.dismiss();
-    setPanel((current) => (current === next ? null : next));
-    if (next === "muscles" && (muscles.status === "idle" || muscles.status === "error")) loadMuscles();
+    setSheet({ kind, pending: kind === "muscles" ? filters.muscle : filters.equipment });
+    if (kind === "muscles" && (muscles.status === "idle" || muscles.status === "error")) loadMuscles();
   };
+
+  // What the list would be filtered by if the open sheet were applied now: the
+  // sheet's pending choice, the other filter and the search text as they are.
+  const pendingFilters: ExerciseFilters | null =
+    sheet === null
+      ? null
+      : sheet.kind === "muscles"
+        ? { ...filters, muscle: sheet.pending }
+        : { ...filters, equipment: sheet.pending as Equipment | null };
+  const pendingKey =
+    pendingFilters === null ? null : `${query.trim()}|${pendingFilters.muscle}|${pendingFilters.equipment}`;
+
+  // The number on "Show results" is the server's own total for exactly that
+  // search (one row asked for, only the total used). Until it arrives, or if it
+  // cannot be fetched, the button carries no number rather than a guessed one.
+  useEffect(() => {
+    if (pendingFilters === null || pendingKey === null) return;
+    let current = true;
+    exercisesApi
+      .searchExercises(query.trim(), pendingFilters, 1, 0)
+      .then((page) => {
+        if (current) setPendingCount({ key: pendingKey, total: page.total });
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+    // pendingKey stands for pendingFilters and the query.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingKey]);
+
+  const applySheet = () => {
+    if (sheet === null || pendingFilters === null) return;
+    setFilters(pendingFilters);
+    setSheet(null);
+  };
+  const changePending = (pending: string | null) => {
+    setSheet((current) => (current === null ? null : { ...current, pending }));
+  };
+  const applyLabel =
+    pendingCount !== null && pendingCount.key === pendingKey
+      ? `Show ${pendingCount.total} ${pendingCount.total === 1 ? "result" : "results"}`
+      : "Show results";
 
   const view = browserView(state);
   const filtered = query.trim() !== "" || hasFilters(filters);
@@ -124,70 +174,56 @@ export function ExerciseBrowser({
           returnKeyType="search"
           clearButtonMode="while-editing"
         />
+        {/* Two equal halves, equipment on the left; resetting lives inside the sheets. */}
         <View style={styles.filters}>
           <FilterButton
-            title="Muscles"
-            selected={muscleName}
-            emptyLabel="all muscles"
-            expanded={panel === "muscles"}
-            onPress={() => openPanel("muscles")}
+            title="Equipment"
+            allLabel="All Equipment"
+            selected={equipmentName}
+            expanded={sheet?.kind === "equipment"}
+            onPress={() => openSheet("equipment")}
           />
           <FilterButton
-            title="Equipment"
-            selected={equipmentName}
-            emptyLabel="all equipment"
-            expanded={panel === "equipment"}
-            onPress={() => openPanel("equipment")}
+            title="Muscles"
+            allLabel="All Muscles"
+            selected={muscleName}
+            expanded={sheet?.kind === "muscles"}
+            onPress={() => openSheet("muscles")}
           />
-          {hasFilters(filters) ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Clear filters"
-              style={styles.clear}
-              onPress={() => {
-                setFilters(NO_FILTERS);
-                setPanel(null);
-              }}
-            >
-              <Text style={styles.clearText}>Clear</Text>
-            </Pressable>
-          ) : null}
         </View>
       </View>
 
-      {panel === "muscles" ? (
+      {sheet?.kind === "muscles" ? (
         <FilterPanel
           title="Muscles"
-          allLabel="All muscles"
+          allLabel="All Muscles"
           options={muscles.status === "ready" ? muscleOptions(muscles.groups) : []}
-          value={filters.muscle}
+          value={sheet.pending}
+          applyLabel={applyLabel}
           status={muscles.status === "ready" ? "ready" : muscles.status === "error" ? "error" : "loading"}
           loadingLabel="Loading muscles"
           errorText="Could not load the muscle list."
           retryLabel="Try loading muscles again"
           onRetry={loadMuscles}
-          onSelect={(muscle) => {
-            setFilters((current) => ({ ...current, muscle }));
-            setPanel(null);
-          }}
-          onClose={() => setPanel(null)}
+          onChange={changePending}
+          onApply={applySheet}
+          onDismiss={() => setSheet(null)}
         />
-      ) : panel === "equipment" ? (
+      ) : sheet?.kind === "equipment" ? (
         <FilterPanel
           title="Equipment"
-          allLabel="All equipment"
+          allLabel="All Equipment"
           options={EQUIPMENT_OPTIONS}
-          value={filters.equipment}
-          onSelect={(equipment) => {
-            setFilters((current) => ({ ...current, equipment: equipment as Equipment | null }));
-            setPanel(null);
-          }}
-          onClose={() => setPanel(null)}
+          value={sheet.pending}
+          applyLabel={applyLabel}
+          onChange={changePending}
+          onApply={applySheet}
+          onDismiss={() => setSheet(null)}
         />
       ) : null}
 
-      {/* Hidden, not unmounted, while a panel is open: closing it without a change keeps the list where it was. */}
-      <View style={[styles.results, panel !== null && styles.hidden]}>
+      {/* The sheet opens over the list; the list stays where it was underneath. */}
+      <View style={styles.results}>
         {view === "loading" ? (
           <View style={styles.centered}>
             <ActivityIndicator color={light.textSecondary} accessibilityLabel="Loading exercises" />
@@ -281,27 +317,27 @@ export function ExerciseBrowser({
 
 function FilterButton({
   title,
+  allLabel,
   selected,
-  emptyLabel,
   expanded,
   onPress,
 }: {
   title: string;
+  allLabel: string;
   selected: string | null;
-  emptyLabel: string;
   expanded: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${title} filter, ${selected ? `${selected} selected` : emptyLabel}`}
+      accessibilityLabel={`${title} filter, ${selected ? `${selected} selected` : allLabel}`}
       accessibilityState={{ expanded }}
       style={[styles.filter, selected !== null && styles.filterActive]}
       onPress={onPress}
     >
       <Text numberOfLines={1} style={[styles.filterText, selected !== null && styles.filterTextActive]}>
-        {selected ?? title}
+        {selected ?? allLabel}
       </Text>
     </Pressable>
   );
@@ -311,7 +347,6 @@ const styles = StyleSheet.create({
   browser: { flex: 1 },
   controls: { paddingHorizontal: 16 },
   results: { flex: 1 },
-  hidden: { display: "none" },
   list: { flex: 1 },
   content: { paddingHorizontal: 16, paddingBottom: 32 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 24 },
@@ -326,12 +361,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 12,
   },
-  filters: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 12 },
+  filters: { flexDirection: "row", gap: 10, marginBottom: 12 },
   filter: {
+    flex: 1,
     minHeight: MIN_TOUCH,
-    maxWidth: "100%",
+    alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     borderRadius: 12,
     borderColor: light.separator,
     borderWidth: 1,
@@ -340,8 +376,6 @@ const styles = StyleSheet.create({
   filterActive: { backgroundColor: light.primary, borderColor: light.primary },
   filterText: { color: light.text, fontSize: 15, fontWeight: "600" },
   filterTextActive: { color: light.onPrimary },
-  clear: { minHeight: MIN_TOUCH, justifyContent: "center", paddingHorizontal: 8 },
-  clearText: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
   count: { color: light.textSecondary, fontSize: 13, marginLeft: 4, marginBottom: 8 },
 
   footer: { alignItems: "center", paddingVertical: 24, gap: 8 },
