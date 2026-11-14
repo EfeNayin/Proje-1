@@ -42,6 +42,52 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 95: Egzersiz tarayıcısı — bilgi düğmesi "hiçbir şey yapmıyor" bildirimi: teşhis ve sağlamlaştırma — 14 Kasım 2026
+
+Dal: `feat/shared-exercise-browser` (taban `008b833`, Adım 94). Yalnız mobil. Proje sahibi iPhone'da iki şey bildirdi: küçük görseller yok, sağdaki bilgi düğmeleri hiçbir şey yapmıyor. **Özellik hâlâ kabul edilmedi.**
+
+**Eksik işlev ile hata ayrımı**
+- Küçük görsellerin boş olması hata değil, eksik iş: `ExerciseRow` her satırda `source={null}` veriyor, depoda lisanslı egzersiz görseli yok (Adım 93). Bu adımda görsel eklenmedi.
+- Bilgi düğmesinin mevcut detayı açmaması bir hatadır ve aşağıda incelendi.
+- Açılan detay kas bilgisidir; istenen animasyonlu anlatım ve numaralı talimatlar **yok**. Bu adım onları tamamlamaz.
+- Döndürülebilir erkek/kadın anatomik seçici hâlâ yapılmadı (Adım 94, madde 3).
+
+**Telefon hangi sürümü çalıştırıyor (doğrulandı)**
+- EAS'ta `testflight-staging` dalında yayınlanmış **hiç güncelleme yok** (`eas update:list`, salt okunur). Yani telefon bu kodu Expo Update ile almadı.
+- Bu makinede 14 Kasım 09:52'den beri bu klasörden başlatılmış bir `npx expo start` (Metro, port 8081) çalışıyor; ben başlatmadım, dokunmadım. Sahibin bilgi düğmelerini görmesi (yalnız bu dalda var) telefonun bu geliştirme sunucusuna bağlı olduğunu gösterir: telefon **commit'leri değil, çalışma ağacının o anki hâlini** Fast Refresh ile alıyor. Sunucu, Adım 93 ve 94'teki dosya silme/yeniden adlandırma ve benim ara düzenlemelerim boyunca açıktı.
+- API adresi `.env`'den: staging.
+
+**Neden: doğrulanan ve doğrulanamayan**
+- Doğrulandı: HEAD'deki kod gerçek Chrome'da çalışıyor (aşağıda). Dokunma hedefi, üstünü örten katman, rota parametresi ve seçicideki detay durumu kaynakta ve tarayıcıda doğru.
+- Bulunan gerçek zayıflık: Exercises sekmesinde gezinme kilidi `navigatingRef` bir bayraktı; `router.push`'tan önce `true` oluyor ve **yalnız sekmenin bir sonraki odak olayında** `false`'a dönüyordu. Push'un ardından o olay gelmezse (push başarısız olur, ya da geliştirme sırasında Fast Refresh araya girer; ref'ler Fast Refresh'te korunur) kilit açık kalır ve **satırlar da bilgi düğmeleri de uygulama yeniden başlatılana kadar sessizce hiçbir şey yapmaz**. Bu, bildirilen belirtiyle birebir aynıdır ve yeni test bunu yeniden üretir (düzeltmeden önce kırmızıydı).
+- **Doğrulanamadı:** telefonda gerçekten bunun yaşandığı. Cihaz günlüğüne ve sahibin Metro terminaline erişimim yok; iOS'ta deneme yapamadım. Bu açıklama yalnız Exercises sekmesini kapsar; seçicide kilit yoktu, orada düğme çalışmadıysa nedeni bilinmiyor (aday: eski/yarım Fast Refresh durumu). Sahibin hangi giriş noktasında denediği bildirilmedi.
+
+**Değişiklikler**
+- `app/(app)/(tabs)/exercises.tsx`: bayrak yerine kendiliğinden açılan kısa zaman penceresi (600 ms). Çift dokunma hâlâ tek ekran açar; hiçbir olay kaçsa da sonraki dokunuş çalışır. `useFocusEffect` bağımlılığı kalktı.
+- `src/exercises/ExerciseRow.tsx`: bilgi düğmesi basılıyken gri arka plan gösteriyor. Amaç teşhis: dokunuş düğmeye ulaştıysa görünür; "ulaştı ama bir şey olmadı" ile "hiç ulaşmadı" telefonda ayırt edilebilir.
+- `app/(app)/workout/exercise-picker.tsx`: bilgi düğmesi klavyeyi kapatıyor. Seçici arama alanı odaklı açılıyor; klavye açık kalınca detayın alt yarısını örtüyordu.
+- Yükleniyor ve hata durumları zaten görünürdü (`ExerciseDetailBody`: "Loading exercise", "Could not load this exercise." + "Try again"); değişmedi.
+
+**Testler** (`tests/exercise-browser.test.cjs`, üçü de önce kırmızı görüldü)
+- Sekme: odak olayı hiç gelmese de sonraki bilgi dokunuşları, satır dokunuşu ve aynı egzersizin yeniden açılması çalışır; 120 ms arayla çift dokunma tek ekran açar; hiçbir şey seçilmez.
+- Bilgi düğmesi basılıyken arka plan değiştirir, dokunma alanı ≥ 44 pt kalır.
+- Seçici: bilgi dokunuşu klavyeyi kapatır; aç / geri / aç döngüsü aynı ve farklı egzersiz için çalışır; hiçbir şey seçilmez, ekran kapanmaz.
+- Test verisi düzeltildi: detay taklidi her zaman `e1` kimliğini döndürüyordu; artık istenen kimliği döndürüyor.
+
+**Doğrulama (Windows, 14 Kasım 2026): üç ayrı düzey**
+- Otomatik: `node --test tests/*.test.cjs` 1020 testten 1018'i geçti; kalan ikisi Adım 92'den beri bilinen `tests/appearance.test.cjs` Windows yol hataları. `npx tsc --noEmit` hata yok, `npm run lint` hata/uyarı yok, `git diff --check` temiz. Backend bu adımda değişmedi, yeniden koşulmadı.
+- **Gerçek tarayıcı (bu adımda ilk kez):** web önizlemesi (`expo start --web --port 8082`, yerel backend) Chrome'da 390×844 görünümde otomatik sürüldü; tıklamalar düğmenin ekrandaki koordinatına gerçek fare tıklaması olarak gönderildi ve o noktada en üstteki öğenin düğmenin kendisi olduğu doğrulandı.
+  - Exercises sekmesi: bilgi düğmesi doğru egzersizin detayını açtı (`/exercise/<id>`); geri → başka egzersizin bilgi düğmesi → geri → satır → geri → ilk egzersiz yeniden: dördü de açıldı.
+  - Aktif antrenman seçicisi: bilgi düğmesi detayı ekran içinde açtı, adres değişmedi, hiçbir şey eklenmedi; "‹ Exercises" ile dönünce arama alanı yerinde; ikinci kez açıldı; ardından satıra dokunmak egzersizi ekleyip antrenmana döndü.
+  - Sayfa ve konsol hatası yok. Bu kontrol düzeltmeden önce de sonra da geçti: yani tarayıcı hatayı **yeniden üretmedi**, yalnız kodun normal yolda çalıştığını gösterdi.
+  - Kapsam dışı: şablon seçicisi tarayıcıda ayrıca sürülmedi (aynı rota ve aynı bileşen). Tarayıcı iOS dokunma, klavye ve native modal davranışını göstermez.
+  - Yan etki: yerel geliştirme veritabanında `browsercheck94` kullanıcısı ve bir açık antrenmanı kaldı (staging'e dokunulmadı).
+- **Sahibin iPhone'u:** bu düzeltmeyle denenmedi. Kabul sahibin denemesine bağlı.
+
+**Kalan kapsam (değişmedi)**
+- Lisanslı anatomik egzersiz küçük görselleri ve gösterimleri, numaralı talimatlar.
+- Gerçekten döndürülebilir erkek/kadın anatomik kas seçici. Bunlar için satın alma kararı istenmeden önce birincil kaynaklardan lisans ve teknik uyumluluk araştırması tamamlanacak (Adım 94'teki araştırma arama sonucu düzeyindeydi, yeterli değil).
+
 ### Adım 94: Egzersiz tarayıcısı — Biceps/Barbell Row teşhisi, referans düzeni (iki eşit düğme + alt panel), anatomik seçici için araştırma — 14 Kasım 2026
 
 Dal: `feat/shared-exercise-browser` (Adım 93'ün devamı, taban `09a19db`). **Özellik kabul edilmedi ve tamamlanmadı**: proje sahibi Adım 93'ü denedi ve iki sorun bildirdi (Biceps seçiliyken Barbell Row görünüyor; filtre düğmeleri ve paneller Hevy referansına uymuyor), ardından kapsamı genişletti: kas seçimi döndürülebilir 3D anatomik modelle yapılacak, altında Cardio ve Full Body olacak. Bu adım ilk ikisini ele alır; **3D anatomik seçici ve Cardio/Full Body YAPILMADI**, aşağıda sahibin vermesi gereken kararlar var.
