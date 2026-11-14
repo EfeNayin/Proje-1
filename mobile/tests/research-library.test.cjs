@@ -363,11 +363,14 @@ test('the library screen is the Research experience: Turkish copy, light theme, 
     'konu bulundu',
     'Bu soruyla eşleşen içerik yok.',
     'PubMed yayınları (İngilizce)',
-    'bir uzman tarafından gözden geçirilmedi',
-    'yazdıklarınız gönderilmez',
   ]) {
     assert.ok(source.includes(text), text);
   }
+  // The list opens straight on the search field: no introduction above it, no note
+  // below it, and no placeholder. The field is named by its accessibility label alone.
+  assert.match(source, /accessibilityLabel="Kütüphanede ara"/);
+  assert.match(source, /<Ionicons name="search"/);
+  assert.doesNotMatch(source, /placeholder|styles\.intro|styles\.privacy/);
   // Searching is local: no network, no API module, no PubMed feed here.
   assert.doesNotMatch(source, /fetch\(|src\/api|api\/research|createPublicationFeed|WebBrowser|Linking/);
   // The count line and the clear action exist.

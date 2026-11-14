@@ -39,20 +39,11 @@ export default function ResearchLibraryScreen() {
 
   const header = (
     <View style={styles.headerBlock}>
-      <Text style={styles.intro}>
-        Direnç antrenmanı üzerine yayımlanmış araştırmalara dayanan kısa Türkçe açıklamalar.
-        Her konunun altında İngilizce özgün kaynaklar listelenir. Bunlar kaynaklardan derlenmiş
-        açıklamalardır: bir uzman tarafından gözden geçirilmedi, kişiye özel değildir ve
-        tavsiye yerine geçmez.
-      </Text>
-
       <View style={styles.searchRow}>
         <Ionicons name="search" size={18} color={light.textSecondary} accessible={false} />
         <TextInput
           style={styles.input}
           accessibilityLabel="Kütüphanede ara"
-          placeholder="Bir soru veya anahtar sözcük yazın"
-          placeholderTextColor={light.textSecondary}
           value={query}
           onChangeText={setQuery}
           returnKeyType="search"
@@ -72,7 +63,6 @@ export default function ResearchLibraryScreen() {
           </Pressable>
         ) : null}
       </View>
-      <Text style={styles.privacy}>Arama yalnızca cihazınızdaki bu içerikte yapılır; yazdıklarınız gönderilmez.</Text>
 
       {count ? (
         <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={styles.count}>
@@ -192,7 +182,6 @@ const styles = StyleSheet.create({
   pressed: { backgroundColor: light.pressed },
 
   headerBlock: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 },
-  intro: { color: light.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: 16 },
   searchRow: {
     minHeight: 48,
     flexDirection: "row",
@@ -204,7 +193,6 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, minHeight: 48, color: light.text, fontSize: 16 },
   clear: { width: MIN_TOUCH, height: MIN_TOUCH, alignItems: "center", justifyContent: "center", marginRight: -8 },
-  privacy: { color: light.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 8 },
   count: { color: light.text, fontSize: 15, fontWeight: "600", marginTop: 16, marginLeft: 4 },
   notice: {
     backgroundColor: light.surface,
