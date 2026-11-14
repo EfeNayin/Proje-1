@@ -6,6 +6,7 @@ Or through Docker Compose:
     docker compose up
 """
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -138,7 +139,14 @@ app.include_router(workouts_router, prefix=API_PREFIX)
 
 @app.get("/health", tags=["meta"], summary="Liveness probe")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "environment": settings.ENVIRONMENT}
+    body = {"status": "ok", "environment": settings.ENVIRONMENT}
+    # Render sets RENDER_GIT_COMMIT to the commit a deploy was built from. Reporting
+    # it lets anyone check which code is live without an account; a commit hash is
+    # not a secret. Absent locally and on hosts that do not provide it.
+    commit = os.environ.get("RENDER_GIT_COMMIT")
+    if commit:
+        body["commit"] = commit
+    return body
 
 
 @app.get(

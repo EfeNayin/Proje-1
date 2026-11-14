@@ -347,6 +347,18 @@ class TestLivenessAndReadiness:
 
         assert response.status_code == 200 and response.json()["status"] == "ok"
 
+    async def test_liveness_names_the_deployed_commit_when_the_host_provides_it(
+        self, root: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Which code is running must be checkable from outside, without an account."""
+        monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
+        assert "commit" not in (await root.get("/health")).json()
+
+        monkeypatch.setenv("RENDER_GIT_COMMIT", "0123456789abcdef0123456789abcdef01234567")
+        body = (await root.get("/health")).json()
+        assert body["commit"] == "0123456789abcdef0123456789abcdef01234567"
+        assert body["status"] == "ok"
+
     async def test_ready_when_database_and_redis_answer(self, root: AsyncClient) -> None:
         response = await root.get("/health/ready")
 

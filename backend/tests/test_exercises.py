@@ -152,6 +152,59 @@ class TestFilters:
         # The count is of the same primary-only matches as the rows.
         assert body["total"] == len(body["items"]) == 6
 
+    async def test_biceps_filter_excludes_rows_that_only_assist_with_biceps(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        """Barbell Row trains upper back and lats directly; biceps only assists.
+        It is listed under its own muscles and not under Biceps."""
+        biceps = (
+            await client.get("/exercises?muscle=biceps&limit=100", headers=auth_headers)
+        ).json()
+        names = [item["name"] for item in biceps["items"]]
+
+        assert "Barbell Row" not in names
+        assert "Barbell Curl" in names
+        assert all(
+            "biceps" in [muscle["name"] for muscle in item["primary_muscles"]]
+            for item in biceps["items"]
+        )
+        assert biceps["total"] == len(names) == 7
+
+        for muscle in ("upper_back", "lats"):
+            listed = (
+                await client.get(f"/exercises?muscle={muscle}&limit=100", headers=auth_headers)
+            ).json()
+            assert "Barbell Row" in [item["name"] for item in listed["items"]]
+
+        # Its details still name biceps, as a secondary muscle.
+        row_id = next(
+            item["id"]
+            for item in (
+                await client.get("/exercises?q=barbell row", headers=auth_headers)
+            ).json()["items"]
+            if item["name"] == "Barbell Row"
+        )
+        detail = (await client.get(f"/exercises/{row_id}", headers=auth_headers)).json()
+        assert ("biceps", "secondary") in [
+            (muscle["name"], muscle["role"]) for muscle in detail["muscles"]
+        ]
+
+    async def test_biceps_filter_pages_without_repeats_and_with_one_total(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        names: list[str] = []
+        for offset in (0, 3, 6):
+            page = (
+                await client.get(
+                    f"/exercises?muscle=biceps&limit=3&offset={offset}", headers=auth_headers
+                )
+            ).json()
+            assert page["total"] == 7
+            names += [item["name"] for item in page["items"]]
+
+        assert len(names) == len(set(names)) == 7
+        assert "Barbell Row" not in names
+
     async def test_category_filter_matches_primary_involvement_only(
         self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
