@@ -42,6 +42,92 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 97: Kabul kaydı düzeltmesi, PR kabul listesi, RepDB önizleme değerlendirmesi ve anatomik prototip planı — 14 Kasım 2026
+
+Dal: `feat/shared-exercise-browser` (taban `3a6bd19`). **Kod değişmedi, bağımlılık eklenmedi, yeni dal açılmadı.** PR #1 açık, birleştirilmedi. Satın alma, dağıtım, Expo Update yok. Depoya hiçbir üçüncü taraf varlığı girmedi; indirilenler deponun dışında, `C:\Users\efena\Desktop\Proje-1-prototypes\` altında.
+
+**1. Kabul kaydı düzeltmesi (Adım 96, madde 2)**
+- Adım 96 "Google/Apple girişi: gerçek pencere hiç açılmadı" diyordu. Bu, Adım 82'nin yazıldığı andaki durumdur ve bugün için **yanlış/eksikti**. **Proje sahibi 14 Kasım 2026'da bildirdi:** daha önce imzalı iPhone uygulamasında Google ve Apple ile girişi başarıyla denemiş. Bunu sahibin geçmişe dönük raporu olarak kaydediyorum. Bilmediklerim: tarih, yapı numarası (EAS'ta tamamlanmış iki ilgili yapı var: no 3 `d9d69ec` ve no 5 `2c22886`, ikisi de 8 Kasım), hangi alt akışların denendiği. **Güncel sürüm (`3a6bd19`) için yeni bir kontrol yapılmadı**; ben hiçbirini cihazda görmedim.
+- Günlükte bu rapor daha önce yazılı değildi; Adım 84 yalnız sahibin TestFlight 1.0.0 (3)'te iki düğmeyi gördüğünü kaydediyordu. PR #1 açıklaması da buna göre düzeltildi.
+
+**2. PR #1 için kabul listesi**
+
+Sahibin telefonda onayladığını bildirdiği (yeniden denemek gerekmez; hiçbiri benim doğrulamam değil): Adım 34 antrenman loglama turu; Adım 38 geçmiş paneli (ayrıntısız); Adım 80 yüzen dinlenme sayacı ve set taslağı; Google/Apple ile giriş (yukarıdaki rapor); Adım 90 beş sekme; Adım 92 araştırma ekranı; Adım 95 bilgi düğmesi.
+
+Gerçekten doğrulanmamış olanlar (her biri 1-3 dakika; staging'e bağlı uygulamada):
+1. **Açık tema (48–57):** Profile, Volume, Programs, giriş/kayıt ekranlarını aç; koyu kalmış ekran, okunmayan metin, durum çubuğu rengi var mı?
+2. **Kayıt klavyesi (81):** yeni bir **deneme hesabı** için kayıt formunda klavye açıkken kaydırıp "Create Account"a ilk dokunuşta ulaş.
+3. **Filtre panelleri (94):** Exercises sekmesinde ve antrenman içi seçicide "All Equipment" / "All Muscles" panelini aç, seç, "Show results", kapat; seçici modalının içinde panel açılıyor mu, takılıyor mu?
+4. **Plaka hesaplayıcı (88):** aktif antrenmanda bir barbell hareketinde hesaplayıcıyı aç, 100 kg için plaka dizilimini gör.
+5. **Örnek programlar (91):** Start Workout → Example programs → birini önizle → kopyala → My programs'ta pasif kopya olarak gör.
+6. **Teşhis ve günlük check-in (68):** "Neden gelişemiyorum?" ekranını aç, dönem değiştir; bağımsız check-in kaydet.
+7. **Araştırma kütüphanesi arama (66):** bir Türkçe sözcük ara, bir konuyu aç.
+8. **Antrenör–sporcu (40–47, 53–54, 67):** iki hesap gerekir (kendi hesabın + bir deneme hesabı): davet kodu → kabul → paylaşımı aç → koç bitmiş antrenmanı görür → program gönder → sporcu kabul eder → geri bildirim bırak. Tek telefonda sırayla hesap değiştirerek yapılabilir.
+9. **Parola kurtarma (70):** yalnız Resend hesap sahibinin e-posta adresiyle denenebilir (staging göndericisi başka adrese posta atamıyor); kod gelir mi, yeni parolayla giriş olur mu?
+10. **Hesap silme (69):** **kendi gerçek hesabında DENEME.** Yalnız bu iş için açılmış bir deneme hesabında: Profile → Account → Delete account → yanlış parola reddedilir → doğru parolayla silinir → aynı bilgilerle giriş başarısız.
+11. **My Expo Go açılışı (83, 89):** My Expo Go'da uygulama çökmeden açılıyor, e-posta ile giriş/çıkış çalışıyor mu?
+
+Telefonla doğrulanamayacak, bilerek kabul edilecek olanlar: 17 migration ve sunucu tarafı sertleştirme (yalnız otomatik testlerle kanıtlı: 1482 backend testi); Apple'ın rıza iptali bildirimi ve iki cihazda eşzamanlı izin iptali (hiç denenmedi).
+
+**3. RepDB önizleme paketi: lisans ve yerel değerlendirme**
+- Paket doğrudan indirilebiliyor (kayıt/e-posta yok): `https://repdb.co/download/preview?locale=en` (261 MB zip). Paketin içindeki `LICENSE.md` **okundu**: "Preview Pack License (CC BY-NC 4.0)"; izin verilenler arasında kişisel/araştırma/ticari olmayan projeler ve "Evaluate the data and images for a potential purchase of the paid tiers — evaluation inside a commercial organization is fine"; şart: "Exercise data & images: RepDB (https://repdb.co)" atfı ve ticari kullanım yok. GitHub'daki ücretsiz katman lisansı önizleme animasyonlarının üretimde kullanılamayacağını ve yeniden dağıtılamayacağını söylüyor. Sonuç: **yerel değerlendirme serbest; depoya (herkese açık) commit etmek, uygulamaya koymak, yayınlamak yok.**
+- İçerik (doğrulandı): 30 hareket; erkek ve kadın için 1024×1024 şeffaf WebP duruşlar (başlangıç/tepe), döngülü şeffaf WebP animasyon (hareket başına ≈2–4 MB), 512 px MP4 örnekleri, EN/DE/ES/FR veri (`instructions`, `tips`, `primary_muscles`, `secondary_muscles`), kendi çevrimdışı görüntüleyicisi (`index.html`).
+- **Görünüm (gözle bakıldı):** gri mat figür, turuncu vurgulu hedef kaslar, koyu gri ekipman, şeffaf arka plan. İstenen "gri anatomik figür + vurgulu kas" tarifine uyuyor; nihai onay sahibin gözüyle.
+- **Bench press önizleme paketinde YOK.** 30 hareketin içinde en yakın itiş hareketi Incline Dumbbell Press. Tam (ücretli) veri kümesinin kapsam listesinde Barbell Bench Press, Dumbbell Bench Press, Close-Grip, Decline ve Incline Barbell Bench Press var; ama bunların görselini satın almadan göremeyiz.
+- **Katalog eşleşmesi** (paketteki `exercise-list.json`, 708 hareketin tam ad listesi): bizim 96 hareketin **59'u birebir ad eşleşmesi**. Kalan 37'nin çoğunda farklı adla karşılık görünüyor (ör. Conventional Deadlift → Barbell Deadlift, Tricep Pushdown → Cable Tricep Pushdown, Pec Deck Fly → Pec Deck); elle eşleme gerekir ve yapılmadı. Yakın aday bulunamayanlar: Low Cable Crossover, Landmine Rotation, Cable Woodchop, Farmer's Carry, Dumbbell Y-Raise, Snatch-Grip High Pull, Hanging Oblique Raise, Seated Good Morning.
+- Önizlemedeki 30 hareketten kataloğumuzla örtüşenler: birebir Ab Wheel Rollout, Concentration Curl, Incline Dumbbell Curl, Pull-up; aynı hareket farklı ad: Incline Dumbbell Press (bizde Incline Dumbbell Bench Press), Dumbbell Bicep Curl (Dumbbell Curl), Front Squat (Barbell Front Squat).
+- **Yerel görsel prototip** (depo dışı, tarayıcıda açılır): `C:\Users\efena\Desktop\Proje-1-prototypes\repdb-preview\aures-prototype.html`. Bu yedi hareket için uygulamanın açık temasındaki satır düzeninde küçük görsel, detayda döngülü animasyon, erkek/kadın geçişi, numaralı "How to" adımları ve atıf satırı. Bu bir tarayıcı maketidir, React Native ekranı değildir. Başsız Chrome'da ekran görüntüsü alınıp bakıldı: görseller ve adımlar yükleniyor. iPhone'da `expo-image` ile animasyonlu WebP oynatma **denenmedi**.
+- Not: RepDB'nin kas verisi bizimkinden farklı (ör. Front Squat'ta primary "Glutes, Quads"). Kas rolleri bizim `exercise_muscle_groups` tablomuzdan gelmeye devam etmeli; RepDB yalnız görsel ve talimat metni kaynağı olur. Görseldeki vurgu RepDB'nin kendi kas seçimini yansıtır ve bizim primary listemizle her harekette örtüşmeyebilir.
+
+**4. Ücretsiz anatomik model: inceleme (open-anatomy-3d 0.1.0, CC BY 4.0)**
+
+İki GLB ve `catalog.json` depo dışına indirildi (`...\Proje-1-prototypes\anatomy-eval\download\`) ve GLB başlıkları okundu:
+- Erkek 7,6 MB, 128 ayrı adlandırılmış ağ, 1.026.032 üçgen; kadın 8,1 MB, 133 ağ, 1.168.999 üçgen. Malzeme ve doku yok (rengi biz veririz: gri gövde, vurgulu kas). `EXT_meshopt_compression` + `KHR_mesh_quantization` zorunlu.
+- Kas sistemi: 41 ağ, 365.482 üçgen; bunun 127 bini kaburga arası kaslar. Kas ağlarının üçgen sayıları erkek ve kadında **aynı** (kadın, erkek anatomisinin MakeHuman bedenine warp edilmiş hâli; ayrı bir kadın anatomisi değil).
+- Her ağ ayrı bir glTF düğümü ve adı katalog anahtarı; dokunmayla seçme ve tek ağı boyama için uygun yapı.
+
+Bizim 17 kas kodumuzla eşleşme:
+
+| Kodumuz | Modeldeki ağ | Durum |
+|---|---|---|
+| chest | `chest_muscles_l/r` (yalnız pectoralis major) | doğrudan |
+| traps | `trapezius_l/r` | doğrudan |
+| forearms | `forearm_muscles_l/r` | doğrudan |
+| glutes | `gluteal_l/r` | doğrudan |
+| quads | `quadriceps_l/r` | doğrudan |
+| hamstrings | `hamstrings_l/r` | doğrudan |
+| calves | `calf_l/r` | doğrudan |
+| biceps, triceps | `upper_arm_muscles_l/r` tek ağ | **ayrı değil** |
+| front/side/rear_delts | `deltoid_l/r` tek ağ | **ayrı değil** |
+| abs, obliques | `abdominal_muscles` tek ağ | **ayrı değil** |
+| lower_back | `back_muscles_l/r` (erector grubu) | yaklaşık |
+| upper_back | romboidler `shoulder_muscles_l/r` içinde, başka kaslarla birlikte | **ayrı değil** |
+| lats | hiçbir kuralda latissimus dorsi yok | **modelde olup olmadığı belirsiz** |
+
+- Yani 17 kodun 7'si doğrudan var; istenen üç örnekten **Chest hazır, bir sırt bölgesi olarak Traps hazır, Biceps hazır değil**.
+- Ayırmanın yolu (kaynak okundu, **çalıştırılmadı**): deponun MIT lisanslı `pipeline/catalog.mjs` dosyasında gruplama düzenli ifadelerle yapılıyor (ör. üst kol kuralı `biceps brachii|...|triceps brachii|anconeus`). BodyParts3D'de biceps, triceps, rectus abdominis, oblikler, romboidler ayrı kaynak dosyalar olduğu için kuralı bölmek bunları ayrı ağ yapar; kadın modeli erkekten türetildiği için değişiklik ona da taşınır. Deltoid kaynakta tek kas olabilir; ön/yan/arka ayrımı gruplamayla çıkmayabilir, o zaman dokunulan noktanın konumuna göre ayrım gerekir. Gereksinim: Node 20+ (makinede 24 var), "yaklaşık 16 GB RAM" (makinede tam 16 GB; sınırda), birkaç GB disk; süre ve indirme boyutu belgede yok.
+- Atıf zorunlu: `ATTRIBUTION.md`'deki satır (BodyParts3D © DBCLS CC BY 4.0; HuBMAP HRA CC BY 4.0; MakeHuman CC0; "Modified by open-anatomy-3d") uygulamada görünür bir yerde (ör. seçici altında "Model credits" + Profile'da lisanslar) ve değişiklik yapıldığı belirtilerek gösterilmeli.
+
+**5. Çizim yolu: kurulu paketlere karşı doğrulama**
+- Kurulu `expo` 57.0.20, `node_modules/expo/src/dom/webview-wrapper.tsx`: `useExpoDOMWebView` varsayılanı `true`; yani `"use dom"` bileşeni `react-native-webview` olmadan `@expo/dom-webview` ile çalışır. `@expo/dom-webview` 57.0.1 `expo`'nun doğrudan bağımlılığı.
+- `npx expo-modules-autolinking resolve --platform ios`: `@expo/dom-webview` → pod `ExpoDomWebView`, modül `DomWebViewModule`. Yani bu ağaçtan alınan her iOS yapısına native kod olarak bağlanır.
+- EAS yapı listesi (salt okunur): tamamlanmış son imzalı yapı **no 5, commit `2c22886`, SDK 57.0.0, 8 Kasım**. O commit'in `package-lock.json` dosyasında `@expo/dom-webview` 57.0.1 var (paket 17 Ağustos'tan beri kilit dosyasında).
+- **Sonuç:** telefonda no 5 (veya no 3) kuruluysa, ikili dosyanın DOM webview modülünü içermesi beklenir ve three.js saf JavaScript olarak Expo Update ile gidebilir; yeni native bağımlılık gerekmez. **Bu statik kanıttır, çalışma zamanı kanıtı değildir.** Kesin kanıt: içinde bir `"use dom"` ekranı olan JS paketinin o ikili dosyada açılması; bunun için `testflight-staging` kanalına bir Expo Update yayınlamak gerekir ve bu yetki verilmedi. My Expo Go ile deneme yalnız Expo Go'yu kanıtlar, imzalı yapıyı değil.
+- Bilinmeyenler (yalnız cihazda çözülür): WKWebView içinde three.js + meshopt çözücü (WebAssembly) ile GLB yükleme; `require()` ile paketlenen ≈2 MB'lık modelin DOM bileşenine ulaşması ve Expo Update ile taşınması; dokunma hareketlerinin (döndürme) dıştaki kaydırma/modal hareketleriyle çakışması; düşük güç modunda kare hızı; DOM tarafından native tarafa asenkron seçim mesajının gecikmesi; ilk açılış süresi.
+
+**6. En küçük pratik prototip planı (uygulanmadı)**
+
+Konum: PR #1 çözülene kadar depo dışı, `C:\Users\efena\Desktop\Proje-1-prototypes\anatomy-eval\`. Uygulama dalı ancak güncel `main`'den açılacak.
+
+- **Aşama A, masaüstü tarayıcı, depo dışı, bağımlılık eklemeden (şimdi yapılabilir):** tek HTML + three.js (yerel kopya) ile indirilmiş iki GLB'yi yükle; yalnız `muscles` ve `skin` gruplarını göster, gerisini gizle; gri malzeme; tek parmak/fare ile 360° yatay döndürme (dikey sınırlı); dokunulan ağ raycast ile bulunur, sol/sağ çifti birlikte turuncuya boyanır ve adı etiket olarak çıkar; Male/Female düğmesi GLB'yi değiştirir; altta atıf satırı. Kabul: Chest ve Traps seçilip vurgulanır, iki beden arasında geçilir, kare hızı ve bellek ölçülür. Biceps bu aşamada **yalnız "Upper arm" olarak** seçilebilir ve böyle etiketlenir; biceps diye gösterilmez.
+- **Aşama B, modelin yeniden gruplanması, depo dışı:** `pipeline/` klonlanır, önce değiştirmeden çalıştırılıp yayınlanan GLB'yi yeniden ürettiği görülür; sonra `catalog.mjs`'te üst kol → biceps/triceps, karın → abs/obliques, sırt → lats/upper_back/lower_back ayrılır; latissimus dorsi'nin kaynakta bulunduğu doğrulanır; yalnız kas + deri içeren hafif bir çıktı (hedef ≤ 250 bin üçgen, ≤ 3 MB) alınır. Kabul: Aşama A sayfasında Biceps tek başına seçilip vurgulanır; 17 kodun her birinin karşılığı ya vardır ya da eksikliği adıyla yazılır. Risk: 16 GB RAM sınırda; deltoid üç başa ayrılamayabilir.
+- **Aşama C, iPhone, güncel `main`'den yeni dal:** aynı sahne bir `"use dom"` bileşenine taşınır (yeni JS bağımlılığı: `three`; native bağımlılık yok); seçim native tarafa asenkron prop ile bildirilir ve mevcut `filters.muscle` yoluna bağlanır; metin kartları erişilebilir alternatif olarak yanında kalır. Önce My Expo Go'da (geliştirme sunucusu), sonra imzalı yapıda Expo Update ile denenir. Kabul: iPhone'da parmakla 360° döndürme, Chest/Biceps/bir sırt bölgesi seçimi ve vurgusu, erkek/kadın geçişi, üç giriş noktasında aynı filtre, VoiceOver ile metin alternatifi. DOM yolu imzalı yapıda çalışmazsa yedek: `expo-gl` + `@react-three/fiber` 9 ve yeni imzalı yapı.
+
+**7. Doğrulama ve sınırlar**
+- Bu adımda test koşulmadı (kod değişmedi; son koşular Adım 96'da).
+- Yapılanlar: lisans dosyalarının okunması, paket içeriklerinin dosya düzeyinde incelenmesi, ad eşleştirme betiği, GLB başlık okuma, autolinking ve EAS yapı listesi sorgusu (salt okunur), prototip sayfasının başsız Chrome ekran görüntüsü.
+- Yapılmayanlar: iPhone'da herhangi bir deneme, three.js sahnesi, pipeline çalıştırma, GymVisual ve CGTrader ürün sayfalarının okunması (site otomatik istemciyi reddediyor).
+
 ### Adım 96: Bilgi düğmesi için sahip kabulü, `main`'e PR kapsam dökümü ve görsel kapsam araştırması — 14 Kasım 2026
 
 Dal: `feat/shared-exercise-browser` (taban `49b899d`, Adım 95). Bu adımda **kod değişmedi**; yalnız bu günlük girdisi eklendi.
