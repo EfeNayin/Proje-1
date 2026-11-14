@@ -81,7 +81,8 @@ export function ExerciseRow({
         accessibilityRole="button"
         accessibilityLabel={`How to perform ${exercise.name}`}
         hitSlop={4}
-        style={styles.info}
+        // Visible feedback: a touch that reached the button always shows.
+        style={({ pressed }) => [styles.info, last && styles.infoLast, first && styles.infoFirst, pressed && styles.pressed]}
         onPress={onInfo}
       >
         {/* The control is named by its label; the glyph is decoration. */}
@@ -126,6 +127,8 @@ const styles = StyleSheet.create({
   title: { color: light.text, fontSize: 16, fontWeight: "600" },
   muscles: { color: light.textSecondary, fontSize: 13 },
   info: { minWidth: MIN_TOUCH + 8, minHeight: MIN_TOUCH, alignItems: "center", justifyContent: "center" },
+  infoFirst: { borderTopRightRadius: 12 },
+  infoLast: { borderBottomRightRadius: 12 },
   infoBadge: {
     width: 24,
     height: 24,

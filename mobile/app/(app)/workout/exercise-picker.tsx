@@ -23,7 +23,7 @@
 
 import { Stack, useRouter } from "expo-router";
 import { useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { ExerciseSummary } from "../../../src/api/exercises";
 import { ExerciseBrowser } from "../../../src/exercises/ExerciseBrowser";
@@ -66,7 +66,12 @@ export default function ExercisePicker() {
           mode="select"
           autoFocus
           onRowPress={choose}
-          onInfo={(exercise) => setInfoId(exercise.id)}
+          onInfo={(exercise) => {
+            // The search field is focused when the picker opens; left up, its
+            // keyboard would cover the lower half of the details.
+            Keyboard.dismiss();
+            setInfoId(exercise.id);
+          }}
         />
       </View>
       {infoId !== null ? (

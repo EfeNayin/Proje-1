@@ -12,8 +12,8 @@
  * exercise into a form the user is not looking at.
  */
 
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useRef } from "react";
+import { useRouter } from "expo-router";
+import { useRef } from "react";
 import { StyleSheet, View } from "react-native";
 
 import type { ExerciseSummary } from "../../../src/api/exercises";
@@ -21,22 +21,22 @@ import { ExerciseBrowser } from "../../../src/exercises/ExerciseBrowser";
 import { light } from "../../../src/lightTheme";
 import { TabTopBar } from "../../../src/navigation/TabTopBar";
 
+/** Taps closer together than this are one double tap and open one screen. */
+const DOUBLE_TAP_MS = 600;
+
 export default function ExercisesScreen() {
   const router = useRouter();
-  const navigatingRef = useRef(false);
+  const lastOpenRef = useRef(0);
 
-  // The tab stays mounted underneath the detail screen (which is why the query,
-  // the filters and the scroll position are still there on return): each return
-  // allows the next tap.
-  useFocusEffect(
-    useCallback(() => {
-      navigatingRef.current = false;
-    }, []),
-  );
-
+  // One screen per tap. The guard is a short time window and releases itself.
+  // It used to be a flag that only the tab's next focus event cleared: if a push
+  // was ever not followed by that event (it failed, or a development reload came
+  // in between), every row and information button stayed dead until the app was
+  // restarted.
   const open = (exercise: ExerciseSummary) => {
-    if (navigatingRef.current) return;
-    navigatingRef.current = true;
+    const now = Date.now();
+    if (now - lastOpenRef.current < DOUBLE_TAP_MS) return;
+    lastOpenRef.current = now;
     router.push({ pathname: "/exercise/[id]", params: { id: exercise.id } });
   };
 

@@ -302,7 +302,8 @@ function timersWorld() {
 }
 
 const reactGlobal = { createElement: h.createElement, Fragment: 'Fragment' };
-const native = () => h.reactNative({ Keyboard: { dismiss() {} } });
+const keyboard = { dismissals: 0 };
+const native = () => h.reactNative({ Keyboard: { dismiss() { keyboard.dismissals += 1; } } });
 
 /** The real row, panel and browser files, wired to each other, with only the network replaced. */
 function browserModules({ hooks, clock, api }) {
@@ -639,7 +640,8 @@ for (const mode of ['browse', 'select']) {
     assert.equal(main.props.accessibilityHint, mode === 'select' ? 'Adds this exercise' : 'Opens the exercise details');
     // Siblings, not nested: the information button is not inside the row's pressable.
     assert.equal(h.nodes(main).includes(info), false);
-    assert.ok(info.props.style.minWidth >= 44 && info.props.style.minHeight >= 44);
+    const infoStyle = Object.assign({}, ...[typeof info.props.style === 'function' ? info.props.style({ pressed: false }) : info.props.style].flat(Infinity).filter(Boolean));
+    assert.ok(infoStyle.minWidth >= 44 && infoStyle.minHeight >= 44);
 
     info.props.onPress();
     assert.deepEqual(world.infoPresses, ['e2']);
@@ -658,12 +660,13 @@ function screenWorld(file, { total = 130 } = {}) {
   const clock = timersWorld();
   const { requests, fetchPage } = catalogue(total);
   const router = { pushes: [], backs: 0 };
+  const time = { now: 1_000_000 };
   const mailbox = h.loadFile('src/workout/usePickedExercise.ts', {
     modules: { 'expo-router': { useFocusEffect() {}, useRouter: () => ({}) }, react: hooks.hooks },
   });
-  const api = { searchExercises: fetchPage, listMuscleGroups: async () => MUSCLE_GROUPS, getExercise: async () => detail };
+  const api = { searchExercises: fetchPage, listMuscleGroups: async () => MUSCLE_GROUPS, getExercise: async (id) => ({ ...detail, id }) };
   const { browser } = browserModules({ hooks, clock, api });
-  const globals = { React: reactGlobal, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout };
+  const globals = { React: reactGlobal, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, Date: { now: () => time.now } };
   const detailBody = h.loadFile('src/exercises/ExerciseDetailBody.tsx', {
     globals,
     modules: { react: hooks.hooks, 'react-native': native(), '../api/exercises': api, './exerciseDetail': { describeExercise }, '../lightTheme': { light } },
@@ -688,7 +691,7 @@ function screenWorld(file, { total = 130 } = {}) {
     },
   }).default;
   const world = {
-    hooks, clock, requests, router, mailbox,
+    hooks, clock, requests, router, mailbox, time,
     render: () => hooks.render(() => h.expand(h.createElement(screen, {}))),
     list: (tree) => h.nodes(tree).find((node) => node.type === 'FlatList'),
     row: (tree, index) => { const list = world.list(tree); return h.expand(list.props.renderItem({ item: list.props.data[index], index })); },
@@ -708,7 +711,7 @@ test('Exercises tab: the row and the information button both open the details, o
   assert.equal(world.router.backs, 0);
 
   // Coming back allows the next tap; the information button opens the same details.
-  world.hooks.blur(); world.hooks.focus();
+  world.hooks.blur(); world.hooks.focus(); world.time.now += 2000;
   h.byLabel(world.row(world.render(), 3), 'How to perform Exercise 3').props.onPress();
   assert.deepEqual(world.router.pushes.at(-1), { pathname: '/exercise/[id]', params: { id: 'e3' } });
 
@@ -720,6 +723,66 @@ test('Exercises tab: the row and the information button both open the details, o
   ]) {
     assert.doesNotMatch(code(file), /usePickedExercise|depositPickedExercise|takePickedExercise|exercise-picker/, file);
   }
+});
+
+test('Exercises tab: the information button keeps working on every later tap, even if the screen never hears that it was focused again', async () => {
+  const world = screenWorld('app/(app)/(tabs)/exercises.tsx');
+  const tree = await world.open();
+  const info = (index) => h.byLabel(world.row(world.render(), index), `How to perform Exercise ${index}`);
+
+  info(1).props.onPress();
+  assert.deepEqual(world.router.pushes.map((push) => push.params.id), ['e1']);
+  // No blur and no focus event at all: the push failed, was cancelled, or the event was missed.
+  // A guard that only a focus event releases would leave every row and button dead from here on.
+  world.time.now += 1500;
+  info(2).props.onPress();
+  world.time.now += 1500;
+  h.byLabel(world.row(world.render(), 3), 'Exercise 3, Quads, Glutes').props.onPress();
+  world.time.now += 1500;
+  info(1).props.onPress(); // the same exercise again
+  assert.deepEqual(world.router.pushes.map((push) => push.params.id), ['e1', 'e2', 'e3', 'e1']);
+  assert.ok(tree);
+
+  // Still one screen per tap: the second half of a double tap is ignored.
+  world.time.now += 1500;
+  info(4).props.onPress();
+  world.time.now += 120;
+  info(4).props.onPress();
+  assert.equal(world.router.pushes.length, 5);
+  assert.equal(world.mailbox.takePickedExercise(), null);
+});
+
+test('the information button shows that it was touched, so a tap that does nothing can be told from a tap that never arrived', async () => {
+  const world = browserWorld();
+  const tree = await world.open();
+  const info = h.byLabel(world.row(tree, 0), 'How to perform Exercise 0');
+  assert.equal(typeof info.props.style, 'function');
+  const flat = (style) => Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+  assert.equal(flat(info.props.style({ pressed: true })).backgroundColor, light.pressed);
+  assert.equal(flat(info.props.style({ pressed: false })).backgroundColor, undefined);
+  assert.ok(flat(info.props.style({ pressed: false })).minWidth >= 44 && flat(info.props.style({ pressed: false })).minHeight >= 44);
+});
+
+test('picker: opening the details puts the keyboard away, and open / back / open works for the same and for another exercise', async () => {
+  const world = screenWorld('app/(app)/workout/exercise-picker.tsx');
+  await world.open();
+  const open = async (index) => {
+    h.byLabel(world.row(world.render(), index), `How to perform Exercise ${index}`).props.onPress();
+    world.render(); await h.settle();
+    return world.render();
+  };
+  const before = keyboard.dismissals;
+  let tree = await open(0);
+  assert.equal(keyboard.dismissals, before + 1, 'the search field has focus in the picker; its keyboard would cover the details');
+  assert.ok(h.texts(tree).includes('Primary muscles'));
+  for (const index of [0, 3, 0]) {
+    h.byLabel(world.render(), 'Back to exercises').props.onPress();
+    assert.equal(h.texts(world.render()).includes('Primary muscles'), false);
+    tree = await open(index);
+    assert.ok(h.texts(tree).includes('Primary muscles'), `details shown again for row ${index}`);
+  }
+  assert.equal(world.mailbox.takePickedExercise(), null);
+  assert.equal(world.router.backs, 0);
 });
 
 test('picker: tapping a row chooses that exercise exactly once and goes back to the screen that opened it', async () => {
