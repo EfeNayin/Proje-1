@@ -73,8 +73,8 @@ API farklılıkları için `AGENTS.md` dosyasındaki notu izleyin.
 `e2e/` altında, **simülatörde gerçek native UI** ile çalışan tek bir atlet
 yolculuğu vardır: giriş → Start Workout → "Start an Empty Workout" → "Barbell Bench Press"
 seç → ağırlık + tekrar gir (RIR boş) → set kaydet → antrenmanı bitir →
-History sekmesinde açılır → geçmişten aç → set hâlâ orada. (Sekmeler: Profile, History,
-Start Workout, Exercises, Volume; programlar Start Workout içindeki "My programs"
+History sekmesinde açılır → geçmişten aç → set hâlâ orada. (Sekmeler: Volume, History,
+Start Workout, Exercises, Profile; programlar Start Workout içindeki "My programs"
 bölümündedir. Maestro akışları bu etiketlere göre güncellendi ama bu değişiklikten sonra
 **çalıştırılmadı** — simülatör gerektirir.) Bu bir **smoke testidir**; koç akışlarını,
 VoiceOver'ı, Dynamic Type'ı veya fiziksel cihazı kapsamaz. Expo Go (SDK 57)

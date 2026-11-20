@@ -42,6 +42,25 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 100: Alt gezinme çubuğu — Volume ile Profile yer değiştirdi, "Start Workout" etiketi iki satır — 20 Kasım 2026
+
+Dal: `feat/shared-exercise-browser` (taban `645c54a`, PR #1 açık; yeni dal açılmadı, PR birleştirilmedi). Yalnız mobil, yalnız alt çubuk; bağımlılık, rota adı, ekran başlığı, simge ve Blender prototipi değişmedi. Expo kurulu sürümü 57.0.20 (`expo-router` 57.0.19, `@react-navigation/bottom-tabs` 7.18.16); `mobile/AGENTS.md` gereği v57 belgeleri okundu.
+
+**1. Sahip istekleri**
+- Görünen sıra artık **Volume · History · Start Workout · Exercises · Profile**. Start Workout ortada ve açılış sekmesi (`anchor: "index"` değişmedi). Gizli `programs` yönlendirmesi duruyor.
+- "Start Workout" etiketi kesilmeden tam görünecek; yazı boyutu 10'dan küçültülmedi.
+
+**2. Yapılan**
+- `app/(app)/(tabs)/_layout.tsx`: `Tabs.Screen` sırası değişti; orta sekmeye `tabBarLabel` (iki satırlı bileşen) ve `tabBarAccessibilityLabel: "Start Workout"` eklendi.
+- `src/workout/StartWorkoutTabLabel.tsx` (yeni): "Start" / "Workout" iki satır, boyut 10, Dynamic Type ölçeklemesi kapalı, satır başına `numberOfLines={1}`. `TAB_BAR_CONTENT_HEIGHT = 64`.
+- **Neden çubuk yüksekliği de değişti:** kurulu `BottomTabBar` yüksekliği sabit `49 + alt güvenli alan` ve ikon + tek satır etiket için ayarlı; iki satır sığmaz. `tabBarStyle.height` sayısal verilince çubuk kendi hesabını bırakıp bu değeri olduğu gibi kullanıyor (güvenli alanı eklemiyor), bu yüzden yükseklik `TAB_BAR_CONTENT_HEIGHT + useSafeAreaInsets().bottom` olarak verildi. Çubuk yüksekliğini `onLayout` ile ölçüp ekranları ona göre küçülttüğü için içerik payı ve zamanlayıcı şeridi (çubuğun üstünde, akışın içinde) kendiliğinden uyuyor.
+- `tests/tab-layout.test.cjs` yeni sıraya ve iki satırlı etikete göre güncellendi; `mobile/README.md` sekme sırası düzeltildi. Adım 90'daki eski sıra tarihsel kayıt olarak olduğu gibi bırakıldı.
+
+**3. Yapılan kontroller**
+- `npm run typecheck` temiz, `npm run lint` temiz. `tests/*.test.cjs`: 1021 testten 1019 geçti; 2 başarısız test (`appearance.test.cjs`: Windows yol ayracı `\` ve `lightTheme.ts` yorumundaki "romanTheme") bu değişiklikle ilgisiz ve değişiklikten önce de vardı.
+- **Tarayıcı doğrulaması (fiziksel iPhone değil):** başsız Chrome'da, gerçek ekran görüntüleriyle, **320, 375 ve 390 px** genişlikte (iframe ile gerçek görünüm genişliği). Depo dışındaki geçici kopyada giriş taklit edildi, alt güvenli alan 34 pt olarak simüle edildi. Sıra doğru; "Start / Workout" üç genişlikte de iki satır, üç nokta yok; "Exercises" ve diğer etiketler 320'de de sığıyor. Aktif (koyu) ve pasif (gri) durumlar Start Workout ve History için görüldü. Zamanlayıcı şeridi çubuğun üstünde ve çubukla çakışmıyor. Güvenli alan boşluğu çubuğun altında görünüyor.
+- Yapılmayanlar: **fiziksel iPhone**, gerçek çentik/home-indicator, VoiceOver, Dynamic Type; web'de güvenli alan değeri gerçek bir cihazdan değil simülasyondan geldi.
+
 ### Adım 99: Ücretsiz kaynakla döndürülebilir anatomik kas seçici prototipi (depo dışı, yalnız erkek) — 14 Kasım 2026
 
 Dal: `feat/shared-exercise-browser` (taban `61b7ed4`). **Kod değişmedi, bağımlılık eklenmedi, yeni dal açılmadı.** PR #1 açık. Prototip ve bütün üçüncü taraf dosyaları deponun dışında: `C:\Users\efena\Desktop\Proje-1-prototypes\anatomy-selector\`.

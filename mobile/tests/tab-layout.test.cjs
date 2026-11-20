@@ -26,16 +26,16 @@ test('tab layout: the bar appearance is defined once for all five tabs', () => {
   }
 });
 
-test('tab layout: Profile, History, Start Workout, Exercises and Volume are the tabs, all light', () => {
+test('tab layout: Volume, History, Start Workout, Exercises and Profile are the tabs, all light', () => {
   const screens = [...source.matchAll(/<Tabs\.Screen\s+name="([^"]+)"\s+options=\{\{([\s\S]*?)\}\}\s*\/>/g)];
   const names = screens.map((match) => match[1]);
   // Declared order is the visual order; the old Programs route follows as a hidden one.
-  assert.deepEqual(names, ['profile', 'history', 'index', 'exercises', 'volume', 'programs']);
+  assert.deepEqual(names, ['volume', 'history', 'index', 'exercises', 'profile', 'programs']);
 
   const titles = Object.fromEntries(screens.map((match) => [match[1], /title: "([^"]+)"/.exec(match[2])?.[1]]));
   assert.deepEqual(
-    ['profile', 'history', 'index', 'exercises', 'volume'].map((name) => titles[name]),
-    ['Profile', 'History', 'Start Workout', 'Exercises', 'Volume'],
+    ['volume', 'history', 'index', 'exercises', 'profile'].map((name) => titles[name]),
+    ['Volume', 'History', 'Start Workout', 'Exercises', 'Profile'],
   );
   assert.doesNotMatch(source, /title: "(Training|Programs)"/);
   assert.doesNotMatch(source, /romanTheme|\.\.\/theme"/);
@@ -47,15 +47,36 @@ test('tab layout: Programs has no button in the bar, and the middle tab is where
   assert.ok(programs, 'programs must be a hidden route, not a tab');
   assert.doesNotMatch(source, /name="programs"[\s\S]{0,80}tabBarIcon/);
   // Start Workout is the third of five visible tabs and is named as the anchor explicitly,
-  // because a tab navigator would otherwise start on the first tab it lists (Profile).
+  // because a tab navigator would otherwise start on the first tab it lists (Volume).
   assert.match(source, /export const unstable_settings = \{\s*anchor: "index",?\s*\};/);
   const visible = [...source.matchAll(/<Tabs\.Screen\s+name="([^"]+)"\s+options=\{\{\s*title:/g)].map((match) => match[1]);
   assert.equal(visible.length, 5);
   assert.equal(visible[2], 'index');
 });
 
-test('tab layout: labels keep one size so the longest ("Start Workout") fits five tabs on a small iPhone', () => {
+test('tab layout: labels keep one size; "Start Workout" is two lines in a taller bar, never shrunk or truncated', () => {
   const [, screenOptions] = /screenOptions=\{\{([\s\S]*?)\n {6}\}\}/.exec(source) ?? [];
   assert.match(screenOptions, /tabBarAllowFontScaling: false/);
   assert.match(screenOptions, /tabBarLabelStyle: \{ fontSize: 10 \}/);
+  // The bar is taller than the stock 49 pt, with the safe-area inset added on top of it.
+  assert.match(screenOptions, /height: TAB_BAR_CONTENT_HEIGHT \+ bottom/);
+
+  const [, middle] = /name="index"\s+options=\{\{([\s\S]*?)\}\}\s*\/>/.exec(source) ?? [];
+  assert.ok(middle, 'index tab not found');
+  assert.match(middle, /tabBarLabel: \(\{ color \}\) => <StartWorkoutTabLabel color=\{color\} \/>/);
+  // The spoken name stays the whole phrase.
+  assert.match(middle, /tabBarAccessibilityLabel: "Start Workout"/);
+  assert.match(middle, /title: "Start Workout"/);
+});
+
+test('tab layout: the Start Workout label is "Start" over "Workout" at font size 10, one line each', () => {
+  const label = fs.readFileSync(path.join(__dirname, '..', 'src', 'workout', 'StartWorkoutTabLabel.tsx'), 'utf8');
+  assert.match(label, />\s*Start\s*<\/Text>/);
+  assert.match(label, />\s*Workout\s*<\/Text>/);
+  assert.equal(label.split('numberOfLines={1}').length - 1, 2);
+  assert.equal(label.split('allowFontScaling={false}').length - 1, 2);
+  assert.match(label, /fontSize: 10,/);
+  // 49 pt is the stock bar (icon + one line); two lines need more.
+  const height = Number(/TAB_BAR_CONTENT_HEIGHT = (\d+)/.exec(label)?.[1]);
+  assert.ok(height >= 60, `bar content height ${height} is too small for icon + two label lines`);
 });

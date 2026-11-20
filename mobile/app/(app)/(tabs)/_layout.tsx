@@ -1,12 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { light } from "../../../src/lightTheme";
+import { StartWorkoutTabLabel, TAB_BAR_CONTENT_HEIGHT } from "../../../src/workout/StartWorkoutTabLabel";
 import { TabBarWithRestTimer } from "../../../src/workout/TabBarWithRestTimer";
 
 /**
  * Start Workout is the middle tab AND where the app opens. The declared order is
- * the visual order (Profile, History, Start Workout, Exercises, Volume), and a
+ * the visual order (Volume, History, Start Workout, Exercises, Profile), and a
  * tab navigator would otherwise start on the first one it lists, so the landing
  * tab is named here rather than left to the order.
  */
@@ -15,6 +17,9 @@ export const unstable_settings = {
 };
 
 export default function TabsLayout() {
+  // A numeric height in tabBarStyle replaces the bar's own "49 + bottom inset", so the
+  // inset is added here; the bar draws its bottom padding from the same inset.
+  const { bottom } = useSafeAreaInsets();
   return (
     <Tabs
       // The usual bar, with the rest countdown above it while one is running.
@@ -28,11 +33,14 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: light.surface,
           borderTopColor: light.separator,
+          // Room for the two-line "Start / Workout" label of the middle tab.
+          height: TAB_BAR_CONTENT_HEIGHT + bottom,
         },
         tabBarActiveTintColor: light.text,
         tabBarInactiveTintColor: light.textSecondary,
         // Five labels share the width of the smallest iPhones, and "Start Workout"
-        // is the longest. The bar has a fixed height, so a label that grew with
+        // is the longest, so it is set on two lines (see StartWorkoutTabLabel)
+        // rather than shrunk. The bar has a fixed height, so a label that grew with
         // Dynamic Type would be clipped by it; like the system's own tab bars it
         // stays one size, and each tab still has its full spoken name.
         tabBarAllowFontScaling: false,
@@ -40,10 +48,12 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="profile"
+        name="volume"
         options={{
-          title: "Profile",
-          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
+          title: "Volume",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="stats-chart" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -57,6 +67,8 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: "Start Workout",
+          tabBarLabel: ({ color }) => <StartWorkoutTabLabel color={color} />,
+          tabBarAccessibilityLabel: "Start Workout",
           tabBarIcon: ({ color, size }) => <Ionicons name="barbell" size={size} color={color} />,
         }}
       />
@@ -68,12 +80,10 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="volume"
+        name="profile"
         options={{
-          title: "Volume",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="stats-chart" size={size} color={color} />
-          ),
+          title: "Profile",
+          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
         }}
       />
       {/* The old Programs tab. Programs now live on Start Workout; this route stays only so an old
