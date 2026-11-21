@@ -54,29 +54,32 @@ test('tab layout: Programs has no button in the bar, and the middle tab is where
   assert.equal(visible[2], 'index');
 });
 
-test('tab layout: labels keep one size; "Start Workout" is two lines in a taller bar, never shrunk or truncated', () => {
+test('tab layout: labels keep one size; "Start Workout" is one line in the stock-height bar, only that tab is widened', () => {
   const [, screenOptions] = /screenOptions=\{\{([\s\S]*?)\n {6}\}\}/.exec(source) ?? [];
   assert.match(screenOptions, /tabBarAllowFontScaling: false/);
   assert.match(screenOptions, /tabBarLabelStyle: \{ fontSize: 10 \}/);
-  // The bar is taller than the stock 49 pt, with the safe-area inset added on top of it.
-  assert.match(screenOptions, /height: TAB_BAR_CONTENT_HEIGHT \+ bottom/);
+  // A one-line label needs no taller bar: the library's own height and safe-area handling stay.
+  assert.doesNotMatch(screenOptions, /height:/);
+  assert.doesNotMatch(source, /useSafeAreaInsets/);
 
   const [, middle] = /name="index"\s+options=\{\{([\s\S]*?)\}\}\s*\/>/.exec(source) ?? [];
   assert.ok(middle, 'index tab not found');
   assert.match(middle, /tabBarLabel: \(\{ color \}\) => <StartWorkoutTabLabel color=\{color\} \/>/);
+  assert.match(middle, /tabBarItemStyle: \{ flex: [\d.]+ \}/);
   // The spoken name stays the whole phrase.
   assert.match(middle, /tabBarAccessibilityLabel: "Start Workout"/);
   assert.match(middle, /title: "Start Workout"/);
+  // The other four tabs keep the default item style.
+  assert.equal(source.split('tabBarItemStyle:').length - 1, 1, 'only the middle tab sets tabBarItemStyle');
 });
 
-test('tab layout: the Start Workout label is "Start" over "Workout" at font size 10, one line each', () => {
+test('tab layout: the Start Workout label is the exact text on one line, never wrapped or cut', () => {
   const label = fs.readFileSync(path.join(__dirname, '..', 'src', 'workout', 'StartWorkoutTabLabel.tsx'), 'utf8');
-  assert.match(label, />\s*Start\s*<\/Text>/);
-  assert.match(label, />\s*Workout\s*<\/Text>/);
-  assert.equal(label.split('numberOfLines={1}').length - 1, 2);
-  assert.equal(label.split('allowFontScaling={false}').length - 1, 2);
+  assert.match(label, />\s*Start Workout\s*<\/Text>/);
+  assert.doesNotMatch(label, /<br|\\n/);
+  assert.equal(label.split('<Text').length - 1, 1);
+  assert.match(label, /numberOfLines=\{1\}/);
+  assert.match(label, /adjustsFontSizeToFit/);
+  assert.match(label, /allowFontScaling=\{false\}/);
   assert.match(label, /fontSize: 10,/);
-  // 49 pt is the stock bar (icon + one line); two lines need more.
-  const height = Number(/TAB_BAR_CONTENT_HEIGHT = (\d+)/.exec(label)?.[1]);
-  assert.ok(height >= 60, `bar content height ${height} is too small for icon + two label lines`);
 });

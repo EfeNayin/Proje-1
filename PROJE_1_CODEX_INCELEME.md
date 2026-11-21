@@ -42,6 +42,22 @@ Bu turun tamamlanan kontrol noktaları:
 
 Adım 34'ün otomatik kontrolleri ve bulunan hataların düzeltmeleri yapıldı; kullanıcı telefon testinin tamamlandığını bildirip sonraki adıma geçilmesini istedi. Bu tur kullanıcı kabulüyle kapandı; bütün projenin tamamlandığı anlamına gelmez. Adım 37 ile egzersizin daha eski seanslarını sayfalar halinde görüntüleme eklendi, Adım 38 ile bu liste ayrı bir modal panele taşındı; her iki adımın da telefon kontrolü bekliyor. Yeni modüller, tüm geçmiş grafiği ve kişisel rekor/kuvvet tahmini ayrı kapsam kararı gerektirir.
 
+### Adım 101: "Start Workout" etiketi tek satır — 21 Kasım 2026
+
+Dal: `feat/shared-exercise-browser` (taban `51b9696`, PR #1 açık; birleştirme, dağıtım ve Expo Update yok). Yalnız mobil alt çubuk etiketi; bağımlılık, sıra, simge, rota, güvenli alan ve Blender dosyaları değişmedi. **Bu adım Adım 100'deki iki satır şartının yerini alır:** sahip iki satırlı "Start / Workout" etiketini reddetti.
+
+**Yapılan**
+- Etiket artık tam metin "Start Workout", **tek satır**, boyut 10 (küçültülmedi), diğer etiketlerle aynı ağırlık. Açık satır sonu, kısaltma veya üç nokta yok; `tabBarAccessibilityLabel: "Start Workout"` korundu.
+- **Genişlik incelemesi (kurulu `@react-navigation/bottom-tabs` 7.18.16 `BottomTabItem`):** her sekme `flex: 1` ve düğmenin yanlarında 5 pt dolgu var; 320 pt'te sekme 64 pt, metne kalan 54 pt. "Start Workout" boyut 10'da ≈ 64 pt ister (tarayıcıda ölçüldü: 63,9). Dolgu `tabBarItemStyle` ile değil kütüphane düğmesinden geldiği için değiştirilmedi; yalnız orta sekmenin payı büyütüldü: `tabBarItemStyle: { flex: 1.35 }` (orta sekme 320'de 80,8 pt, yazıya ≈ 70,8 pt; yanındaki dört sekme 59,8 pt, en uzun etiketleri "Exercises" 40,3 pt + 10 dolgu). Sağında ve solunda ikişer eşit sekme olduğu için ikon ekranın ortasında kalıyor.
+- Ek emniyet: etiket `numberOfLines={1}` + `adjustsFontSizeToFit` (`minimumFontScale 0.8`); yer yeterliyse boyut 10 aynen kalır, yetmezse yalnız gereken kadar küçülür, kesilmez. Bu iOS'ta çalışır; **web'de uygulanmaz ve gerçek iPhone'da denenmedi**.
+- Adım 100'deki yükseltilmiş çubuk (`TAB_BAR_CONTENT_HEIGHT`, `useSafeAreaInsets`) geri alındı: tek satır için gerekmiyor, çubuk yine kütüphanenin kendi `49 + alt güvenli alan` hesabını kullanıyor.
+- `tests/tab-layout.test.cjs`: iki satırı/64 pt yüksekliği şart koşan iki test tek satır etikete göre güncellendi.
+
+**Kontroller**
+- Otomatik: `npm run typecheck` ve `npm run lint` temiz, `git diff --check` temiz; `tests/*.test.cjs` 1021 testten 1019 geçti (2 başarısız test `appearance.test.cjs` / `status bar` ile ilgili, değişiklikten önce de vardı), `tab-layout.test.cjs` 5/5.
+- Gerçek görsel (iPhone değil): başsız Chrome 158, depo dışı geçici kopya (giriş ve zamanlayıcı taklit edildi), iframe ile **320, 375, 390 px**. Üç genişlikte de "Start Workout" tek satır, boyut 10, üç nokta yok (`scrollWidth == clientWidth`), ikonun altında ortalı (merkez sapması 0,0); aktif (koyu) ve pasif (gri) durumlar görüldü; zamanlayıcı şeridi çubuğun üstünde, çakışmıyor. Web'de alt güvenli alan 0, yani güvenli alan davranışı burada görülmedi. Webde tüm etiketlerin kutusu 10 px yükseklikte olduğundan "y" gibi alt çıkıntılar kırpılıyor (History dahil, değişiklikten bağımsız web davranışı).
+- Yapılmayanlar: fiziksel iPhone, SF yazı tipiyle gerçek genişlik, VoiceOver, Dynamic Type, `adjustsFontSizeToFit`'in iOS'ta işleyişi.
+
 ### Adım 100: Alt gezinme çubuğu — Volume ile Profile yer değiştirdi, "Start Workout" etiketi iki satır — 20 Kasım 2026
 
 Dal: `feat/shared-exercise-browser` (taban `645c54a`, PR #1 açık; yeni dal açılmadı, PR birleştirilmedi). Yalnız mobil, yalnız alt çubuk; bağımlılık, rota adı, ekran başlığı, simge ve Blender prototipi değişmedi. Expo kurulu sürümü 57.0.20 (`expo-router` 57.0.19, `@react-navigation/bottom-tabs` 7.18.16); `mobile/AGENTS.md` gereği v57 belgeleri okundu.

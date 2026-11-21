@@ -1,9 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { light } from "../../../src/lightTheme";
-import { StartWorkoutTabLabel, TAB_BAR_CONTENT_HEIGHT } from "../../../src/workout/StartWorkoutTabLabel";
+import { StartWorkoutTabLabel } from "../../../src/workout/StartWorkoutTabLabel";
 import { TabBarWithRestTimer } from "../../../src/workout/TabBarWithRestTimer";
 
 /**
@@ -17,9 +16,6 @@ export const unstable_settings = {
 };
 
 export default function TabsLayout() {
-  // A numeric height in tabBarStyle replaces the bar's own "49 + bottom inset", so the
-  // inset is added here; the bar draws its bottom padding from the same inset.
-  const { bottom } = useSafeAreaInsets();
   return (
     <Tabs
       // The usual bar, with the rest countdown above it while one is running.
@@ -33,16 +29,15 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: light.surface,
           borderTopColor: light.separator,
-          // Room for the two-line "Start / Workout" label of the middle tab.
-          height: TAB_BAR_CONTENT_HEIGHT + bottom,
         },
         tabBarActiveTintColor: light.text,
         tabBarInactiveTintColor: light.textSecondary,
         // Five labels share the width of the smallest iPhones, and "Start Workout"
-        // is the longest, so it is set on two lines (see StartWorkoutTabLabel)
-        // rather than shrunk. The bar has a fixed height, so a label that grew with
-        // Dynamic Type would be clipped by it; like the system's own tab bars it
-        // stays one size, and each tab still has its full spoken name.
+        // is the longest; it alone is widened and fitted (see StartWorkoutTabLabel and
+        // its tabBarItemStyle below), the other labels keep this size. The bar has a
+        // fixed height, so a label that grew with Dynamic Type would be clipped by
+        // it; like the system's own tab bars it stays one size, and each tab still
+        // has its full spoken name.
         tabBarAllowFontScaling: false,
         tabBarLabelStyle: { fontSize: 10 },
       }}
@@ -69,6 +64,12 @@ export default function TabsLayout() {
           title: "Start Workout",
           tabBarLabel: ({ color }) => <StartWorkoutTabLabel color={color} />,
           tabBarAccessibilityLabel: "Start Workout",
+          // The one long label. Every tab is flex 1 with 5 pt of padding a side, which
+          // leaves 54 pt of text width on a 320 pt screen against about 64 pt for
+          // "Start Workout" at size 10. A larger share of the bar (the tabs either side
+          // stay equal, so the icon stays centred) gives it about 71 pt there; the
+          // other four still have 50+ pt for "Exercises", their widest label.
+          tabBarItemStyle: { flex: 1.35 },
           tabBarIcon: ({ color, size }) => <Ionicons name="barbell" size={size} color={color} />,
         }}
       />
