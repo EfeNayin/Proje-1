@@ -23,8 +23,10 @@ from app.domains.programs.schemas import (
     TemplateExercisesSet,
     TemplateStart,
     WorkoutTemplateCreate,
+    WorkoutTemplateDetail,
     WorkoutTemplateRead,
     WorkoutTemplateUpdate,
+    WorkoutTemplateWithExercisesCreate,
 )
 
 router = APIRouter(tags=["programs"])
@@ -104,14 +106,47 @@ async def create_template(
     return await service.create_template(db, current_user.id, program_id, payload)
 
 
+@router.post(
+    "/programs/{program_id}/templates/with-exercises",
+    response_model=WorkoutTemplateRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a template and all exercise targets atomically",
+)
+async def create_template_with_exercises(
+    program_id: UUID,
+    payload: WorkoutTemplateWithExercisesCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> WorkoutTemplateRead:
+    return await service.create_template_with_exercises(db, current_user.id, program_id, payload)
+
+
+@router.put(
+    "/programs/{program_id}/templates/requests/{request_id}",
+    response_model=WorkoutTemplateRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Save a template once and replay the result on retry",
+)
+async def save_template_once(
+    program_id: UUID,
+    request_id: UUID,
+    payload: WorkoutTemplateWithExercisesCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> WorkoutTemplateRead:
+    return await service.create_template_with_exercises(
+        db, current_user.id, program_id, payload, request_id=request_id
+    )
+
+
 @router.get(
     "/templates/{template_id}",
-    response_model=WorkoutTemplateRead,
+    response_model=WorkoutTemplateDetail,
     summary="Get one template with its exercise targets",
 )
 async def get_template(
     template_id: UUID, current_user: CurrentUser, db: DbSession
-) -> WorkoutTemplateRead:
+) -> WorkoutTemplateDetail:
     return await service.get_template(db, current_user.id, template_id)
 
 

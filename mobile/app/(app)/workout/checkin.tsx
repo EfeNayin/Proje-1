@@ -25,40 +25,10 @@ import type { MuscleGroupSummary } from "../../../src/api/exercises";
 import * as programsApi from "../../../src/api/programs";
 import * as readinessApi from "../../../src/api/readiness";
 import * as workoutsApi from "../../../src/api/workouts";
-import { colors, radius, spacing } from "../../../src/theme";
+import { light } from "../../../src/lightTheme";
+import { buildCheckinPatch } from "../../../src/readiness/checkinPayload";
+import { RatingRow } from "../../../src/readiness/RatingRow";
 import { setActiveWorkout } from "../../../src/workout/activeWorkout";
-
-function RatingRow({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number | null;
-  onChange: (value: number | null) => void;
-}) {
-  return (
-    <View style={styles.ratingRow}>
-      <Text style={styles.ratingLabel}>{label}</Text>
-      <View style={styles.ratingOptions}>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <Pressable
-            key={n}
-            style={[styles.ratingDot, value === n && styles.ratingDotActive]}
-            // Tapping the already-selected value clears it: every field here
-            // is optional, so there must be a way back to "unanswered".
-            onPress={() => onChange(value === n ? null : n)}
-            hitSlop={4}
-          >
-            <Text style={[styles.ratingDotText, value === n && styles.ratingDotTextActive]}>
-              {n}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
 
 function SorenessSection({
   muscles,
@@ -74,14 +44,19 @@ function SorenessSection({
 
   return (
     <View style={styles.section}>
-      <Pressable style={styles.sectionHeader} onPress={() => setExpanded((value) => !value)}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        style={styles.sectionHeader}
+        onPress={() => setExpanded((value) => !value)}
+      >
         <Text style={styles.sectionTitle}>
           Soreness{answeredCount > 0 ? ` (${answeredCount})` : ""}
         </Text>
         <Ionicons
           name={expanded ? "chevron-up" : "chevron-down"}
           size={18}
-          color={colors.textMuted}
+          color={light.textSecondary}
         />
       </Pressable>
 
@@ -96,12 +71,6 @@ function SorenessSection({
         ))}
     </View>
   );
-}
-
-function parseSleepHours(raw: string): number | null {
-  if (raw.trim() === "") return null;
-  const parsed = Number(raw.replace(",", "."));
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 24 ? parsed : null;
 }
 
 export default function ReadinessCheckin() {
@@ -163,11 +132,10 @@ export default function ReadinessCheckin() {
     setSubmitting(true);
     setError(null);
     try {
-      await readinessApi.upsertTodayReadiness({
-        sleep_hours: parseSleepHours(sleepHours),
-        energy,
-        soreness: Object.keys(soreness).length > 0 ? soreness : null,
-      });
+      // Only what was filled in: a blank field must not erase a value recorded
+      // earlier today (for example from the standalone daily check-in).
+      const patch = buildCheckinPatch({ sleepText: sleepHours, energy, soreness });
+      if (patch) await readinessApi.patchTodayReadiness(patch);
     } catch {
       // Best-effort: a failed save should not stand between the user and
       // the workout they came here to start.
@@ -185,21 +153,31 @@ export default function ReadinessCheckin() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>How are you feeling today?</Text>
-        <Pressable onPress={() => void handleSkip()} disabled={submitting} hitSlop={8}>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.skipButton}
+          onPress={() => void handleSkip()}
+          disabled={submitting}
+        >
           <Text style={styles.skip}>Skip</Text>
         </Pressable>
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Sleep (hours)</Text>
         <TextInput
           style={styles.sleepInput}
+          accessibilityLabel="Sleep in hours"
           value={sleepHours}
           onChangeText={setSleepHours}
           placeholder="7.5"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={light.textSecondary}
           keyboardType="decimal-pad"
           returnKeyType="done"
         />
@@ -216,12 +194,18 @@ export default function ReadinessCheckin() {
       ) : null}
 
       <Pressable
-        style={[styles.submit, submitting && styles.submitDisabled]}
+        accessibilityRole="button"
+        accessibilityState={{ busy: submitting, disabled: submitting }}
+        style={({ pressed }) => [
+          styles.submit,
+          pressed && styles.submitPressed,
+          submitting && styles.submitDisabled,
+        ]}
         onPress={() => void handleSubmit()}
         disabled={submitting}
       >
         {submitting ? (
-          <ActivityIndicator color={colors.accentText} />
+          <ActivityIndicator color={light.onPrimary} />
         ) : (
           <Text style={styles.submitText}>Continue to workout</Text>
         )}
@@ -231,73 +215,56 @@ export default function ReadinessCheckin() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: spacing.xl },
+  screen: { flex: 1, backgroundColor: light.background },
+  content: { padding: 16, paddingBottom: 32 },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: spacing.lg,
+    marginBottom: 24,
   },
-  title: { color: colors.text, fontSize: 20, fontWeight: "700", flex: 1, marginRight: spacing.md },
-  skip: { color: colors.textMuted, fontSize: 16, fontWeight: "600" },
-  error: { color: colors.danger, marginBottom: spacing.md },
+  title: { color: light.text, fontSize: 22, fontWeight: "700", lineHeight: 28, flex: 1, marginRight: 16 },
+  skipButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 8 },
+  skip: { color: light.text, fontSize: 15, fontWeight: "600", textDecorationLine: "underline" },
+  error: { color: light.danger, fontSize: 14, lineHeight: 20, marginBottom: 16 },
 
-  field: { marginBottom: spacing.lg },
-  fieldLabel: { color: colors.textMuted, fontSize: 13, marginBottom: spacing.xs },
+  field: { marginBottom: 24 },
+  fieldLabel: { color: light.textSecondary, fontSize: 13, fontWeight: "600", marginBottom: 6 },
   sleepInput: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    minHeight: 52,
+    backgroundColor: light.surface,
+    borderColor: light.separator,
     borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
-    fontSize: 18,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    borderRadius: 12,
+    color: light.text,
+    fontSize: 17,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
 
-  ratingRow: {
+  section: {
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: spacing.lg,
   },
-  ratingLabel: { color: colors.text, fontSize: 15, flex: 1 },
-  ratingOptions: { flexDirection: "row", gap: spacing.xs },
-  ratingDot: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderColor: colors.border,
-    borderWidth: 1,
+  sectionTitle: { color: light.text, fontSize: 16, fontWeight: "600" },
+
+  submit: {
+    minHeight: 52,
+    backgroundColor: light.primary,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     alignItems: "center",
     justifyContent: "center",
   },
-  ratingDotActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  ratingDotText: { color: colors.textMuted, fontSize: 14, fontWeight: "600" },
-  ratingDotTextActive: { color: colors.accentText },
-
-  section: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  sectionTitle: { color: colors.text, fontSize: 15, fontWeight: "600" },
-
-  submit: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    alignItems: "center",
-  },
-  submitDisabled: { opacity: 0.7 },
-  submitText: { color: colors.accentText, fontSize: 17, fontWeight: "700" },
+  submitPressed: { backgroundColor: light.primaryPressed },
+  submitDisabled: { opacity: 0.6 },
+  submitText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
 });

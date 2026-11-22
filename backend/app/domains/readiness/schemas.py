@@ -38,6 +38,20 @@ class ReadinessUpsert(BaseModel):
         return value
 
 
+class ReadinessPatch(ReadinessUpsert):
+    """A partial update of today's check-in: only the fields that are sent change.
+
+    PUT replaces the whole row (an omitted field becomes empty); this does not. A field
+    sent as null is cleared on purpose, a field left out is left alone, which is what a
+    screen that edits only sleep needs: mood, notes, soreness and the rest are not its
+    to touch. `expected_log_date` is the day the client was looking at: if the user's
+    local day has changed since, nothing is written (409) rather than putting yesterday's
+    draft on today.
+    """
+
+    expected_log_date: date | None = None
+
+
 class ReadinessLogRead(BaseModel):
     """Today's log, or an empty shell if nothing has been submitted yet.
 

@@ -4,14 +4,17 @@
  * Sets are grouped by exercise. Every mutation posts to the API and replaces
  * local state with the response, so the totals and set numbering on screen
  * are always the server's, never a local guess that could drift.
+ *
+ * Styled with the light palette (src/lightTheme.ts) like the Training home.
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -22,16 +25,24 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as programsApi from "../../../src/api/programs";
+import { ApiError } from "../../../src/api/client";
 import type {
   ProgramDetail,
-  TemplateExerciseInput,
-  TemplateExerciseTarget,
 } from "../../../src/api/programs";
 import * as workoutsApi from "../../../src/api/workouts";
 import type { LoggedSet, WorkoutDetail } from "../../../src/api/workouts";
-import { colors, radius, spacing } from "../../../src/theme";
+import { useAuth } from "../../../src/auth/AuthContext";
+import { ReceivedFeedbackSection } from "../../../src/coaching/ReceivedFeedbackSection";
+import { light } from "../../../src/lightTheme";
+import {
+  formatWeight,
+  formatWeightValue,
+  parseWeightInput,
+  type WeightUnit,
+} from "../../../src/units/weight";
 import { clearActiveWorkout } from "../../../src/workout/activeWorkout";
 import {
   DEFAULT_REST_SECONDS,
@@ -40,6 +51,24 @@ import {
   REST_PRESETS,
   setRestSeconds,
 } from "../../../src/workout/restPreference";
+import { buildTemplateExercisesFromWorkout } from "../../../src/workout/templateFromWorkout";
+import { getStartingPlan } from "../../../src/workout/startingPlan";
+import { formatRecordedRir, parseRirInput } from "../../../src/workout/rir";
+import { PlateCalculator } from "../../../src/workout/PlateCalculator";
+import { initialPlateTotal } from "../../../src/workout/plateMath";
+import { PreviousExercise } from "../../../src/workout/PreviousExercise";
+import { useEntryReveal } from "../../../src/workout/useEntryReveal";
+import { restTimerStore } from "../../../src/workout/restTimerStore";
+import { setDraftStore, type SetDraft } from "../../../src/workout/setDraftStore";
+import { useRestTimer } from "../../../src/workout/useRestTimer";
+import { getSetSaveRequest, prepareSetSaveRequest, sendSetSaveRequest, type SetSaveRequest } from "../../../src/workout/setSaveRequest";
+import {
+  clearTemplateSaveRequest,
+  getTemplateSaveRequest,
+  prepareTemplateSaveRequest,
+  sendTemplateSaveRequest,
+} from "../../../src/workout/templateSaveRequest";
+import type { TemplateSaveRequest } from "../../../src/workout/templateSaveRequest";
 import { usePickedExercise } from "../../../src/workout/usePickedExercise";
 
 type ExerciseBlock = {
@@ -74,52 +103,6 @@ function groupByExercise(
   }
 
   return [...blocks.values()];
-}
-
-/** "4×6-8 @RIR2" — the template's goal for one exercise, not what was logged. */
-function formatTarget(target: TemplateExerciseTarget): string {
-  const { target_reps_min: min, target_reps_max: max } = target;
-  let reps: string;
-  if (min !== null && max !== null) reps = min === max ? String(min) : `${min}-${max}`;
-  else if (min !== null) reps = `${min}+`;
-  else if (max !== null) reps = `≤${max}`;
-  else reps = "?";
-
-  const rir = target.target_rir !== null ? ` @RIR${target.target_rir}` : "";
-  return `${target.target_sets}×${reps}${rir}`;
-}
-
-/**
- * Turns what was actually logged into template targets — a plan, not a
- * record of this specific session. Warmups are excluded (target_sets counts
- * working sets only), target_rir is always null (nothing logged implies an
- * effort target; the user sets that later in the template editor), and
- * exercise order follows the order sets were first logged in, same as the
- * on-screen blocks.
- */
-function buildTemplateExercisesFromWorkout(workout: WorkoutDetail): TemplateExerciseInput[] {
-  const order: string[] = [];
-  const repsByExercise = new Map<string, number[]>();
-
-  for (const set of workout.sets) {
-    if (set.is_warmup) continue;
-    if (!repsByExercise.has(set.exercise_id)) {
-      repsByExercise.set(set.exercise_id, []);
-      order.push(set.exercise_id);
-    }
-    repsByExercise.get(set.exercise_id)?.push(set.reps);
-  }
-
-  return order.map((exerciseId) => {
-    const reps = repsByExercise.get(exerciseId) ?? [];
-    return {
-      exercise_id: exerciseId,
-      target_sets: reps.length,
-      target_reps_min: Math.min(...reps),
-      target_reps_max: Math.max(...reps),
-      target_rir: null,
-    };
-  });
 }
 
 /**
@@ -160,15 +143,25 @@ function formatSessionDate(iso: string): string {
   });
 }
 
+/** "12" over "working sets": one value, one label, read together. */
+function SummaryCell({ value, label }: { value: string; label: string }) {
+  return (
+    <View accessible accessibilityLabel={`${value} ${label}`} style={styles.summaryItem}>
+      <Text style={styles.summaryValue}>{value}</Text>
+      <Text style={styles.summaryLabel}>{label}</Text>
+    </View>
+  );
+}
+
+/** The stored string reads " · RIR 2" after the reps; in its own column it is "RIR 2". */
+function rirCell(rir: number | null): string {
+  return formatRecordedRir(rir).replace(" · ", "");
+}
+
 function SessionDuration({ startedAt }: { startedAt: string }) {
   const elapsed = useElapsedSeconds(new Date(startedAt).getTime());
 
-  return (
-    <View>
-      <Text style={styles.summaryValue}>{formatDuration(elapsed)}</Text>
-      <Text style={styles.summaryLabel}>duration</Text>
-    </View>
-  );
+  return <SummaryCell value={formatDuration(elapsed)} label="duration" />;
 }
 
 /** Real, fixed duration of a finished session — not a ticking counter. */
@@ -178,12 +171,7 @@ function FinishedDuration({ startedAt, endedAt }: { startedAt: string; endedAt: 
     Math.floor((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000),
   );
 
-  return (
-    <View>
-      <Text style={styles.summaryValue}>{formatDuration(seconds)}</Text>
-      <Text style={styles.summaryLabel}>duration</Text>
-    </View>
-  );
+  return <SummaryCell value={formatDuration(seconds)} label="duration" />;
 }
 
 /**
@@ -195,20 +183,31 @@ function FinishedDuration({ startedAt, endedAt }: { startedAt: string; endedAt: 
  *
  * The length is a saved preference chosen from presets, so it is picked once
  * and not retyped every set.
+ *
+ * The countdown itself lives in restTimerStore, not here, so it keeps running
+ * (and shows as a pill elsewhere in the app) while this screen is not on top.
+ * This component only starts, stops and shows it for its own workout.
  */
 function RestTimer({
+  workoutId,
+  userId,
   seconds,
   onChangeSeconds,
 }: {
+  workoutId: string;
+  userId: string | undefined;
   seconds: number;
   onChangeSeconds: (value: number) => void;
 }) {
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const elapsed = useElapsedSeconds(startedAt);
+  const { timer, remaining: timerRemaining, state } = useRestTimer(userId);
 
-  const running = startedAt !== null;
-  const remaining = running ? Math.max(0, seconds - elapsed) : seconds;
-  const finished = running && remaining === 0;
+  // A timer started for another workout is not this screen's to show.
+  const owned = timer !== null && timer.workoutId === workoutId;
+  const running = owned;
+  const remaining = owned ? timerRemaining : seconds;
+  const finished = owned && timerRemaining === 0;
+  // The exercise-history panel shows the countdown while it covers this screen.
+  const covered = state.covers > 0;
 
   const chooseDuration = () => {
     Alert.alert("Rest between sets", undefined, [
@@ -216,34 +215,61 @@ function RestTimer({
         text: formatRest(preset),
         onPress: () => {
           onChangeSeconds(preset);
-          setStartedAt(null);
+          restTimerStore.clearForWorkout(workoutId);
         },
       })),
       { text: "Cancel", style: "cancel" as const },
     ]);
   };
 
+  const toggle = () => {
+    if (running) {
+      restTimerStore.clearForWorkout(workoutId);
+    } else if (userId) {
+      restTimerStore.start({ userId, workoutId }, seconds);
+    }
+  };
+
   return (
     <View style={styles.rest}>
-      <Pressable style={styles.restDuration} onPress={chooseDuration} hitSlop={6}>
-        <Ionicons name="time-outline" size={16} color={colors.textMuted} />
-        <Text style={styles.restLabel}>Rest</Text>
-        <Text style={styles.restValue}>{formatRest(seconds)}</Text>
-        <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
-      </Pressable>
+      <View style={styles.restInfo}>
+        <Text style={styles.restTitle}>Rest timer</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Rest target ${formatRest(seconds)}. Change`}
+          style={styles.restDuration}
+          onPress={chooseDuration}
+          hitSlop={6}
+        >
+          <Text style={styles.restTarget}>Target {formatRest(seconds)}</Text>
+          <Ionicons name="chevron-down" size={14} color={light.textSecondary} />
+        </Pressable>
+      </View>
 
-      <Text style={[styles.restCountdown, finished && styles.restDone]}>
-        {formatRest(remaining)}
-      </Text>
+      <View
+        accessible={!covered}
+        importantForAccessibility={covered ? "no-hide-descendants" : "auto"}
+        accessibilityElementsHidden={covered}
+        accessibilityLabel={`${finished ? "Rest over" : running ? "Rest remaining" : "Rest target"} ${formatRest(remaining)}`}
+        style={[styles.restCountdownBox, covered && styles.restCovered]}
+      >
+        <Text style={[styles.restCountdown, finished && styles.restDone]}>
+          {formatRest(remaining)}
+        </Text>
+        {/* Finished is spelled out, not only coloured. */}
+        {finished ? <Text style={styles.restOver}>Rest over</Text> : null}
+      </View>
 
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={running ? "Stop rest timer" : "Start rest timer"}
         style={[styles.restButton, running && styles.restButtonActive]}
-        onPress={() => setStartedAt(running ? null : Date.now())}
+        onPress={toggle}
       >
         <Ionicons
           name={running ? "stop" : "play"}
-          size={16}
-          color={running ? colors.text : colors.accentText}
+          size={18}
+          color={running ? light.text : light.onPrimary}
         />
       </Pressable>
     </View>
@@ -255,18 +281,20 @@ function RestTimer({
  *
  * Saved on blur rather than per keystroke: a request per character would be
  * wasteful, and there is no meaningful moment to autosave mid-word.
+ *
+ * Stays mounted while a set save is running (`editable` goes false) so a draft
+ * is not thrown away by the swap.
  */
 function TitleField({
   value,
   onSave,
+  editable,
 }: {
   value: string | null;
   onSave: (title: string | null) => void;
+  editable: boolean;
 }) {
   const [draft, setDraft] = useState(value ?? "");
-
-  // Keep in step when the server sends a different title back.
-  useEffect(() => setDraft(value ?? ""), [value]);
 
   const commit = () => {
     const trimmed = draft.trim();
@@ -275,118 +303,240 @@ function TitleField({
   };
 
   return (
-    <TextInput
-      style={styles.titleInput}
-      value={draft}
-      onChangeText={setDraft}
-      onBlur={commit}
-      onSubmitEditing={commit}
-      placeholder="Name this workout"
-      placeholderTextColor={colors.textMuted}
-      returnKeyType="done"
-      maxLength={200}
-    />
+    <View style={styles.titleWrap}>
+      <TextInput
+        accessibilityLabel="Workout name"
+        style={styles.titleInput}
+        value={draft}
+        onChangeText={setDraft}
+        onBlur={commit}
+        onSubmitEditing={commit}
+        editable={editable}
+        placeholder="Name this workout"
+        placeholderTextColor={light.textSecondary}
+        selectionColor={light.text}
+        returnKeyType="done"
+        maxLength={200}
+      />
+      {/* The pencil is what says the name can be edited. */}
+      {editable ? <Ionicons name="create-outline" size={16} color={light.textSecondary} /> : null}
+    </View>
   );
 }
 
-/**
- * One logged set. Tap to correct it, long-press to delete.
- *
- * Editing in place rather than in a modal: fixing a mistyped rep count is a
- * two-second job and should not involve a screen transition.
- */
+/** Recorded effort is optional and never prefilled from a planned target. */
+function RirField({ value, onChangeText, disabled, onFocus, onBlur }: {
+  value: string;
+  onChangeText: (value: string) => void;
+  disabled: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
+}) {
+  return (
+    <View style={styles.entryField}>
+      <Text style={styles.fieldLabel}>RIR (optional)</Text>
+      <TextInput
+        accessibilityLabel="Recorded RIR, optional, 0 to 10"
+        style={styles.fieldInput}
+        value={value}
+        onChangeText={onChangeText}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        editable={!disabled}
+        keyboardType="number-pad"
+        returnKeyType="done"
+        submitBehavior="blurAndSubmit"
+        placeholder="—"
+        placeholderTextColor={light.textSecondary}
+        selectionColor={light.text}
+      />
+    </View>
+  );
+}
+
+/** One logged set, corrected in place or deleted with a long press. */
 function SetRow({
   set,
+  unit,
   onSave,
   onDelete,
+  onEntryFocus,
+  onEntryBlur,
 }: {
   set: LoggedSet;
-  onSave: (setId: number, weight: number, reps: number) => Promise<void>;
+  unit: WeightUnit;
+  onSave: (setId: number, weightKg: number, reps: number, rir: number | null) => Promise<void>;
   onDelete: (setId: number) => void;
+  /** Tell the screen which panel to keep above the keyboard, and when its fields lose focus. */
+  onEntryFocus?: (panel: View | null) => void;
+  onEntryBlur?: () => void;
 }) {
+  const editorRef = useRef<View>(null);
+  const focusEditor = () => onEntryFocus?.(editorRef.current);
+  const blurEditor = () => onEntryBlur?.();
   const [editing, setEditing] = useState(false);
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
   const [saving, setSaving] = useState(false);
+  const [rir, setRir] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveInFlight = useRef(false);
 
   const startEditing = () => {
-    setWeight(String(Number(set.weight_kg)));
+    setWeight(formatWeightValue(Number(set.weight_kg), unit));
     setReps(String(set.reps));
+    setRir(set.rir === null ? "" : String(set.rir));
+    setSaveError(null);
     setEditing(true);
   };
 
   const save = async () => {
-    const parsedWeight = Number(weight.replace(",", "."));
+    if (saveInFlight.current) return;
+    // Editing reps/RIR must not round-trip an untouched, rounded display value.
+    const parsedWeightKg = weight === formatWeightValue(Number(set.weight_kg), unit)
+      ? Number(set.weight_kg) : parseWeightInput(weight, unit);
     const parsedReps = Number(reps);
 
-    if (!Number.isFinite(parsedWeight) || parsedWeight < 0) return;
-    if (!Number.isInteger(parsedReps) || parsedReps <= 0) return;
+    if (weight.trim() === "" || parsedWeightKg === null || !Number.isFinite(parsedWeightKg) || parsedWeightKg < 0) {
+      setSaveError("Enter a valid weight of 0 or more.");
+      return;
+    }
+    if (!Number.isInteger(parsedReps) || parsedReps <= 0) {
+      setSaveError("Enter a whole number of reps greater than 0.");
+      return;
+    }
 
-    setSaving(true);
+    let parsedRir: number | null;
     try {
-      await onSave(set.id, parsedWeight, parsedReps);
+      parsedRir = parseRirInput(rir);
+    } catch (err) {
+      setSaveError((err as Error).message);
+      return;
+    }
+    saveInFlight.current = true;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave(set.id, parsedWeightKg, parsedReps, parsedRir);
       setEditing(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not update the set");
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   };
 
   if (editing) {
     return (
-      <View style={styles.setRowEditing}>
-        <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
-          {set.is_warmup ? "W" : set.set_number}
-        </Text>
+      <View ref={editorRef} style={styles.setRowEditing}>
+        {/* Spelled out as well as tinted, so the editing row is not marked by colour alone. */}
+        <View style={styles.editingHeader}>
+          <Ionicons name="create-outline" size={15} color={light.text} />
+          <Text style={styles.editingLabel}>
+            Editing set {set.is_warmup ? "(warm-up)" : set.set_number}
+          </Text>
+        </View>
 
-        <TextInput
-          style={styles.editInput}
-          value={weight}
-          onChangeText={setWeight}
-          keyboardType="decimal-pad"
-          autoFocus
-          selectTextOnFocus
-        />
-        <Text style={styles.editUnit}>kg ×</Text>
-        <TextInput
-          style={styles.editInput}
-          value={reps}
-          onChangeText={setReps}
-          keyboardType="number-pad"
-          selectTextOnFocus
-          onSubmitEditing={() => void save()}
-        />
+        <View style={styles.entryRow}>
+          <View style={styles.entryField}>
+            <Text style={styles.fieldLabel}>Weight ({unit})</Text>
+            <TextInput
+              accessibilityLabel={`Weight in ${unit}`}
+              testID="edit-weight-input"
+              style={styles.fieldInput}
+              value={weight}
+              onChangeText={setWeight}
+              onFocus={focusEditor}
+              onBlur={blurEditor}
+              editable={!saving}
+              keyboardType="decimal-pad"
+              submitBehavior="blurAndSubmit"
+              selectionColor={light.text}
+              autoFocus
+              selectTextOnFocus
+            />
+          </View>
+          <View style={styles.entryField}>
+            <Text style={styles.fieldLabel}>Reps</Text>
+            <TextInput
+              accessibilityLabel="Reps"
+              testID="edit-reps-input"
+              style={styles.fieldInput}
+              value={reps}
+              onChangeText={setReps}
+              onFocus={focusEditor}
+              onBlur={blurEditor}
+              editable={!saving}
+              keyboardType="number-pad"
+              // The keyboard's Done only dismisses it; the set changes on Save.
+              returnKeyType="done"
+              submitBehavior="blurAndSubmit"
+              selectionColor={light.text}
+              selectTextOnFocus
+            />
+          </View>
+          <RirField value={rir} onChangeText={setRir} disabled={saving} onFocus={focusEditor} onBlur={blurEditor} />
+        </View>
 
         {/* Delete lives here, not only behind a long-press: holding for half a
             second is easy to under-do, and a short press just opens this
             editor, leaving no visible way out. */}
-        <Pressable
-          onPress={() =>
-            Alert.alert("Delete set?", undefined, [
-              { text: "Cancel", style: "cancel" },
-              { text: "Delete", style: "destructive", onPress: () => onDelete(set.id) },
-            ])
-          }
-          hitSlop={8}
-          style={styles.editAction}
-        >
-          <Ionicons name="trash-outline" size={19} color={colors.danger} />
-        </Pressable>
-        <Pressable onPress={() => setEditing(false)} hitSlop={8} style={styles.editAction}>
-          <Ionicons name="close" size={20} color={colors.textMuted} />
-        </Pressable>
-        <Pressable onPress={() => void save()} hitSlop={8} style={styles.editAction} disabled={saving}>
-          {saving ? (
-            <ActivityIndicator size="small" color={colors.accent} />
-          ) : (
-            <Ionicons name="checkmark" size={20} color={colors.accent} />
-          )}
-        </Pressable>
+        <View style={styles.editActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Delete set"
+            onPress={() =>
+              Alert.alert("Delete set?", undefined, [
+                { text: "Cancel", style: "cancel" },
+                { text: "Delete", style: "destructive", onPress: () => onDelete(set.id) },
+              ])
+            }
+            style={styles.editAction}
+            disabled={saving}
+          >
+            <Ionicons name="trash-outline" size={18} color={light.danger} />
+            <Text style={[styles.editActionText, styles.editActionDanger]}>Delete</Text>
+          </Pressable>
+          <View style={styles.editActionsRight}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel editing"
+              onPress={() => setEditing(false)}
+              style={styles.editAction}
+              disabled={saving}
+            >
+              <Ionicons name="close" size={20} color={light.textSecondary} />
+              <Text style={styles.editActionText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Save set"
+              onPress={() => void save()}
+              style={[styles.editAction, styles.editActionPrimary]}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color={light.onPrimary} />
+              ) : (
+                <Ionicons name="checkmark" size={20} color={light.onPrimary} />
+              )}
+              <Text style={[styles.editActionText, styles.editActionPrimaryText]}>Save</Text>
+            </Pressable>
+          </View>
+        </View>
+        {saveError ? (
+          <Text accessibilityRole="alert" style={styles.error}>{saveError}</Text>
+        ) : null}
       </View>
     );
   }
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Set ${set.is_warmup ? "warm-up" : set.set_number}, ${formatWeight(Number(set.weight_kg), unit)} for ${set.reps} reps. Tap to edit`}
+      accessibilityHint="Long press to delete"
       style={styles.setRow}
       onPress={startEditing}
       onLongPress={() =>
@@ -396,103 +546,241 @@ function SetRow({
         ])
       }
     >
-      <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
-        {set.is_warmup ? "W" : set.set_number}
-      </Text>
-      <Text style={styles.setDetail}>
-        {Number(set.weight_kg)} kg × {set.reps}
-      </Text>
+      <View style={[styles.setBadge, set.is_warmup && styles.warmupBadge]}>
+        <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
+          {set.is_warmup ? "W" : set.set_number}
+        </Text>
+      </View>
+      <Text style={styles.setWeight}>{formatWeight(Number(set.weight_kg), unit)}</Text>
+      <Text style={styles.setReps}>× {set.reps}</Text>
+      <Text style={styles.setRir}>{rirCell(set.rir)}</Text>
     </Pressable>
   );
 }
 
 /** A logged set in a finished, read-only session — no tap-to-edit, no delete. */
-function ReadOnlySetRow({ set }: { set: LoggedSet }) {
+function ReadOnlySetRow({ set, unit }: { set: LoggedSet; unit: WeightUnit }) {
   return (
     <View style={styles.setRow}>
-      <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
-        {set.is_warmup ? "W" : set.set_number}
-      </Text>
-      <Text style={styles.setDetail}>
-        {Number(set.weight_kg)} kg × {set.reps}
-      </Text>
+      <View style={[styles.setBadge, set.is_warmup && styles.warmupBadge]}>
+        <Text style={[styles.setNumber, set.is_warmup && styles.warmupLabel]}>
+          {set.is_warmup ? "W" : set.set_number}
+        </Text>
+      </View>
+      <Text style={styles.setWeight}>{formatWeight(Number(set.weight_kg), unit)}</Text>
+      <Text style={styles.setReps}>× {set.reps}</Text>
+      <Text style={styles.setRir}>{rirCell(set.rir)}</Text>
     </View>
   );
 }
 
 function SetForm({
+  unit,
   onSubmit,
   busy,
+  blocked = false,
   lastSet,
+  draft,
+  onDraftChange,
+  onEntryFocus,
+  onEntryBlur,
 }: {
-  onSubmit: (weight: number, reps: number, isWarmup: boolean) => void;
+  unit: WeightUnit;
+  onSubmit: (weightKg: number, reps: number, isWarmup: boolean, rir: number | null) => Promise<void>;
   busy: boolean;
+  blocked?: boolean;
   lastSet: LoggedSet | undefined;
+  /** What was typed before this form was closed with its screen; read once, when the form appears. */
+  draft?: SetDraft;
+  /** Every change to the inputs, so the screen can keep them while it is closed. */
+  onDraftChange?: (draft: SetDraft) => void;
+  /** Tell the screen which panel to keep above the keyboard, and when its fields lose focus. */
+  onEntryFocus?: (panel: View | null) => void;
+  onEntryBlur?: () => void;
 }) {
+  const panelRef = useRef<View>(null);
+  const focusPanel = () => onEntryFocus?.(panelRef.current);
+  const blurPanel = () => onEntryBlur?.();
   // Prefilled from the previous set: on a working set you usually repeat the
   // weight, and retyping it every time is the main friction in logging.
-  const [weight, setWeight] = useState("");
-  const [reps, setReps] = useState("");
-  const [isWarmup, setIsWarmup] = useState(false);
+  const [weight, setWeightState] = useState(draft?.weight ?? "");
+  const [reps, setRepsState] = useState(draft?.reps ?? "");
+  const [isWarmup, setIsWarmupState] = useState(draft?.isWarmup ?? false);
+  const [rir, setRirState] = useState(draft?.rir ?? "");
+  // The latest inputs as one value, so a change to one field reports the others as they are now.
+  const latestDraft = useRef({
+    weight: draft?.weight ?? "",
+    reps: draft?.reps ?? "",
+    rir: draft?.rir ?? "",
+    isWarmup: draft?.isWarmup ?? false,
+  });
+  const changeDraft = (patch: Partial<SetDraft>) => {
+    latestDraft.current = { ...latestDraft.current, ...patch };
+    onDraftChange?.(latestDraft.current);
+  };
+  const setWeight = (value: string) => { setWeightState(value); changeDraft({ weight: value }); };
+  const setReps = (value: string) => { setRepsState(value); changeDraft({ reps: value }); };
+  const setRir = (value: string) => { setRirState(value); changeDraft({ rir: value }); };
+  const toggleWarmup = () => {
+    const next = !latestDraft.current.isWarmup;
+    setIsWarmupState(next);
+    changeDraft({ isWarmup: next });
+  };
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submitInFlight = useRef(false);
+  const disabled = busy || submitting || blocked;
+  // The calculator is told the weight once, when it opens, and cannot write back.
+  const [calculatorTotal, setCalculatorTotal] = useState<string | null>(null);
+  const openCalculator = () => {
+    Keyboard.dismiss();
+    setCalculatorTotal(initialPlateTotal(weight));
+  };
 
-  const weightHint = lastSet ? String(Number(lastSet.weight_kg)) : "0";
+  const weightHint = lastSet ? formatWeightValue(Number(lastSet.weight_kg), unit) : "0";
   const repsHint = lastSet ? String(lastSet.reps) : "8";
 
-  const submit = () => {
-    const parsedWeight = Number(weight === "" ? weightHint : weight.replace(",", "."));
+  const submit = async () => {
+    if (busy || blocked || submitInFlight.current) return;
+    // Reuse the recorded value, not the rounded hint displayed in kg/lb.
+    const parsedWeightKg = weight === ""
+      ? (lastSet ? Number(lastSet.weight_kg) : 0)
+      : (weight.trim() === "" ? null : parseWeightInput(weight, unit));
     const parsedReps = Number(reps === "" ? repsHint : reps);
 
-    if (!Number.isFinite(parsedWeight) || parsedWeight < 0) return;
-    if (!Number.isInteger(parsedReps) || parsedReps <= 0) return;
+    if (parsedWeightKg === null || !Number.isFinite(parsedWeightKg) || parsedWeightKg < 0) {
+      setSubmitError("Enter a valid weight of 0 or more.");
+      return;
+    }
+    if (!Number.isInteger(parsedReps) || parsedReps <= 0) {
+      setSubmitError("Enter a whole number of reps greater than 0.");
+      return;
+    }
 
-    onSubmit(parsedWeight, parsedReps, isWarmup);
-    setWeight("");
-    setReps("");
+    let parsedRir: number | null;
+    try {
+      parsedRir = parseRirInput(rir);
+    } catch (err) {
+      setSubmitError((err as Error).message);
+      return;
+    }
+    submitInFlight.current = true;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onSubmit(parsedWeightKg, parsedReps, isWarmup, parsedRir);
+      setWeight("");
+      setReps("");
+      setRir("");
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Could not save the set");
+    } finally {
+      submitInFlight.current = false;
+      setSubmitting(false);
+    }
   };
 
   return (
-    <View style={styles.form}>
-      <View style={styles.field}>
-        <Text style={styles.fieldLabel}>kg</Text>
-        <TextInput
-          style={styles.fieldInput}
-          value={weight}
-          onChangeText={setWeight}
-          placeholder={weightHint}
-          placeholderTextColor={colors.textMuted}
-          keyboardType="decimal-pad"
-          returnKeyType="next"
-        />
+    <View ref={panelRef} style={styles.entryPanel}>
+      <View style={styles.entryRow}>
+        <View style={styles.entryField}>
+          <Text style={styles.fieldLabel}>Weight ({unit})</Text>
+          <TextInput
+            accessibilityLabel={`Weight in ${unit}`}
+            testID="set-weight-input"
+            style={styles.fieldInput}
+            value={weight}
+            onChangeText={setWeight}
+            onFocus={focusPanel}
+            onBlur={blurPanel}
+            editable={!disabled}
+            placeholder={weightHint}
+            placeholderTextColor={light.textSecondary}
+            selectionColor={light.text}
+            keyboardType="decimal-pad"
+            returnKeyType="done"
+            submitBehavior="blurAndSubmit"
+          />
+        </View>
+
+        <View style={styles.entryField}>
+          <Text style={styles.fieldLabel}>Reps</Text>
+          <TextInput
+            accessibilityLabel="Reps"
+            testID="set-reps-input"
+            style={styles.fieldInput}
+            value={reps}
+            onChangeText={setReps}
+            onFocus={focusPanel}
+            onBlur={blurPanel}
+            editable={!disabled}
+            placeholder={repsHint}
+            placeholderTextColor={light.textSecondary}
+            selectionColor={light.text}
+            keyboardType="number-pad"
+            // Done dismisses the keyboard and keeps the draft; a set is only
+            // recorded by the explicit Log set button below.
+            returnKeyType="done"
+            submitBehavior="blurAndSubmit"
+          />
+        </View>
+
+        <RirField value={rir} onChangeText={setRir} disabled={disabled} onFocus={focusPanel} onBlur={blurPanel} />
       </View>
 
-      <View style={styles.field}>
-        <Text style={styles.fieldLabel}>reps</Text>
-        <TextInput
-          style={styles.fieldInput}
-          value={reps}
-          onChangeText={setReps}
-          placeholder={repsHint}
-          placeholderTextColor={colors.textMuted}
-          keyboardType="number-pad"
-          returnKeyType="done"
-          onSubmitEditing={submit}
-        />
-      </View>
-
+      {/* Barbell only, and named so: the workout data does not say which equipment
+          an exercise uses, and guessing it from the exercise name would be wrong
+          for some. The user decides when a bar is involved. */}
       <Pressable
-        style={[styles.warmupToggle, isWarmup && styles.warmupActive]}
-        onPress={() => setIsWarmup((value) => !value)}
+        accessibilityRole="button"
+        accessibilityLabel="Plate calculator"
+        accessibilityHint="Barbell only. Shows the plates to load on each side of the bar."
+        style={({ pressed }) => [styles.plateCalculatorButton, pressed && styles.rowPressed]}
+        onPress={openCalculator}
       >
-        <Text style={[styles.warmupText, isWarmup && styles.warmupTextActive]}>W</Text>
+        <Ionicons name="barbell-outline" size={20} color={light.text} />
+        <Text style={styles.plateCalculatorText}>Plate calculator</Text>
       </Pressable>
 
-      <Pressable style={styles.addSet} onPress={submit} disabled={busy}>
-        {busy ? (
-          <ActivityIndicator color={colors.accentText} size="small" />
-        ) : (
-          <Ionicons name="add" size={22} color={colors.accentText} />
-        )}
-      </Pressable>
+      <View style={styles.entryActions}>
+        {/* A box and the words, so the on/off state is not carried by colour alone. */}
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityLabel="Warm-up set"
+          accessibilityState={{ checked: isWarmup, disabled }}
+          style={[styles.warmupToggle, isWarmup && styles.warmupActive]}
+          onPress={toggleWarmup}
+          disabled={disabled}
+        >
+          <Ionicons
+            name={isWarmup ? "checkbox" : "square-outline"}
+            size={22}
+            color={isWarmup ? light.primary : light.textSecondary}
+          />
+          <Text style={[styles.warmupText, isWarmup && styles.warmupTextActive]}>Warm-up set</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Log set"
+          style={({ pressed }) => [styles.addSet, pressed && styles.primaryPressed, disabled && styles.disabledControl]}
+          onPress={() => void submit()}
+          disabled={disabled}
+        >
+          {busy || submitting ? (
+            <ActivityIndicator color={light.onPrimary} size="small" />
+          ) : (
+            <Ionicons name="add" size={20} color={light.onPrimary} />
+          )}
+          <Text style={styles.addSetText}>Log set</Text>
+        </Pressable>
+      </View>
+      {submitError ? (
+        <Text accessibilityRole="alert" style={styles.error}>{submitError}</Text>
+      ) : null}
+      {calculatorTotal !== null ? (
+        <PlateCalculator unit={unit} initialTotal={calculatorTotal} onClose={() => setCalculatorTotal(null)} />
+      ) : null}
     </View>
   );
 }
@@ -506,12 +794,10 @@ function SetForm({
  * moment a program is selected rather than needing another round trip.
  */
 function SaveAsTemplateModal({
-  visible,
   workout,
   onClose,
   onSaved,
 }: {
-  visible: boolean;
   workout: WorkoutDetail;
   onClose: () => void;
   onSaved: () => void;
@@ -524,21 +810,32 @@ function SaveAsTemplateModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameInputRef = useRef<TextInput>(null);
+  const saveInFlight = useRef(false);
+  const [pendingSave, setPendingSave] = useState<TemplateSaveRequest | null>(null);
+  const [saveRequestLoaded, setSaveRequestLoaded] = useState(false);
 
   useEffect(() => {
-    if (!visible) return;
-    setName(workout.title ?? "");
-    setError(null);
-
     let cancelled = false;
-    setLoadingPrograms(true);
-    programsApi
-      .listPrograms()
-      .then((summaries) => Promise.all(summaries.map((p) => programsApi.getProgram(p.id))))
-      .then((details) => {
+    getTemplateSaveRequest(workout.id)
+      .then((pending) => {
+        if (!cancelled) {
+          setPendingSave(pending);
+          setSaveRequestLoaded(true);
+          if (pending) {
+            setName(pending.input.name);
+            setSelectedProgramId(pending.programId);
+          }
+        }
+        return programsApi.listPrograms().then((summaries) => ({ pending, summaries }));
+      })
+      .then(async ({ pending, summaries }) => ({
+        pending, details: await Promise.all(summaries.map((p) => programsApi.getProgram(p.id))),
+      }))
+      .then(({ pending, details }) => {
         if (cancelled) return;
         setPrograms(details);
-        setSelectedProgramId(details.find((p) => p.is_active)?.id ?? details[0]?.id ?? null);
+        setSelectedProgramId(pending?.programId ??
+          details.find((p) => p.is_active)?.id ?? details[0]?.id ?? null);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load programs");
@@ -549,43 +846,53 @@ function SaveAsTemplateModal({
     return () => {
       cancelled = true;
     };
-  }, [visible, workout.title]);
+  }, [workout.id]);
 
   const handleSave = async () => {
+    if (saveInFlight.current || !saveRequestLoaded) return;
     const trimmed = name.trim();
     if (!trimmed) {
       setError("Name the template first.");
       return;
     }
     const program = programs.find((p) => p.id === selectedProgramId);
-    if (!program) return;
+    if (!program && !pendingSave) return;
 
+    saveInFlight.current = true;
     setSaving(true);
     setError(null);
     try {
-      const template = await programsApi.createTemplate(program.id, {
-        name: trimmed,
-        day_order: program.templates.length,
+      const request = await prepareTemplateSaveRequest(workout.id, pendingSave ?? {
+        programId: program!.id,
+        input: {
+          name: trimmed,
+          day_order: program!.templates.length,
+          exercises: buildTemplateExercisesFromWorkout(workout),
+        },
       });
-
-      const exercises = buildTemplateExercisesFromWorkout(workout);
-      if (exercises.length > 0) {
-        await programsApi.setTemplateExercises(template.id, exercises);
-      }
+      setPendingSave(request);
+      await sendTemplateSaveRequest(workout.id, request);
 
       onSaved();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 422) setPendingSave(null);
       setError(err instanceof Error ? err.message : "Could not save the template");
       setSaving(false);
+    } finally {
+      saveInFlight.current = false;
     }
+  };
+
+  const close = () => {
+    if (!saveInFlight.current) onClose();
   };
 
   return (
     <Modal
-      visible={visible}
+      visible
       transparent
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={close}
       // autoFocus on the TextInput below is not reliable here: on Android in
       // particular, a TextInput can request focus before this Modal's native
       // window actually exists, so the keyboard opens but keystrokes still
@@ -603,7 +910,7 @@ function SaveAsTemplateModal({
         style={styles.sheetAvoider}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+        <Pressable style={styles.sheetBackdrop} onPress={close}>
           {/* A Pressable with its own onPress, even a no-op, is what keeps a
               tap inside the sheet from also being read as a tap on the
               backdrop behind it. */}
@@ -620,6 +927,11 @@ function SaveAsTemplateModal({
               keyboardShouldPersistTaps="handled"
             >
               <Text style={styles.sheetTitle}>Save as template</Text>
+              {pendingSave ? (
+                <Text style={styles.sheetLabel}>
+                  A previous save is ready to resume. Continue with the original name and program.
+                </Text>
+              ) : null}
 
               <TextInput
                 ref={nameInputRef}
@@ -627,21 +939,26 @@ function SaveAsTemplateModal({
                 value={name}
                 onChangeText={setName}
                 placeholder="Template name"
-                placeholderTextColor={colors.textMuted}
+                editable={!saving && !pendingSave && saveRequestLoaded}
+                placeholderTextColor={light.textSecondary}
               />
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
 
               {loadingPrograms ? (
-                <ActivityIndicator color={colors.accent} style={styles.sheetLoading} />
+                <ActivityIndicator color={light.textSecondary} style={styles.sheetLoading} />
+              ) : programs.length === 0 && pendingSave ? (
+                <Text style={styles.sheetLabel}>Continue to check your previous save.</Text>
               ) : programs.length === 0 ? (
                 <View>
-                  <Text style={styles.sheetEmpty}>You don't have a program yet.</Text>
+                  <Text style={styles.sheetEmpty}>You don&apos;t have a program yet.</Text>
                   <Pressable
                     style={styles.sheetCreateProgram}
                     onPress={() => {
+                      // The creation form is a screen of its own (Programs is no longer a tab),
+                      // pushed over this workout so Back returns here.
                       onClose();
-                      router.push("/programs");
+                      router.push("/program/new");
                     }}
                   >
                     <Text style={styles.sheetCreateProgramText}>Create a program</Text>
@@ -655,10 +972,11 @@ function SaveAsTemplateModal({
                       key={program.id}
                       style={styles.sheetRow}
                       onPress={() => setSelectedProgramId(program.id)}
+                      disabled={saving || !!pendingSave || !saveRequestLoaded}
                     >
                       <Text style={styles.sheetRowText}>{program.name}</Text>
                       {selectedProgramId === program.id ? (
-                        <Ionicons name="checkmark" size={18} color={colors.accent} />
+                        <Ionicons name="checkmark" size={18} color={light.text} />
                       ) : null}
                     </Pressable>
                   ))}
@@ -672,20 +990,25 @@ function SaveAsTemplateModal({
             <View style={styles.modalActions}>
               <Pressable
                 style={[styles.modalButton, styles.modalButtonSecondary]}
-                onPress={onClose}
+                onPress={close}
                 disabled={saving}
               >
                 <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={[styles.modalButton, saving && styles.modalButtonDisabled]}
+                style={({ pressed }) => [
+                  styles.modalButton,
+                  pressed && styles.primaryPressed,
+                  saving && styles.modalButtonDisabled,
+                ]}
                 onPress={() => void handleSave()}
-                disabled={saving || loadingPrograms || programs.length === 0}
+                disabled={saving || !saveRequestLoaded ||
+                  (!pendingSave && (loadingPrograms || programs.length === 0))}
               >
                 {saving ? (
-                  <ActivityIndicator color={colors.accentText} />
+                  <ActivityIndicator color={light.onPrimary} />
                 ) : (
-                  <Text style={styles.modalButtonText}>Save</Text>
+                  <Text style={styles.modalButtonText}>{pendingSave ? "Continue save" : "Save"}</Text>
                 )}
               </Pressable>
             </View>
@@ -698,20 +1021,65 @@ function SaveAsTemplateModal({
 
 export default function ActiveWorkoutScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
+  const unit: WeightUnit = user?.weight_unit ?? "kg";
+  const { scrollRef, scrollProps, revealEntry, releaseEntry } = useEntryReveal();
 
   const [workout, setWorkout] = useState<WorkoutDetail | null>(null);
-  const [pending, setPending] = useState<{ id: string; name: string }[]>([]);
+  // Exercises picked but not yet logged exist only here, so they are kept
+  // (with the typed set drafts) while the screen is closed and reopened.
+  const [pending, setPending] = useState<{ id: string; name: string }[]>(() =>
+    user?.id ? setDraftStore.getPending(user.id, id) : [],
+  );
   const [loading, setLoading] = useState(true);
   const [busyExercise, setBusyExercise] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [restSeconds, setRestSecondsState] = useState(DEFAULT_REST_SECONDS);
-  const [targets, setTargets] = useState<TemplateExerciseTarget[]>([]);
+  const { targets, description: planDescription } = useMemo(() => getStartingPlan(workout), [workout]);
   const [saveAsTemplateVisible, setSaveAsTemplateVisible] = useState(false);
   // A past session opens read-only by default (see isFinished/readOnly
   // below); this is the escape hatch that lets it become editable again.
   const [editing, setEditing] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const finishInFlight = useRef(false);
+  const [pendingSetRequest, setPendingSetRequest] = useState<SetSaveRequest | null>(null);
+  const pendingSetRef = useRef<SetSaveRequest | null>(null);
+  const setSaveInFlight = useRef(false);
+  const [setFormVersions, setSetFormVersions] = useState<Record<string, number>>({});
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const userId = user?.id;
+  const viewGeneration = useRef(0);
+
+  useEffect(() => {
+    const generation = ++viewGeneration.current;
+    return () => { viewGeneration.current = generation + 1; };
+  }, [id, userId]);
+
+  // The rest timer follows this workout's lifecycle. Registered for as long as
+  // the screen is in the navigation stack, so the floating pill knows whether
+  // to pop back to it or push it.
+  useEffect(() => restTimerStore.registerWorkoutScreen(id), [id]);
+
+  const readOnlyView = workout !== null && workout.finished_at !== null && !editing;
+  const editableView = workout !== null && !readOnlyView;
+
+  // A finished workout shown read-only has no rest in progress: if this one
+  // had a timer (it was being edited) it ends when the edit does.
+  useEffect(() => {
+    if (readOnlyView) restTimerStore.clearForWorkout(id);
+  }, [readOnlyView, id]);
+
+  // While a workout is open for editing it owns the bottom of the display
+  // (set inputs, keyboard), so the floating pill of another workout's timer
+  // stays off it. Focus-bound: a screen buried under another one must not hold it.
+  useFocusEffect(
+    useCallback(() => {
+      if (!editableView) return;
+      return restTimerStore.suppressPill();
+    }, [editableView]),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -728,6 +1096,10 @@ export default function ActiveWorkoutScreen() {
     void setRestSeconds(value);
   }, []);
 
+  useEffect(() => {
+    if (userId) setDraftStore.savePending(userId, id, pending);
+  }, [pending, userId, id]);
+
   const { openPicker } = usePickedExercise((exercise) => {
     setPending((current) =>
       current.some((item) => item.id === exercise.id) ? current : [...current, exercise],
@@ -736,10 +1108,20 @@ export default function ActiveWorkoutScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    workoutsApi
-      .getWorkout(id)
-      .then((data) => {
-        if (!cancelled) setWorkout(data);
+    Promise.all([
+      workoutsApi.getWorkout(id),
+      userId ? getSetSaveRequest(userId, id) : Promise.reject(new Error("Sign in to load this workout.")),
+    ])
+      .then(([data, savedRequest]) => {
+        if (!cancelled) {
+          setSaveInFlight.current = false;
+          finishInFlight.current = false;
+          setFinishing(false);
+          setBusyExercise(null);
+          pendingSetRef.current = savedRequest;
+          setPendingSetRequest(savedRequest);
+          setWorkout(data);
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load workout");
@@ -750,44 +1132,20 @@ export default function ActiveWorkoutScreen() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, userId, loadAttempt]);
 
-  // Fetched separately rather than embedded in the workout response: targets
-  // belong to the template, not the session, and a resumed workout re-fetches
-  // them fresh instead of depending on whatever POST /templates/{id}/start
-  // returned when the session began.
-  useEffect(() => {
-    const templateId = workout?.template_id;
-    if (!templateId) {
-      setTargets([]);
-      return;
-    }
-    let cancelled = false;
-    programsApi
-      .getTemplate(templateId)
-      .then((data) => {
-        if (!cancelled) setTargets(data.exercises);
-      })
-      .catch(() => {
-        // No goals shown is a smaller problem than blocking logging over it.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [workout?.template_id]);
-
-  // Template exercises come first (in template order) so a session started
-  // from a plan shows the whole plan immediately, not just what's logged so
-  // far — this is what makes an empty, just-started session show anything
-  // at all instead of a blank screen.
+  // Include saved plan exercises even before their first set is logged.
+  // Recorded exercises keep logging order; remaining targets keep plan order.
   const blocks = useMemo(() => {
     if (!workout) return [];
     const targetExtras = targets.map((t) => ({ id: t.exercise_id, name: t.exercise_name }));
-    return groupByExercise(workout.sets, [...targetExtras, ...pending]);
-  }, [workout, pending, targets]);
+    const unsent = pendingSetRequest ? [{ id: pendingSetRequest.input.exercise_id, name: pendingSetRequest.exerciseName }] : [];
+    return groupByExercise(workout.sets, [...targetExtras, ...pending, ...unsent]);
+  }, [workout, pending, targets, pendingSetRequest]);
 
   const handleSaveTitle = useCallback(
     async (title: string | null) => {
+      if (setSaveInFlight.current || pendingSetRef.current) return;
       try {
         setWorkout(await workoutsApi.updateWorkout(id, { title }));
       } catch (err) {
@@ -797,32 +1155,68 @@ export default function ActiveWorkoutScreen() {
     [id],
   );
 
-  const handleAddSet = useCallback(
-    async (exerciseId: string, weight: number, reps: number, isWarmup: boolean) => {
-      setBusyExercise(exerciseId);
+  const handleSetSave = useCallback(
+    async (proposed?: { exerciseId: string; exerciseName: string; weight: number; reps: number; isWarmup: boolean; rir: number | null }) => {
+      if (!userId || setSaveInFlight.current || finishInFlight.current || finishing) throw new Error("Please wait for the current save.");
+      if (proposed && pendingSetRef.current) throw new Error("Resolve the pending set first.");
+      setSaveInFlight.current = true;
+      const generation = viewGeneration.current;
+      setBusyExercise(proposed?.exerciseId ?? pendingSetRef.current?.input.exercise_id ?? null);
       setError(null);
       try {
-        const updated = await workoutsApi.addSet(id, {
-          exercise_id: exerciseId,
-          weight_kg: weight,
-          reps,
-          is_warmup: isWarmup,
-        });
+        const request = proposed ? await prepareSetSaveRequest(userId, id, proposed.exerciseName, {
+          exercise_id: proposed.exerciseId, weight_kg: proposed.weight, reps: proposed.reps,
+          is_warmup: proposed.isWarmup, rir: proposed.rir,
+        }) : pendingSetRef.current;
+        if (!request) throw new Error("No pending set to retry.");
+        if (generation !== viewGeneration.current) return;
+        pendingSetRef.current = request;
+        setPendingSetRequest(request);
+        const updated = await sendSetSaveRequest(userId, id, request);
+        if (generation !== viewGeneration.current) return;
         setWorkout(updated);
+        pendingSetRef.current = null;
+        setPendingSetRequest(null);
+        // Also clear the original form after a successful retry from the banner.
+        // A direct save lets SetForm clear itself and retain its warm-up toggle.
+        if (!proposed) {
+          // The form is about to be rebuilt empty; its old draft must not come back with it.
+          setDraftStore.clearDraft(userId, id, request.input.exercise_id);
+          setSetFormVersions(versions => ({
+            ...versions, [request.input.exercise_id]: (versions[request.input.exercise_id] ?? 0) + 1,
+          }));
+        }
       } catch (err) {
+        if (generation !== viewGeneration.current) throw err;
+        // A validation rejection may have cleared the receipt. Storage errors
+        // must instead keep logging blocked until the saved intent can be read.
+        try {
+          const saved = await getSetSaveRequest(userId, id);
+          if (generation !== viewGeneration.current) return;
+          pendingSetRef.current = saved;
+          setPendingSetRequest(saved);
+        } catch {
+          if (generation !== viewGeneration.current) return;
+          setWorkout(null);
+        }
         setError(err instanceof Error ? err.message : "Could not save the set");
+        throw err;
       } finally {
-        setBusyExercise(null);
+        if (generation === viewGeneration.current) {
+          setSaveInFlight.current = false;
+          setBusyExercise(null);
+        }
       }
     },
-    [id],
+    [id, userId, finishing],
   );
 
   const handleEditSet = useCallback(
-    async (setId: number, weight: number, reps: number) => {
+    async (setId: number, weight: number, reps: number, rir: number | null) => {
+      if (setSaveInFlight.current || pendingSetRef.current) throw new Error("Resolve the pending set first.");
       setError(null);
       try {
-        setWorkout(await workoutsApi.updateSet(id, setId, { weight_kg: weight, reps }));
+        setWorkout(await workoutsApi.updateSet(id, setId, { weight_kg: weight, reps, rir }));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not update the set");
         throw err;
@@ -833,6 +1227,7 @@ export default function ActiveWorkoutScreen() {
 
   const handleDeleteSet = useCallback(
     async (setId: number) => {
+      if (setSaveInFlight.current || pendingSetRef.current) return;
       try {
         setWorkout(await workoutsApi.deleteSet(id, setId));
       } catch (err) {
@@ -843,23 +1238,34 @@ export default function ActiveWorkoutScreen() {
   );
 
   const handleFinish = useCallback(async () => {
+    if (finishInFlight.current || setSaveInFlight.current || pendingSetRef.current) return;
     // Guards against a double-tap firing this twice while the request is in
     // flight — finish is idempotent server-side, but there is no reason to
     // rely on that when a disabled button is just as easy.
+    finishInFlight.current = true;
     setFinishing(true);
+    setError(null);
     // Write to the server first: if it fails, the device keeps its active
     // workout pointer and the session is not lost, just not marked done yet.
     try {
       await workoutsApi.finishWorkout(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not finish the workout");
+      finishInFlight.current = false;
       setFinishing(false);
       return;
     }
-    await clearActiveWorkout();
+    // The workout is over; so are its rest countdown and anything left typed into it.
+    restTimerStore.clearForWorkout(id);
+    if (userId) setDraftStore.clearWorkout(userId, id);
+    // Server completion is authoritative; local cleanup must not trap us here.
+    await clearActiveWorkout().catch(() => undefined);
+    await clearTemplateSaveRequest(id).catch(() => undefined);
+    // Back to the tabs, on History: the session that was just finished is the newest
+    // row there (History reloads whenever it gains focus), which is the confirmation.
     router.dismissAll();
-    router.replace("/");
-  }, [id, router]);
+    router.replace("/history");
+  }, [id, router, userId]);
 
   const confirmFinish = () => {
     const empty = (workout?.sets.length ?? 0) === 0;
@@ -879,7 +1285,8 @@ export default function ActiveWorkoutScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator color={colors.accent} />
+        <Stack.Screen options={{ headerShown: false }} />
+        <ActivityIndicator color={light.textSecondary} />
       </View>
     );
   }
@@ -887,7 +1294,23 @@ export default function ActiveWorkoutScreen() {
   if (!workout) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.error}>{error ?? "Workout not found"}</Text>
+        <Stack.Screen options={{ headerShown: false }} />
+        <Text accessibilityRole="alert" style={styles.error}>{error ?? "Workout not found"}</Text>
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.centeredPrimary, pressed && styles.primaryPressed]}
+          onPress={() => { setLoading(true); setError(null); setLoadAttempt(value => value + 1); }}
+        >
+          <Text style={styles.primaryText}>Try again</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={styles.centeredAction}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backText}>Go back</Text>
+        </Pressable>
       </View>
     );
   }
@@ -897,98 +1320,187 @@ export default function ActiveWorkoutScreen() {
   // readOnly is false regardless of the (unused, in that case) editing flag.
   const isFinished = workout.finished_at !== null;
   const readOnly = isFinished && !editing;
+  const setSaveBlocked = pendingSetRequest !== null || busyExercise !== null;
 
   return (
     <>
       <KeyboardAvoidingView
         style={styles.screen}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={90}
       >
-        <Stack.Screen
-          options={{
-            title: workout.title ?? "Workout",
-            headerRight: () => {
-              if (readOnly) {
-                return (
-                  <Pressable onPress={() => setEditing(true)} hitSlop={8}>
-                    <Text style={styles.finish}>Edit</Text>
-                  </Pressable>
-                );
-              }
-              if (isFinished) {
-                // Editing an already-finished workout: exit just leaves edit
-                // mode, it must not call finish again.
-                return (
-                  <Pressable onPress={() => setEditing(false)} hitSlop={8}>
-                    <Text style={styles.finish}>Done</Text>
-                  </Pressable>
-                );
-              }
-              return (
-                <Pressable onPress={confirmFinish} disabled={finishing} hitSlop={8}>
-                  {finishing ? (
-                    <ActivityIndicator size="small" color={colors.accent} />
-                  ) : (
-                    <Text style={styles.finish}>Finish</Text>
-                  )}
-                </Pressable>
-              );
-            },
-          }}
-        />
+        {/* The screen draws its own top bar (back, name, finish) below, so the
+            native header is off: both together would show the name twice. */}
+        <Stack.Screen options={{ headerShown: false }} />
 
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          {readOnly ? (
-            <Text style={styles.titleReadOnly}>{workout.title ?? "Workout"}</Text>
-          ) : (
-            <TitleField value={workout.title} onSave={(title) => void handleSaveTitle(title)} />
-          )}
+        <View style={[styles.topBar, { paddingTop: insets.top }]}>
+          <View style={styles.topBarRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              style={styles.topBarBack}
+              onPress={() => router.back()}
+            >
+              <Ionicons name="chevron-back" size={26} color={light.text} />
+            </Pressable>
 
+            <View style={styles.topBarTitle}>
+              {readOnly ? (
+                <Text accessibilityRole="header" numberOfLines={2} style={styles.titleReadOnly}>
+                  {workout.title ?? "Workout"}
+                </Text>
+              ) : (
+                <TitleField
+                  key={workout.title ?? ""}
+                  value={workout.title}
+                  editable={!setSaveBlocked}
+                  onSave={(title) => void handleSaveTitle(title)}
+                />
+              )}
+            </View>
+
+            {readOnly ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Edit workout"
+                style={styles.topBarGhost}
+                onPress={() => setEditing(true)}
+              >
+                <Text style={styles.topBarGhostText}>Edit</Text>
+              </Pressable>
+            ) : isFinished ? (
+              // Editing an already-finished workout: exit just leaves edit
+              // mode, it must not call finish again.
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Done editing"
+                style={styles.topBarGhost}
+                onPress={() => setEditing(false)}
+              >
+                <Text style={styles.topBarGhostText}>Done</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Finish workout"
+                accessibilityState={{ busy: finishing, disabled: finishing || setSaveBlocked }}
+                style={({ pressed }) => [
+                  styles.finishButton,
+                  pressed && styles.primaryPressed,
+                  (finishing || setSaveBlocked) && styles.finishButtonDisabled,
+                ]}
+                onPress={confirmFinish}
+                disabled={finishing || setSaveBlocked}
+              >
+                {finishing ? (
+                  <ActivityIndicator size="small" color={light.onPrimary} />
+                ) : (
+                  <Text style={styles.finishText}>Finish</Text>
+                )}
+              </Pressable>
+            )}
+          </View>
+        </View>
+
+        <ScrollView
+          ref={scrollRef}
+          {...scrollProps}
+          contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 32 }]}
+          keyboardShouldPersistTaps="handled"
+        >
           {readOnly ? <Text style={styles.sessionDate}>{formatSessionDate(workout.performed_at)}</Text> : null}
+          {planDescription ? <Text style={styles.sessionDate}>{planDescription}</Text> : null}
 
           <View style={styles.summary}>
-            <View>
-              <Text style={styles.summaryValue}>{workout.total_sets}</Text>
-              <Text style={styles.summaryLabel}>working sets</Text>
-            </View>
+            <SummaryCell value={String(workout.total_sets)} label="working sets" />
+            <View style={styles.summaryDivider} />
             {isFinished && workout.finished_at ? (
-              <FinishedDuration startedAt={workout.performed_at} endedAt={workout.finished_at} />
+              workout.finished_automatically === false ? (
+                <FinishedDuration startedAt={workout.performed_at} endedAt={workout.finished_at} />
+              ) : (
+                <SummaryCell
+                  value="—"
+                  label={workout.finished_automatically ? "auto-closed" : "duration unavailable"}
+                />
+              )
             ) : (
               <SessionDuration startedAt={workout.performed_at} />
             )}
           </View>
 
-          {readOnly ? null : <RestTimer seconds={restSeconds} onChangeSeconds={handleChangeRest} />}
+          {readOnly ? null : <RestTimer workoutId={id} userId={userId} seconds={restSeconds} onChangeSeconds={handleChangeRest} />}
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          {pendingSetRequest ? (
+            <View style={styles.planComparison}>
+              <View style={styles.pendingHeader}>
+                <Ionicons name="alert-circle-outline" size={20} color={light.text} />
+                <Text style={styles.pendingTitle}>Set awaiting confirmation</Text>
+              </View>
+              <Text style={styles.planDetail}>
+                {pendingSetRequest.exerciseName}: {formatWeight(pendingSetRequest.input.weight_kg, unit)} × {pendingSetRequest.input.reps}
+                {formatRecordedRir(pendingSetRequest.input.rir ?? null)}
+                {pendingSetRequest.input.is_warmup ? " · Warm-up" : " · Working set"}
+              </Text>
+              <Text style={styles.planDetail}>
+                This set may already be saved. Retry to confirm it before adding another set or finishing.
+              </Text>
+              <Pressable disabled={busyExercise !== null}
+                onPress={() => { void handleSetSave().catch(() => undefined); }}
+                style={({ pressed }) => [styles.retryButton, pressed && styles.primaryPressed, busyExercise !== null && styles.disabledControl]}>
+                <Text style={styles.primaryText}>{busyExercise !== null ? "Confirming…" : "Retry pending set"}</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           {blocks.map((block) => {
-            const target = targets.find((t) => t.exercise_id === block.exerciseId);
             return (
               <View key={block.exerciseId} style={styles.block}>
                 <Text style={styles.blockTitle}>{block.name}</Text>
-                {target ? (
-                  <Text style={styles.blockTarget}>Target: {formatTarget(target)}</Text>
+
+                <PreviousExercise
+                  key={`${workout.id}:${workout.performed_at}:${block.exerciseId}`}
+                  workoutId={workout.id} exerciseId={block.exerciseId} exerciseName={block.name} unit={unit}
+                  currentSets={block.sets}
+                />
+
+                {block.sets.length > 0 ? (
+                  <View style={styles.columnHeader}>
+                    <View style={styles.columnSet} />
+                    <Text style={[styles.columnLabel, styles.columnWeight]}>Weight</Text>
+                    <Text style={[styles.columnLabel, styles.columnReps]}>Reps</Text>
+                    <Text style={[styles.columnLabel, styles.columnRir]}>RIR</Text>
+                  </View>
                 ) : null}
 
-                {readOnly
-                  ? block.sets.map((set) => <ReadOnlySetRow key={set.id} set={set} />)
+                {readOnly || setSaveBlocked
+                  ? block.sets.map((set) => <ReadOnlySetRow key={set.id} set={set} unit={unit} />)
                   : block.sets.map((set) => (
                       <SetRow
                         key={set.id}
                         set={set}
+                        unit={unit}
                         onSave={handleEditSet}
                         onDelete={(setId) => void handleDeleteSet(setId)}
+                        onEntryFocus={revealEntry}
+                        onEntryBlur={releaseEntry}
                       />
                     ))}
 
                 {readOnly ? null : (
                   <SetForm
-                    busy={busyExercise === block.exerciseId}
+                    key={setFormVersions[block.exerciseId] ?? 0}
+                    unit={unit}
+                    busy={busyExercise !== null || finishing}
+                    blocked={pendingSetRequest !== null}
                     lastSet={block.sets[block.sets.length - 1]}
-                    onSubmit={(weight, reps, isWarmup) =>
-                      void handleAddSet(block.exerciseId, weight, reps, isWarmup)
+                    draft={userId ? setDraftStore.getDraft(userId, id, block.exerciseId) : undefined}
+                    onDraftChange={(draft: SetDraft) => {
+                      if (userId) setDraftStore.saveDraft(userId, id, block.exerciseId, draft);
+                    }}
+                    onEntryFocus={revealEntry}
+                    onEntryBlur={releaseEntry}
+                    onSubmit={(weightKg, reps, isWarmup, rir) =>
+                      handleSetSave({ exerciseId: block.exerciseId, exerciseName: block.name, weight: weightKg, reps, isWarmup, rir })
                     }
                   />
                 )}
@@ -996,9 +1508,16 @@ export default function ActiveWorkoutScreen() {
             );
           })}
 
+          {isFinished ? <ReceivedFeedbackSection userId={userId ?? null} workoutId={workout.id} /> : null}
+
           {readOnly ? null : (
-            <Pressable style={styles.addExercise} onPress={openPicker}>
-              <Ionicons name="add" size={20} color={colors.accent} />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add exercise"
+              style={({ pressed }) => [styles.addExercise, pressed && styles.rowPressed]}
+              onPress={openPicker}
+            >
+              <Ionicons name="add" size={20} color={light.text} />
               <Text style={styles.addExerciseText}>Add exercise</Text>
             </Pressable>
           )}
@@ -1011,259 +1530,437 @@ export default function ActiveWorkoutScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <SaveAsTemplateModal
-        visible={saveAsTemplateVisible}
+      {saveAsTemplateVisible && <SaveAsTemplateModal
         workout={workout}
         onClose={() => setSaveAsTemplateVisible(false)}
         onSaved={() => {
           setSaveAsTemplateVisible(false);
           void handleFinish();
         }}
-      />
+      />}
     </>
   );
 }
 
+const MIN_TOUCH = 44;
+
+// Light palette, system font. Numbers use tabular figures so columns line up.
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: light.background },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
+    backgroundColor: light.background,
+    padding: 24,
   },
-  content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
-  finish: { color: colors.accent, fontSize: 16, fontWeight: "700" },
+  centeredAction: { minHeight: MIN_TOUCH, justifyContent: "center", paddingHorizontal: 16 },
+  centeredPrimary: {
+    minHeight: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: light.primary,
+    borderRadius: 14,
+    paddingHorizontal: 24,
+    marginTop: 8,
+  },
+  content: { paddingHorizontal: 16, paddingTop: 12 },
 
+  primaryPressed: { backgroundColor: light.primaryPressed },
+  rowPressed: { backgroundColor: light.pressed },
+  disabledControl: { opacity: 0.5 },
+  primaryText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
+
+  topBar: {
+    backgroundColor: light.background,
+    borderBottomColor: light.separator,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+  },
+  topBarRow: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 4 },
+  topBarBack: {
+    width: MIN_TOUCH,
+    height: MIN_TOUCH,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  topBarTitle: { flex: 1, minWidth: 0, alignItems: "center", justifyContent: "center" },
+  topBarGhost: {
+    minWidth: MIN_TOUCH,
+    minHeight: MIN_TOUCH,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  topBarGhostText: { color: light.text, fontSize: 16, fontWeight: "600" },
+  finishButton: {
+    minWidth: 72,
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: light.primary,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    marginRight: 4,
+  },
+  finishButtonDisabled: { opacity: 0.5 },
+  finishText: { color: light.onPrimary, fontSize: 15, fontWeight: "600" },
+  backText: { color: light.textSecondary, fontSize: 16, fontWeight: "500" },
+
+  titleWrap: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "100%" },
   titleInput: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.sm,
+    flexShrink: 1,
+    minHeight: MIN_TOUCH,
+    color: light.text,
+    fontSize: 17,
+    fontWeight: "600",
+    textAlign: "center",
+    paddingVertical: 8,
   },
   titleReadOnly: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
-    paddingVertical: spacing.sm,
+    color: light.text,
+    fontSize: 17,
+    fontWeight: "600",
+    textAlign: "center",
   },
-  sessionDate: { color: colors.textMuted, fontSize: 13, marginBottom: spacing.sm },
+  sessionDate: {
+    color: light.textSecondary,
+    fontSize: 13,
+    marginBottom: 8,
+  },
 
   summary: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
-  summaryValue: { color: colors.text, fontSize: 20, fontWeight: "700" },
-  summaryLabel: { color: colors.textMuted, fontSize: 12 },
+  summaryItem: { flex: 1, minWidth: 0, gap: 2 },
+  summaryDivider: { width: StyleSheet.hairlineWidth, alignSelf: "stretch", backgroundColor: light.separator, marginHorizontal: 16 },
+  summaryValue: {
+    color: light.text,
+    fontSize: 22,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+  },
+  summaryLabel: { color: light.textSecondary, fontSize: 13 },
+
   rest: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
+    gap: 8,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingLeft: 16,
+    paddingRight: 12,
+    marginBottom: 12,
   },
-  restDuration: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  restLabel: { color: colors.textMuted, fontSize: 14 },
-  restValue: { color: colors.text, fontSize: 14, fontWeight: "600" },
+  restInfo: { flexShrink: 1 },
+  restTitle: { color: light.text, fontSize: 15, fontWeight: "600" },
+  restDuration: {
+    minHeight: MIN_TOUCH,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  restTarget: { color: light.textSecondary, fontSize: 13 },
+  restCountdownBox: { alignItems: "center" },
+  // Hidden while the history panel shows it; the space stays so nothing shifts behind the scrim.
+  restCovered: { opacity: 0 },
   restCountdown: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
+    color: light.text,
+    fontSize: 28,
+    fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
-  restDone: { color: colors.accent },
+  restDone: { color: light.positive },
+  restOver: { color: light.positive, fontSize: 12, fontWeight: "600" },
   restButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.accent,
+    width: MIN_TOUCH,
+    height: MIN_TOUCH,
+    borderRadius: MIN_TOUCH / 2,
+    backgroundColor: light.primary,
     alignItems: "center",
     justifyContent: "center",
   },
-  restButtonActive: { backgroundColor: colors.border },
-  error: { color: colors.danger, marginBottom: spacing.md },
+  restButtonActive: { backgroundColor: light.pressed },
+  error: { color: light.danger, fontSize: 13, fontWeight: "500", marginTop: 8, marginBottom: 8 },
 
   block: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
   },
-  blockTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
-  blockTarget: { color: colors.textMuted, fontSize: 12, marginBottom: spacing.sm },
+  blockTitle: { color: light.text, fontSize: 17, fontWeight: "600", marginBottom: 2 },
+  planComparison: {
+    backgroundColor: light.surface,
+    borderColor: light.text,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    gap: 6,
+  },
+  pendingHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pendingTitle: { flex: 1, color: light.text, fontSize: 16, fontWeight: "600" },
+  planDetail: { color: light.textSecondary, fontSize: 13, lineHeight: 19 },
+  retryButton: {
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: light.primary,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    marginTop: 4,
+  },
+
+  // Column heads share their widths with the set rows so the numbers align.
+  columnHeader: { flexDirection: "row", alignItems: "center", gap: 8, paddingTop: 4, paddingBottom: 2 },
+  columnSet: { width: 30 },
+  columnLabel: { color: light.textSecondary, fontSize: 12 },
+  columnWeight: { width: 92, textAlign: "right" },
+  columnReps: { width: 56 },
+  columnRir: { flex: 1 },
 
   setRow: {
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: spacing.sm,
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    paddingVertical: 6,
+    borderTopColor: light.separator,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  setRowEditing: {
-    flexDirection: "row",
+  setBadge: {
+    width: 30,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: light.background,
     alignItems: "center",
-    gap: spacing.xs,
-    paddingVertical: spacing.xs,
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    justifyContent: "center",
   },
-  setNumber: { color: colors.textMuted, width: 28, fontSize: 14, fontWeight: "600" },
-  warmupLabel: { color: colors.textMuted, opacity: 0.7 },
-  setDetail: { color: colors.text, fontSize: 15 },
-  editInput: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
-    fontSize: 15,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    minWidth: 62,
-    textAlign: "center",
-  },
-  editUnit: { color: colors.textMuted, fontSize: 13 },
-  editAction: { paddingHorizontal: spacing.xs },
-
-  form: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm, marginTop: spacing.md },
-  field: { flex: 1 },
-  fieldLabel: { color: colors.textMuted, fontSize: 11, marginBottom: 2 },
-  fieldInput: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
+  warmupBadge: { backgroundColor: light.surface, borderColor: light.separator, borderWidth: 1 },
+  setNumber: { color: light.textSecondary, fontSize: 14, fontWeight: "600" },
+  warmupLabel: { color: light.text },
+  setWeight: {
+    width: 92,
+    textAlign: "right",
+    color: light.text,
     fontSize: 16,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
   },
+  setReps: {
+    width: 56,
+    color: light.text,
+    fontSize: 16,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+  },
+  setRir: {
+    flex: 1,
+    color: light.textSecondary,
+    fontSize: 14,
+    fontVariant: ["tabular-nums"],
+  },
+
+  // The set being corrected: grey well with the word "Editing", not colour alone.
+  setRowEditing: {
+    backgroundColor: light.background,
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 6,
+  },
+  editingHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
+  editingLabel: { color: light.text, fontSize: 14, fontWeight: "600" },
+  editActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginTop: 10,
+  },
+  editActionsRight: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
+  editAction: {
+    minHeight: MIN_TOUCH,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  editActionPrimary: { backgroundColor: light.primary },
+  editActionText: { color: light.textSecondary, fontSize: 15, fontWeight: "600" },
+  editActionDanger: { color: light.danger },
+  editActionPrimaryText: { color: light.onPrimary },
+
+  entryPanel: {
+    backgroundColor: light.background,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+  },
+  // Wraps instead of squeezing: on a narrow screen or with larger text the
+  // third field drops to a second line rather than being clipped.
+  entryRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: 8 },
+  entryField: { flexGrow: 1, flexBasis: 88, minWidth: 88 },
+  fieldLabel: {
+    color: light.textSecondary,
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  fieldInput: {
+    minHeight: 48,
+    backgroundColor: light.surface,
+    borderRadius: 10,
+    color: light.text,
+    fontSize: 18,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+    textAlign: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  entryActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginTop: 10,
+  },
+  plateCalculatorButton: {
+    alignSelf: "flex-start",
+    minHeight: MIN_TOUCH,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    marginTop: 6,
+    borderRadius: 22,
+    backgroundColor: light.surface,
+  },
+  plateCalculatorText: { color: light.text, fontSize: 14, fontWeight: "600" },
   warmupToggle: {
-    width: 42,
-    height: 42,
-    borderRadius: radius.sm,
-    borderColor: colors.border,
-    borderWidth: 1,
+    minHeight: MIN_TOUCH,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 8,
+    paddingRight: 8,
   },
-  warmupActive: { backgroundColor: colors.border },
-  warmupText: { color: colors.textMuted, fontWeight: "700" },
-  warmupTextActive: { color: colors.text },
+  warmupActive: {},
+  warmupText: { color: light.textSecondary, fontSize: 14 },
+  warmupTextActive: { color: light.text },
   addSet: {
-    width: 42,
-    height: 42,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
+    minHeight: 48,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
+    backgroundColor: light.primary,
+    borderRadius: 12,
+    paddingHorizontal: 20,
   },
+  addSetText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
 
   addExercise: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderStyle: "dashed",
+    gap: 6,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: light.surface,
   },
-  addExerciseText: { color: colors.accent, fontSize: 16, fontWeight: "600" },
-  hint: { color: colors.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.md },
+  addExerciseText: { color: light.text, fontSize: 16, fontWeight: "600" },
+  hint: {
+    color: light.textSecondary,
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 14,
+  },
 
   sheetAvoider: { flex: 1 },
   sheetBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: light.scrim,
   },
   sheet: {
     maxHeight: "80%",
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.md,
-    borderTopRightRadius: radius.md,
-    paddingTop: spacing.lg,
+    backgroundColor: light.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingTop: 24,
   },
   sheetScroll: { flexShrink: 1 },
-  sheetScrollContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
-  sheetTitle: { color: colors.text, fontSize: 18, fontWeight: "700", marginBottom: spacing.md },
+  sheetScrollContent: { paddingHorizontal: 24, paddingBottom: 8 },
+  sheetTitle: { color: light.text, fontSize: 20, fontWeight: "600", marginBottom: 16 },
   sheetInput: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
+    minHeight: 48,
+    backgroundColor: light.background,
+    borderRadius: 10,
+    color: light.text,
     fontSize: 16,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 16,
   },
   sheetLabel: {
-    color: colors.textMuted,
+    color: light.textSecondary,
     fontSize: 13,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: spacing.xs,
+    marginBottom: 6,
   },
   sheetRow: {
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: spacing.sm,
-    borderBottomColor: colors.border,
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomColor: light.separator,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  sheetRowText: { color: colors.text, fontSize: 16 },
-  sheetEmpty: { color: colors.textMuted, marginBottom: spacing.sm },
-  sheetLoading: { marginVertical: spacing.md },
+  sheetRowText: { flex: 1, color: light.text, fontSize: 16 },
+  sheetEmpty: { color: light.textSecondary, marginBottom: 8 },
+  sheetLoading: { marginVertical: 16 },
   sheetCreateProgram: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
+    minHeight: MIN_TOUCH,
+    justifyContent: "center",
+    backgroundColor: light.background,
+    borderRadius: 10,
+    paddingHorizontal: 12,
     alignItems: "center",
   },
-  sheetCreateProgramText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
+  sheetCreateProgramText: { color: light.text, fontSize: 15, fontWeight: "600" },
 
   modalActions: {
     flexDirection: "row",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 32,
   },
   modalButton: {
     flex: 1,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    minHeight: 52,
+    justifyContent: "center",
+    backgroundColor: light.primary,
+    borderRadius: 14,
+    padding: 14,
     alignItems: "center",
   },
-  modalButtonSecondary: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-  },
+  modalButtonSecondary: { backgroundColor: light.background },
   modalButtonDisabled: { opacity: 0.7 },
-  modalButtonText: { color: colors.accentText, fontSize: 16, fontWeight: "700" },
-  modalButtonSecondaryText: { color: colors.accent, fontSize: 16, fontWeight: "700" },
+  modalButtonText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
+  modalButtonSecondaryText: { color: light.text, fontSize: 16, fontWeight: "600" },
 });

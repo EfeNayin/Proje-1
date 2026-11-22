@@ -5,16 +5,17 @@
  * EXPO_PUBLIC_ is inlined at build time and readable from the client — fine
  * for a base URL, never for secrets.
  *
- * It must be the machine's LAN address (192.168.x.x), not localhost: on a
- * phone, localhost is the phone itself.
+ * For the iOS Simulator use http://localhost:8000: the development backend is
+ * published on 127.0.0.1 only (see README.md), so a physical phone, for which
+ * localhost is the phone itself, cannot reach it.
  */
 
 const url = process.env.EXPO_PUBLIC_API_URL;
 
 if (!url) {
   throw new Error(
-    "EXPO_PUBLIC_API_URL is not set. Copy .env.example to .env and put your " +
-      "machine's LAN IP in it, e.g. http://192.168.1.34:8000",
+    "EXPO_PUBLIC_API_URL is not set. Copy .env.example to .env " +
+      "(http://localhost:8000 for the iOS Simulator).",
   );
 }
 

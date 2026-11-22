@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from app.core.config import settings
+from app.core.dburl import engine_arguments
 from app.models import Base
 
 # this is the Alembic Config object, which provides
@@ -25,7 +26,8 @@ if config.config_file_name is not None:
 # ÜZERİNE YAZMA — yoksa testler her zaman .env'deki asıl veritabanına
 # migration uygulamaya çalışırdı.
 if not config.get_main_option("sqlalchemy.url"):
-    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    # "%%": ConfigParser would read a lone "%" (e.g. in a URL-encoded password) as interpolation.
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 # autogenerate için: Base.metadata modellerdeki tüm tabloları tutar.
 # app/models/__init__.py her modeli import ediyor, o yüzden buradaki tek
@@ -75,10 +77,15 @@ async def run_async_migrations() -> None:
 
     """
 
+    section = config.get_section(config.config_ini_section, {})
+    # ssl=verify-full becomes a real SSLContext (see app/core/dburl.py); other URLs pass through.
+    url, connect_args = engine_arguments(section["sqlalchemy.url"])
+    section["sqlalchemy.url"] = url.render_as_string(hide_password=False)
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:

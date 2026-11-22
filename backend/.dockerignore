@@ -1,0 +1,31 @@
+# What never goes into the build context of backend/ (and so never into an image).
+# The "production" stage also copies only an explicit list of paths; this is the second lock.
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.env
+*.pem
+*.key
+*.crt
+
+# Database dumps and local data (db/schema_v1.sql is the one SQL file the baseline migration reads)
+*.sql
+!db/schema_v1.sql
+*.dump
+*.backup
+*.sqlite*
+
+# Caches, tooling, VCS, test output
+.git
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+*.log

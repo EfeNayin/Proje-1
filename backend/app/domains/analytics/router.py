@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.domains.analytics import service
-from app.domains.analytics.schemas import WeeklyVolumeQuery, WeeklyVolumeResponse
+from app.domains.analytics.schemas import (
+    DiagnosisQuery,
+    DiagnosisResponse,
+    WeeklyVolumeQuery,
+    WeeklyVolumeResponse,
+)
 from app.domains.auth.dependencies import CurrentUser
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -31,3 +36,22 @@ async def weekly_volume(
     query: Annotated[WeeklyVolumeQuery, Query()],
 ) -> WeeklyVolumeResponse:
     return await service.weekly_volume(db, current_user, query)
+
+
+@router.get(
+    "/diagnosis",
+    response_model=DiagnosisResponse,
+    summary='"Why am I not growing" — ranked findings across volume, recovery, and weight trend',
+    description=(
+        "Findings are structured (code + data), not text: the client renders "
+        "the message so this endpoint does not need to change when translations "
+        "are added. Capped at a handful of findings — see the service module "
+        "for the ranking rule that keeps this from becoming a wall of text."
+    ),
+)
+async def diagnosis(
+    current_user: CurrentUser,
+    db: DbSession,
+    query: Annotated[DiagnosisQuery, Query()],
+) -> DiagnosisResponse:
+    return await service.diagnosis(db, current_user, query)

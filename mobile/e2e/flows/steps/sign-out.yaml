@@ -1,0 +1,12 @@
+# Signs the current account out through Profile and waits for the login screen.
+# Works from any tab; from a pushed screen, go back to the tab bar first.
+appId: host.exp.Exponent
+---
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "Sign out"
+    timeout: 15000
+- tapOn: "Sign out"
+- extendedWaitUntil:
+    visible: "Find your strength."
+    timeout: 15000

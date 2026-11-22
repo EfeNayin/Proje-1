@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.exceptions import UnauthorizedError
-from app.core.security import JWTError, decode_token, is_access_token
+from app.core.security import JWTError, credential_version_of, decode_token, is_access_token
 from app.models import User
 
 # auto_error=False so a missing header reaches our own handler and comes back
@@ -45,6 +45,10 @@ async def get_current_user(
     user = await db.get(User, user_id)
     if user is None:
         # Token is well-formed but the account is gone.
+        raise UnauthorizedError(_INVALID_TOKEN)
+
+    # The password was reset after this token was issued.
+    if credential_version_of(claims) != user.credential_version:
         raise UnauthorizedError(_INVALID_TOKEN)
 
     return user

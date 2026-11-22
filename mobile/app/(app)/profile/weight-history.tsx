@@ -23,7 +23,15 @@ import {
 
 import * as bodyApi from "../../../src/api/body";
 import type { BodyMeasurement, BodySummary } from "../../../src/api/body";
-import { colors, radius, spacing } from "../../../src/theme";
+import { useAuth } from "../../../src/auth/AuthContext";
+import { light } from "../../../src/lightTheme";
+import {
+  BODY_WEIGHT_MAX_KG,
+  BODY_WEIGHT_MIN_KG,
+  formatWeight,
+  parseWeightInput,
+  type WeightUnit,
+} from "../../../src/units/weight";
 
 function formatShortDate(iso: string): string {
   return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, {
@@ -41,88 +49,137 @@ function formatMonthYear(iso: string): string {
 
 /** null when there is nothing meaningful to show yet: no history, or a
  * single measurement with nothing to compare against. */
-function trendText(summary: BodySummary): string | null {
+function trendText(summary: BodySummary, unit: WeightUnit): string | null {
   if (summary.change_kg === null || summary.first_measured_on === null) return null;
-  const change = Number(summary.change_kg);
-  if (change === 0) return null;
-  const arrow = change > 0 ? "↗" : "↘";
-  return `${arrow} ${Math.abs(change)} kg — since ${formatMonthYear(summary.first_measured_on)}`;
+  const changeKg = Number(summary.change_kg);
+  if (changeKg === 0) return null;
+  const arrow = changeKg > 0 ? "↗" : "↘";
+  return `${arrow} ${formatWeight(Math.abs(changeKg), unit)} — since ${formatMonthYear(summary.first_measured_on)}`;
 }
 
 function AddWeightForm({
+  unit,
   onSubmit,
   onCancel,
   saving,
 }: {
-  onSubmit: (weight: number) => void;
+  unit: WeightUnit;
+  onSubmit: (weightKg: number) => void;
   onCancel: () => void;
   saving: boolean;
 }) {
   const [weight, setWeight] = useState("");
+  const [invalid, setInvalid] = useState(false);
 
   const submit = () => {
-    const parsed = Number(weight.replace(",", "."));
-    if (!Number.isFinite(parsed) || parsed < 20 || parsed > 400) return;
-    onSubmit(parsed);
+    if (saving) return; // a second tap or "done" while the first save runs must not send twice
+    const parsedKg = parseWeightInput(weight, unit);
+    if (parsedKg === null || parsedKg < BODY_WEIGHT_MIN_KG || parsedKg > BODY_WEIGHT_MAX_KG) {
+      setInvalid(true);
+      return;
+    }
+    setInvalid(false);
+    onSubmit(parsedKg);
   };
 
   return (
-    <View style={styles.addForm}>
-      <TextInput
-        style={styles.addInput}
-        value={weight}
-        onChangeText={setWeight}
-        placeholder="kg"
-        placeholderTextColor={colors.textMuted}
-        keyboardType="decimal-pad"
-        autoFocus
-        returnKeyType="done"
-        onSubmitEditing={submit}
-      />
-      <Pressable style={styles.addAction} onPress={onCancel} disabled={saving}>
-        <Ionicons name="close" size={20} color={colors.textMuted} />
-      </Pressable>
-      <Pressable style={styles.addAction} onPress={submit} disabled={saving}>
-        {saving ? (
-          <ActivityIndicator size="small" color={colors.accent} />
-        ) : (
-          <Ionicons name="checkmark" size={20} color={colors.accent} />
-        )}
-      </Pressable>
+    <View style={styles.addFormWrap}>
+      <View style={styles.addForm}>
+        <TextInput
+          style={styles.addInput}
+          value={weight}
+          onChangeText={setWeight}
+          placeholder={unit}
+          placeholderTextColor={light.textSecondary}
+          accessibilityLabel={`Weight in ${unit}`}
+          keyboardType="decimal-pad"
+          autoFocus
+          returnKeyType="done"
+          onSubmitEditing={submit}
+        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+          style={styles.addAction}
+          onPress={onCancel}
+          disabled={saving}
+        >
+          <Ionicons name="close" size={22} color={light.textSecondary} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Save weight"
+          accessibilityState={{ busy: saving, disabled: saving }}
+          style={styles.addAction}
+          onPress={submit}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color={light.text} />
+          ) : (
+            <Ionicons name="checkmark" size={22} color={light.text} />
+          )}
+        </Pressable>
+      </View>
+      {invalid ? (
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.addInvalid}>
+          {`Enter a weight between ${formatWeight(BODY_WEIGHT_MIN_KG, unit)} and ${formatWeight(BODY_WEIGHT_MAX_KG, unit)}.`}
+        </Text>
+      ) : null}
     </View>
   );
 }
 
 function MeasurementRow({
   measurement,
+  unit,
   onDelete,
 }: {
   measurement: BodyMeasurement;
+  unit: WeightUnit;
   onDelete: (id: number) => void;
 }) {
+  const confirmDelete = () =>
+    Alert.alert("Delete this entry?", undefined, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => onDelete(measurement.id) },
+    ]);
+  const date = formatShortDate(measurement.measured_on);
+  const weight = formatWeight(Number(measurement.weight_kg), unit);
+
+  // Delete stays a press-and-hold with the same confirmation; screen readers
+  // get the same confirmation as a named action.
   return (
     <Pressable
-      style={styles.historyRow}
-      onLongPress={() =>
-        Alert.alert("Delete this entry?", undefined, [
-          { text: "Cancel", style: "cancel" },
-          { text: "Delete", style: "destructive", onPress: () => onDelete(measurement.id) },
-        ])
-      }
+      accessible
+      accessibilityLabel={`${date}, ${weight}`}
+      accessibilityHint="Press and hold to delete this entry"
+      accessibilityActions={[{ name: "delete", label: "Delete entry" }]}
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "delete") confirmDelete();
+      }}
+      style={({ pressed }) => [styles.historyRow, pressed && styles.pressed]}
+      onLongPress={confirmDelete}
     >
-      <Text style={styles.historyDate}>{formatShortDate(measurement.measured_on)}</Text>
-      <Text style={styles.historyWeight}>{measurement.weight_kg} kg</Text>
+      <Text style={styles.historyDate}>{date}</Text>
+      <Text style={styles.historyWeight}>{weight}</Text>
     </Pressable>
   );
 }
 
 export default function WeightHistoryScreen() {
+  const { user } = useAuth();
+  const unit: WeightUnit = user?.weight_unit ?? "kg";
   const [summary, setSummary] = useState<BodySummary | null>(null);
   const [history, setHistory] = useState<BodyMeasurement[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingWeight, setAddingWeight] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Whether any load has succeeded, and why the latest focus load failed: an
+  // empty list after a failed load is "could not load", not "no measurements".
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [summaryResult, historyResult] = await Promise.all([
@@ -131,24 +188,28 @@ export default function WeightHistoryScreen() {
     ]);
     setSummary(summaryResult);
     setHistory(historyResult.items);
+    setHasLoaded(true);
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-      setLoading(true);
-      load()
-        .catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Could not load history");
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }, [load]),
-  );
+  const loadOnFocus = useCallback(() => {
+    let cancelled = false;
+    setLoading(true);
+    load()
+      .then(() => {
+        if (!cancelled) setLoadError(null);
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Could not load history");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  useFocusEffect(loadOnFocus);
 
   const handleAddWeight = async (weight: number) => {
     setSaving(true);
@@ -173,41 +234,87 @@ export default function WeightHistoryScreen() {
     }
   };
 
-  if (loading) {
+  if (loading && !hasLoaded) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator color={colors.accent} />
+        <ActivityIndicator color={light.textSecondary} />
       </View>
     );
   }
 
-  const trend = summary ? trendText(summary) : null;
+  if (!hasLoaded) {
+    return (
+      <View style={styles.centered}>
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.loadError}>
+          {`Could not load your weight history. ${loadError ?? ""}`.trim()}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Try loading your weight history again"
+          style={({ pressed }) => [styles.logButton, styles.retryButton, pressed && styles.logButtonPressed]}
+          onPress={() => void loadOnFocus()}
+        >
+          <Text style={styles.logButtonText}>Try again</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const trend = summary ? trendText(summary, unit) : null;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      {loadError ? (
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
+          {`Could not refresh. Showing the last loaded entries. ${loadError}`}
+        </Text>
+      ) : null}
       <View style={styles.header}>
         {summary?.last_measured_on ? (
           <Text style={styles.lastWeighIn}>
             Last weigh-in: {formatShortDate(summary.last_measured_on)}
           </Text>
         ) : null}
-        <Text style={styles.currentWeight}>
-          {summary?.current_weight_kg ? `${summary.current_weight_kg} kg` : "—"}
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          accessibilityLabel={
+            summary?.current_weight_kg
+              ? `Current weight ${formatWeight(Number(summary.current_weight_kg), unit)}`
+              : "No current weight"
+          }
+          style={styles.currentWeight}
+        >
+          {summary?.current_weight_kg ? formatWeight(Number(summary.current_weight_kg), unit) : "—"}
         </Text>
         {trend ? <Text style={styles.trend}>{trend}</Text> : null}
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
 
       {addingWeight ? (
         <AddWeightForm
-          onSubmit={(weight) => void handleAddWeight(weight)}
+          unit={unit}
+          onSubmit={(weightKg) => void handleAddWeight(weightKg)}
           onCancel={() => setAddingWeight(false)}
           saving={saving}
         />
       ) : (
-        <Pressable style={styles.logButton} onPress={() => setAddingWeight(true)}>
-          <Ionicons name="add" size={18} color={colors.accentText} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Log weight"
+          style={({ pressed }) => [styles.logButton, pressed && styles.logButtonPressed]}
+          onPress={() => setAddingWeight(true)}
+        >
+          <Ionicons name="add" size={18} color={light.onPrimary} />
           <Text style={styles.logButtonText}>Log weight</Text>
         </Pressable>
       )}
@@ -221,83 +328,108 @@ export default function WeightHistoryScreen() {
               key={measurement.id}
               style={index === history.length - 1 ? undefined : styles.historyRowWrap}
             >
-              <MeasurementRow measurement={measurement} onDelete={(id) => void handleDelete(id)} />
+              <MeasurementRow
+                measurement={measurement}
+                unit={unit}
+                onDelete={(id) => void handleDelete(id)}
+              />
             </View>
           ))
         )}
       </View>
+      {history.length > 0 ? (
+        <Text style={styles.deleteHint}>Press and hold an entry to delete it.</Text>
+      ) : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: spacing.xl },
+  screen: { flex: 1, backgroundColor: light.background },
+  content: { padding: 16, paddingBottom: 32 },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
+    padding: 16,
+    backgroundColor: light.background,
+  },
+  pressed: { backgroundColor: light.pressed },
+
+  header: { alignItems: "center", marginBottom: 24 },
+  lastWeighIn: { color: light.textSecondary, fontSize: 13 },
+  currentWeight: {
+    color: light.text,
+    fontSize: 40,
+    fontWeight: "700",
+    marginTop: 4,
+    maxWidth: "100%",
+  },
+  trend: { color: light.textSecondary, fontSize: 14, marginTop: 4, textAlign: "center" },
+
+  error: { color: light.danger, fontSize: 14, lineHeight: 20, marginBottom: 16, textAlign: "center" },
+  loadError: {
+    color: light.danger,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    marginBottom: 16,
   },
 
-  header: { alignItems: "center", marginBottom: spacing.lg },
-  lastWeighIn: { color: colors.textMuted, fontSize: 13 },
-  currentWeight: { color: colors.text, fontSize: 40, fontWeight: "800", marginTop: spacing.xs },
-  trend: { color: colors.accent, fontSize: 14, fontWeight: "600", marginTop: spacing.xs },
-
-  error: { color: colors.danger, marginBottom: spacing.md, textAlign: "center" },
-
   logButton: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
+    gap: 6,
+    backgroundColor: light.primary,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    marginBottom: 24,
   },
-  logButtonText: { color: colors.accentText, fontSize: 15, fontWeight: "700" },
+  logButtonPressed: { backgroundColor: light.primaryPressed },
+  retryButton: { alignSelf: "stretch", marginBottom: 0 },
+  logButtonText: { color: light.onPrimary, fontSize: 16, fontWeight: "600" },
 
+  addFormWrap: { marginBottom: 24 },
   addForm: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
+    gap: 4,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    padding: 8,
   },
   addInput: {
     flex: 1,
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    color: colors.text,
+    minHeight: 44,
+    backgroundColor: light.background,
+    borderRadius: 10,
+    color: light.text,
     fontSize: 16,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  addAction: { paddingHorizontal: spacing.xs },
+  addAction: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  addInvalid: { color: light.danger, fontSize: 13, lineHeight: 18, marginTop: 8, marginLeft: 4 },
 
   card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    overflow: "hidden",
   },
-  empty: { color: colors.textMuted, fontSize: 14, textAlign: "center", paddingVertical: spacing.lg },
-  historyRowWrap: { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth },
+  empty: { color: light.textSecondary, fontSize: 14, textAlign: "center", paddingVertical: 24 },
+  historyRowWrap: { borderBottomColor: light.separator, borderBottomWidth: StyleSheet.hairlineWidth },
   historyRow: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: spacing.md,
+    columnGap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  historyDate: { color: colors.textMuted, fontSize: 14 },
-  historyWeight: { color: colors.text, fontSize: 15, fontWeight: "600" },
+  historyDate: { color: light.textSecondary, fontSize: 15 },
+  historyWeight: { color: light.text, fontSize: 16, fontWeight: "600" },
+  deleteHint: { color: light.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 12, marginLeft: 4 },
 });

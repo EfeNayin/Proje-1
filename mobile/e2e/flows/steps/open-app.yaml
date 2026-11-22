@@ -1,0 +1,39 @@
+# Opens the app in Expo Go from the Metro URL and dismisses Expo Go's one-time developer
+# menu introduction (it covers the app on a fresh install). Ends on the login screen.
+appId: host.exp.Exponent
+---
+- launchApp
+- openLink: ${METRO_URL}
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- extendedWaitUntil:
+    visible: "Find your strength."
+    timeout: 180000
+- extendedWaitUntil:
+    visible: "Continue"
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - extendedWaitUntil:
+          visible: "Reload"
+          timeout: 10000
+      - tapOn: "Close"
+      - tapOn: "Gear Shape, Filled"
+      - extendedWaitUntil:
+          visible: "Reload"
+          timeout: 10000
+      - scrollUntilVisible:
+          element: "Tools button"
+          timeout: 15000
+      - tapOn:
+          text: "1"
+          rightOf: "Tools button"
+          index: 1
+      - tapOn: "Close"

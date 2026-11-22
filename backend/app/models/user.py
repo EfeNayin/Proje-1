@@ -59,12 +59,22 @@ class User(Base):
     email: Mapped[str] = mapped_column(CITEXT, nullable=False, unique=True)
     username: Mapped[str] = mapped_column(CITEXT, nullable=False, unique=True)
 
-    # bcrypt hash. The plaintext password is never stored.
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # bcrypt hash. The plaintext password is never stored. NULL for an account created with
+    # Google or Apple: it has no password (not a dummy one), so password sign-in, password
+    # recovery and password-confirmed deletion all treat it as "no password" (see
+    # has_password and app/domains/auth/social.py). Every account made before social
+    # sign-in existed has a hash.
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     first_name: Mapped[str | None] = mapped_column(Text)
     last_name: Mapped[str | None] = mapped_column(Text)
     bio: Mapped[str | None] = mapped_column(Text)
+
+    # Optional contact information the owner typed, E.164 ("+905321234567"). UNVERIFIED:
+    # nothing sends to it, signs in with it or recovers with it, it is not unique (two
+    # accounts may share a family phone) and it is never shown to anyone but the owner.
+    # Nullable so every existing account and every older client stays valid.
+    phone_number: Mapped[str | None] = mapped_column(Text)
 
     # Privacy defaults to private: social features are opt-in.
     is_private: Mapped[bool] = mapped_column(
@@ -113,6 +123,23 @@ class User(Base):
     carb_goal_g: Mapped[int | None] = mapped_column(SmallInteger)
     fat_goal_g: Mapped[int | None] = mapped_column(SmallInteger)
 
+    # Opt-in switch for the coach tools. It adds capabilities to the account
+    # (invite athletes, see who is connected) and takes none away, so a coach
+    # keeps every personal-training feature. It grants no access to anyone
+    # else's data by itself: that needs an accepted coach_athlete_links row.
+    coach_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
+    # Bumped whenever the credentials change (a completed password recovery). Every
+    # token carries the value it was issued under and is refused once it differs, so a
+    # reset ends access tokens as well as refresh sessions, with no clock comparison
+    # to get wrong at a boundary. Tokens issued before the column existed carry no
+    # value and count as 0, which is every existing account's value until its first reset.
+    credential_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+
     created_at: Mapped[created_at]
     updated_at: Mapped[updated_at]
 
@@ -145,6 +172,9 @@ class User(Base):
         CheckConstraint(
             "nutrition_goal IN ('cut','maintain','bulk')", name="users_nutrition_goal_check"
         ),
+        CheckConstraint(
+            "phone_number ~ '^\\+[1-9][0-9]{7,14}$'", name="users_phone_number_check"
+        ),
         CheckConstraint("calorie_goal BETWEEN 800 AND 8000", name="users_calorie_goal_check"),
         CheckConstraint(
             "protein_goal_g BETWEEN 0 AND 500", name="users_protein_goal_g_check"
@@ -152,6 +182,10 @@ class User(Base):
         CheckConstraint("carb_goal_g BETWEEN 0 AND 1000", name="users_carb_goal_g_check"),
         CheckConstraint("fat_goal_g BETWEEN 0 AND 400", name="users_fat_goal_g_check"),
     )
+
+    @property
+    def has_password(self) -> bool:
+        return self.password_hash is not None
 
     def __repr__(self) -> str:
         return f"<User {self.username}>"
@@ -180,6 +214,15 @@ class RefreshToken(Base):
 
     token_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
 
+    # The session this token belongs to: one sign-in starts a family and every
+    # rotation hands it on to the successor. Logout ends a family, not one row.
+    family_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        nullable=False,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     # NULL means the token is still valid.
@@ -193,7 +236,10 @@ class RefreshToken(Base):
     # schema_v1.sql. Using index=True on the column instead would make
     # SQLAlchemy invent its own name (ix_refresh_tokens_user_id) and Alembic
     # would then try to drop the real index and create a duplicate.
-    __table_args__ = (Index("idx_refresh_tokens_user_id", "user_id"),)
+    __table_args__ = (
+        Index("idx_refresh_tokens_user_id", "user_id"),
+        Index("idx_refresh_tokens_family_id", "family_id"),
+    )
 
     def __repr__(self) -> str:
         state = "revoked" if self.revoked_at else "active"

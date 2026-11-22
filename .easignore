@@ -1,0 +1,70 @@
+# What `eas build` leaves out of the project archive (EAS reads this file only from the Git
+# repository root, and when it exists it REPLACES every .gitignore: the existing rules are
+# therefore repeated here, unchanged, before the build-specific exclusions).
+# Verify the result with: eas build:inspect --platform ios --stage archive (see README.md).
+
+# ── repeated from the root .gitignore ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.env
+*.env
+!.env.example
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+node_modules/
+*.log
+*.dump
+*.backup
+*.sql.gz
+TASK_*.md
+
+# ── repeated from mobile/.gitignore ──
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.pem
+.env*.local
+*.tsbuildinfo
+app-example
+
+# ── not needed to build the app, and never meant to leave this machine ──
+# Backend source, migrations, the schema file and deployment descriptors: the app never
+# reads them, and no database or Redis address, key or dump belongs in a mobile build.
+/backend/
+/render.yaml
+/docker-compose.yml
+# Every kind of env file (the .env.example files carry no value, but nothing needs them).
+.env.*
+# Test tooling and its evidence.
+/mobile/e2e/
+/mobile/tests/
+# Project notes and agent instruction files.
+/*.md
+/*.txt
+# Agent configuration and the repository history (a shallow clone still carries every
+# committed file's objects, including the excluded backend source and notes).
+.claude/
+.git

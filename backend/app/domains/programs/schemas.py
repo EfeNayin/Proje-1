@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.domains.coaching.schemas import PersonSummary
+
 
 class TemplateExerciseCreate(BaseModel):
     """One exercise's targets within a template.
@@ -69,6 +71,12 @@ class WorkoutTemplateCreate(BaseModel):
     notes: str | None = Field(default=None, max_length=1000)
 
 
+class WorkoutTemplateWithExercisesCreate(WorkoutTemplateCreate):
+    """Create the template and all targets in one transaction."""
+
+    exercises: list[TemplateExerciseCreate] = Field(max_length=50)
+
+
 class WorkoutTemplateUpdate(BaseModel):
     """Partial update. Omitted fields keep their value."""
 
@@ -107,9 +115,27 @@ class ProgramSummary(BaseModel):
     is_active: bool
 
 
+class PreparedFor(BaseModel):
+    """Set while a program is a coach's preparation for one connected athlete."""
+
+    link_id: UUID
+    lineage_id: UUID
+    athlete: PersonSummary
+
+
+class WorkoutTemplateDetail(WorkoutTemplateRead):
+    """A template as the editor loads it. Only this read says whose preparation it belongs to;
+    the snapshot a started workout stores is the plain WorkoutTemplateRead."""
+
+    prepared_for: PreparedFor | None = None
+
+
 class ProgramDetail(ProgramSummary):
     notes: str | None
     templates: list[WorkoutTemplateRead]
+    # None for an ordinary program. While set, the program can be edited here but
+    # cannot be activated or deleted; it is published from Program management.
+    prepared_for: PreparedFor | None = None
 
 
 class TemplateStart(BaseModel):
@@ -118,7 +144,7 @@ class TemplateStart(BaseModel):
     No sets are created — only an empty workout linked to the template.
     Targets are returned too so the client can prefill goals on the spot;
     on resume (app reopened mid-session) the client re-fetches them via
-    GET /templates/{id} instead of relying on this one-time response.
+    the workout's saved template_snapshot instead of today's mutable template.
     """
 
     workout_id: UUID

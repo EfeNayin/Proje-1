@@ -16,14 +16,29 @@ class AppError(Exception):
     status_code: int = 500
     default_detail: str = "Beklenmeyen bir hata oluştu"
 
-    def __init__(self, detail: str | None = None) -> None:
+    @property
+    def headers(self) -> dict[str, str] | None:
+        """Extra response headers (e.g. Retry-After); most errors have none."""
+        return None
+
+    def __init__(self, detail: str | None = None, *, code: str | None = None) -> None:
         self.detail = detail or self.default_detail
+        # A stable identifier clients can branch on (the text may change). Optional: most
+        # errors have none and are told apart by status alone.
+        self.code = code
         super().__init__(self.detail)
 
 
 class NotFoundError(AppError):
     status_code = 404
     default_detail = "Kaynak bulunamadı"
+
+
+class BadRequestError(AppError):
+    """The request is well-formed but cannot be honoured as asked (e.g. a spent code)."""
+
+    status_code = 400
+    default_detail = "Bad request"
 
 
 class UnauthorizedError(AppError):
@@ -52,3 +67,49 @@ class ValidationAppError(AppError):
 
     status_code = 422
     default_detail = "Geçersiz veri"
+
+
+class GoneError(AppError):
+    """The resource existed but is no longer usable (e.g. an expired invite)."""
+
+    status_code = 410
+    default_detail = "Kaynak artık geçerli değil"
+
+
+class RateLimitedError(AppError):
+    """Too many attempts. `retry_after` (whole seconds) becomes the Retry-After header."""
+
+    status_code = 429
+    default_detail = "Too many attempts. Try again later."
+
+    def __init__(self, detail: str | None = None, retry_after: int | None = None) -> None:
+        super().__init__(detail)
+        self.retry_after = retry_after
+
+    @property
+    def headers(self) -> dict[str, str] | None:
+        return None if self.retry_after is None else {"Retry-After": str(self.retry_after)}
+
+
+class ServiceUnavailableError(AppError):
+    """A dependency the request needs is temporarily unusable; the caller may retry later."""
+
+    status_code = 503
+    default_detail = "The service is temporarily unavailable. Try again in a moment."
+
+    def __init__(
+        self, detail: str | None = None, retry_after: int | None = None, *, code: str | None = None
+    ) -> None:
+        super().__init__(detail, code=code)
+        self.retry_after = retry_after
+
+    @property
+    def headers(self) -> dict[str, str] | None:
+        return None if self.retry_after is None else {"Retry-After": str(self.retry_after)}
+
+
+class PreconditionFailedError(AppError):
+    """The caller acted on a version of the resource that has since changed."""
+
+    status_code = 412
+    default_detail = "The resource changed since you last looked at it."

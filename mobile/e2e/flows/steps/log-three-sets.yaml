@@ -1,0 +1,42 @@
+# On a workout screen whose Barbell Bench Press block is on screen, logs three working sets of
+# 60 kg x 10 through the keyboard and waits for each to appear. The keyboard stays open after a
+# save, so Log set is tapped with it open every time.
+appId: host.exp.Exponent
+---
+- extendedWaitUntil:
+    visible: "Log set"
+    timeout: 15000
+- tapOn:
+    id: "set-weight-input"
+- inputText: "60"
+- tapOn:
+    id: "set-reps-input"
+- inputText: "10"
+- waitForAnimationToEnd
+- tapOn: "Log set"
+- extendedWaitUntil:
+    visible: "Set 1, 60.* for 10 reps.*"
+    timeout: 15000
+- tapOn:
+    id: "set-weight-input"
+- inputText: "60"
+- tapOn:
+    id: "set-reps-input"
+- inputText: "10"
+- waitForAnimationToEnd
+- tapOn: "Log set"
+- extendedWaitUntil:
+    visible: "Set 2, 60.* for 10 reps.*"
+    timeout: 15000
+- tapOn:
+    id: "set-weight-input"
+- inputText: "60"
+- tapOn:
+    id: "set-reps-input"
+- inputText: "10"
+- waitForAnimationToEnd
+- tapOn: "Log set"
+- extendedWaitUntil:
+    visible: "Set 3, 60.* for 10 reps.*"
+    timeout: 15000
+- assertVisible: "3 working sets"

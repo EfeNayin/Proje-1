@@ -4,7 +4,9 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+
+from app.domains.programs.schemas import WorkoutTemplateRead
 
 
 class SetCreate(BaseModel):
@@ -96,18 +98,45 @@ class WorkoutSummary(BaseModel):
     total_sets: int
     is_private: bool
     # Which template this session was started from, if any. Free logging
-    # (no template) leaves this null; the client uses it to decide whether
-    # to fetch and display target goals alongside logged sets.
+    # (no template) leaves this null. Goals come from the detail snapshot,
+    # never from a fresh read of this mutable template.
     template_id: UUID | None
     # When the session was finished. NULL = still in progress; the client
     # uses this (not a device-local flag) to decide whether to open a
     # session read-only.
     finished_at: datetime | None
+    finished_automatically: bool | None
 
 
 class WorkoutDetail(WorkoutSummary):
     notes: str | None
     sets: list[SetRead]
+    template_snapshot: WorkoutTemplateRead | None = None
+
+
+class PreviousExerciseSession(BaseModel):
+    """The most recent earlier closed session with working sets of this exercise."""
+
+    workout_id: UUID
+    title: str | None
+    performed_at: datetime
+    finished_automatically: bool | None
+    sets: list[SetRead]
+
+
+class ExerciseHistoryCursor(BaseModel):
+    performed_at: AwareDatetime
+    workout_id: UUID
+
+
+class ExerciseHistoryQuery(BaseModel):
+    limit: int = Field(default=10, ge=1, le=50)
+    cursor: str | None = Field(default=None, min_length=1, max_length=512)
+
+
+class ExerciseHistoryResponse(BaseModel):
+    items: list[PreviousExerciseSession]
+    next_cursor: str | None
 
 
 class WorkoutListResponse(BaseModel):

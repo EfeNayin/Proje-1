@@ -28,6 +28,11 @@ Thumbs.db
 node_modules/
 *.log
 
+# ── Veritabanı dökümleri (asla commit'lenmez) ──
+*.dump
+*.backup
+*.sql.gz
+
 # ── Docker ──
 # (named volume kullanıyoruz; yerel veri klasörü tutmuyoruz)
 

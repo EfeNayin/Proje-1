@@ -3,20 +3,35 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
+    "test:lifecycle": "node --test tests/lifecycle.test.cjs",
+    "test:weight-unit": "node --test tests/weight-unit.test.cjs",
+    "test:resolve-active-workout": "node --test tests/resolve-active-workout.test.cjs",
+    "typecheck": "tsc --noEmit",
+    "test:diagnosis-requests": "node --test tests/diagnosis-requests.test.cjs",
+    "test:diagnosis": "node --test tests/diagnosis.test.cjs",
+    "test:history": "node --test tests/history.test.cjs",
+    "test:research-feed": "node --test tests/research-feed.test.cjs",
+    "test:research-navigation": "node --test tests/research-navigation.test.cjs",
+    "test:session": "node --test tests/session.test.cjs",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "update:check": "node scripts/check-staging-update.cjs",
+    "update:staging": "node scripts/check-staging-update.cjs --target-build && npx eas-cli@latest update --platform ios --channel testflight-staging --environment production"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
+    "@react-native-google-signin/google-signin": "^17.0.0",
     "@react-navigation/bottom-tabs": "^7.18.16",
     "@react-navigation/elements": "^2.9.38",
     "@react-navigation/native": "^7.3.16",
     "expo": "~57.0.20",
+    "expo-apple-authentication": "~57.0.2",
     "expo-constants": "~57.0.17",
+    "expo-crypto": "~57.0.2",
     "expo-font": "~57.0.3",
     "expo-haptics": "~57.0.2",
     "expo-image": "~57.0.4",
@@ -29,6 +44,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.2",
     "expo-system-ui": "~57.0.3",
+    "expo-updates": "~57.0.27",
     "expo-web-browser": "~57.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -42,9 +58,9 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.18",
-    "typescript": "~6.0.3",
     "eslint": "^9.25.0",
-    "eslint-config-expo": "~57.0.2"
+    "eslint-config-expo": "~57.0.2",
+    "typescript": "~6.0.3"
   },
   "private": true
 }

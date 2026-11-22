@@ -7,6 +7,7 @@
  */
 
 import { apiRequest } from "./client";
+import type { WorkoutTemplate } from "./programs";
 
 export type LoggedSet = {
   id: number;
@@ -31,11 +32,15 @@ export type WorkoutSummary = {
   template_id: string | null;
   /** When the session was finished. Null means it is still in progress. */
   finished_at: string | null;
+  /** null means the closure source was not recorded (legacy history). */
+  finished_automatically: boolean | null;
 };
 
 export type WorkoutDetail = WorkoutSummary & {
   notes: string | null;
   sets: LoggedSet[];
+  /** Absent on older servers; null for workouts with no captured starting plan. */
+  template_snapshot?: WorkoutTemplate | null;
 };
 
 export type WorkoutList = {
@@ -44,6 +49,36 @@ export type WorkoutList = {
   limit: number;
   offset: number;
 };
+
+export type PreviousExerciseSession = {
+  workout_id: string;
+  title: string | null;
+  performed_at: string;
+  finished_automatically: boolean | null;
+  sets: LoggedSet[];
+};
+
+export function getPreviousExerciseSession(
+  workoutId: string, exerciseId: string,
+): Promise<PreviousExerciseSession | null> {
+  return apiRequest<PreviousExerciseSession | null>(
+    `/workouts/${workoutId}/exercises/${exerciseId}/previous`,
+  );
+}
+
+export type ExerciseHistoryPage = {
+  items: PreviousExerciseSession[];
+  next_cursor: string | null;
+};
+
+export function getExerciseHistory(
+  workoutId: string, exerciseId: string, cursor: string | null = null,
+): Promise<ExerciseHistoryPage> {
+  const query = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+  return apiRequest<ExerciseHistoryPage>(
+    `/workouts/${workoutId}/exercises/${exerciseId}/history?limit=10${query}`,
+  );
+}
 
 export type NewSet = {
   exercise_id: string;
@@ -102,6 +137,12 @@ export function addSet(workoutId: string, set: NewSet): Promise<WorkoutDetail> {
   });
 }
 
+export function saveSetRequest(workoutId: string, requestId: string, set: NewSet): Promise<WorkoutDetail> {
+  return apiRequest<WorkoutDetail>(`/workouts/${workoutId}/sets/requests/${requestId}`, {
+    method: "PUT", body: set,
+  });
+}
+
 /**
  * Correct a logged set.
  *
@@ -115,9 +156,12 @@ export function updateSet(
   setId: number,
   changes: { weight_kg?: number; reps?: number; rir?: number | null; is_warmup?: boolean },
 ): Promise<WorkoutDetail> {
+  const body = changes.weight_kg === undefined ? changes : {
+    ...changes, weight_kg: Math.round(changes.weight_kg * 100) / 100,
+  };
   return apiRequest<WorkoutDetail>(`/workouts/${workoutId}/sets/${setId}`, {
     method: "PATCH",
-    body: changes,
+    body,
   });
 }
 

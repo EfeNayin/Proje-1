@@ -1,0 +1,12 @@
+Google Sans Medium (static), used for the "Sign in with Google" button label only.
+
+Source:   https://github.com/googlefonts/googlesans/releases/tag/v14.000  (Google Sans v14.000, 2026-06-10)
+Asset:    GoogleSans-v14.000.zip, sha256 d338f0e74f5eabead86a85b87edf4cc50cd6561196dbe173d1db4139e95b3ca7
+File:     build/GoogleSans/static/GoogleSans-Medium.ttf, unmodified
+          (family "Google Sans Medium", PostScript name GoogleSans-Medium, sha256 1c87b72912ef81b48ab4852976f3d5bf75c7205e0a58a97ffca947d171c722a7)
+License:  SIL Open Font License 1.1, OFL.txt next to this file. The release zip has no license file;
+          OFL.txt is the one in the repository at the release commit 5c8f512c5fb42a7be099b951a7c097f96209c78e,
+          unmodified (its header names the Google Sans Flex project; the font's own copyright
+          field reads "Copyright 2025 The Google Sans Project Authors").
+Why:      Google's branding guidelines set the Sign in with Google label in Google Sans Medium 14/20.
+          https://developers.google.com/identity/branding-guidelines

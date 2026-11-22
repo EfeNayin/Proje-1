@@ -1,0 +1,129 @@
+# Isolated local stack that runs the PRODUCTION image the way a hosted staging does:
+# ENVIRONMENT=staging, TLS to PostgreSQL (verify-full) and to Redis (hostname checked),
+# mail through an HTTPS stand-in for Resend, Render's PORT (10000), no reload, no bind mounts.
+# Throw-away certificates and secrets are generated per run by run.sh, outside the repository.
+# It shares nothing with the development compose project or the E2E stack.
+#
+# This is a LOCAL compatibility rehearsal. It does not contact Render, Neon, Upstash or
+# Resend, and passing it does not verify a hosted deployment (README.md, "Staging'e dağıtım").
+name: bodytrack-staging-local
+
+x-labels: &labels
+  com.bodytrack.staging-local.run: ${STAGING_RUN_ID:?run id missing}
+
+services:
+  certs:
+    build: { context: ../.., target: base }
+    labels: *labels
+    user: root
+    volumes: [certs:/certs]
+    command:
+      - sh
+      - -c
+      # Idempotent: starting db or redis again (verify.py does, to simulate an outage) must
+      # not mint a new CA under a running backend that already trusts the first one.
+      - >-
+        [ -f /certs/server.crt ] || (
+        python -m tests.support.tls /certs db redis resend localhost &&
+        chown 999:999 /certs/server.key && chmod 600 /certs/server.key &&
+        chmod 644 /certs/ca.crt /certs/server.crt )
+
+  db:
+    image: postgres:16
+    labels: *labels
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:?}
+      POSTGRES_DB: bodytrack_staging
+      POSTGRES_INITDB_ARGS: "--locale=C.UTF-8"
+    command: >-
+      postgres -c ssl=on -c ssl_cert_file=/certs/server.crt -c ssl_key_file=/certs/server.key
+    volumes: [certs:/certs:ro]
+    depends_on: { certs: { condition: service_completed_successfully } }
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d bodytrack_staging"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    labels: *labels
+    command:
+      - redis-server
+      - --port
+      - "0"
+      - --tls-port
+      - "6379"
+      - --tls-cert-file
+      - /certs/server.crt
+      - --tls-key-file
+      - /certs/server.key
+      - --tls-ca-cert-file
+      - /certs/ca.crt
+      - --tls-auth-clients
+      - "no"
+      - --requirepass
+      - ${STAGING_REDIS_PASSWORD:?}
+    volumes: [certs:/certs:ro]
+    depends_on: { certs: { condition: service_completed_successfully } }
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --tls --cacert /certs/ca.crt -a \"$$REDISCLI_AUTH\" ping | grep -q PONG"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    environment:
+      REDISCLI_AUTH: ${STAGING_REDIS_PASSWORD:?}
+
+  # Stand-in for api.resend.com (tests/support/resend_stub.py): TLS, scripted answers.
+  resend:
+    build: { context: ../.., target: base }
+    labels: *labels
+    command:
+      - python
+      - -m
+      - tests.support.resend_stub
+      - --port
+      - "8443"
+      - --cert
+      - /certs/server.crt
+      - --key
+      - /certs/server.key
+      - --api-key
+      - ${STAGING_RESEND_KEY:?}
+    volumes: [certs:/certs:ro]
+    depends_on: { certs: { condition: service_completed_successfully } }
+    ports: ["127.0.0.1:${STAGING_STUB_PORT:-8243}:8443"]
+
+  backend:
+    build: { context: ../.., target: production }
+    image: bodytrack-staging-local-backend
+    labels: *labels
+    environment:
+      ENVIRONMENT: staging
+      PORT: "10000"  # what Render assigns by default
+      DATABASE_URL: postgresql+asyncpg://app:${STAGING_DB_PASSWORD}@db:5432/bodytrack_staging?ssl=verify-full
+      REDIS_URL: rediss://default:${STAGING_REDIS_PASSWORD}@redis:6379/0
+      JWT_SECRET_KEY: ${STAGING_JWT_SECRET:?}
+      MAIL_TRANSPORT: resend
+      RESEND_API_KEY: ${STAGING_RESEND_KEY}
+      RESEND_API_URL: https://resend:8443/emails
+      MAIL_FROM: "BodyTrack Staging <no-reply@mail.example.test>"
+      # The stand-ins' certificates come from a throw-away CA that only this stack trusts.
+      SSL_CERT_FILE: /certs/ca.crt
+      PASSWORD_WORK_WORKERS: "2"
+      PASSWORD_WORK_MAX_QUEUED: "16"
+      DB_POOL_SIZE: "3"
+      DB_MAX_OVERFLOW: "2"
+      DB_POOL_RECYCLE_SECONDS: "1800"
+      NCBI_API_KEY: ""
+      NCBI_EMAIL: ""
+    volumes: [certs:/certs:ro]
+    ports: ["127.0.0.1:${STAGING_API_PORT:-8200}:10000"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      resend: { condition: service_started }
+
+volumes:
+  certs:

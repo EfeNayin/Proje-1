@@ -1,0 +1,426 @@
+# Coach–athlete permission and feedback journey on one simulator, accounts taking turns:
+# invite → accept → sharing off by default → athlete enables sharing → coach reads a
+# completed workout and writes feedback on it → athlete reads it → coach edits it → athlete
+# reads the edit → athlete disables sharing (still sees the feedback) → coach's access is
+# gone → coach ends the connection → athlete still has the feedback.
+# Started by e2e/scripts/coaching.sh (a new coach "Colt" and a new athlete "Avery", who
+# owns one finished and one open workout). Every step below is a real tap or text entry;
+# only the fixtures were created through the API. The invite code goes from the coach's
+# screen to the athlete's input inside Maestro's memory and appears in no file.
+#
+# One simulator, accounts in sequence: this does NOT show two devices at once, or a screen
+# that stays open on one device updating when the other changes a switch.
+appId: host.exp.Exponent
+---
+- runFlow: steps/open-app.yaml
+
+# ══ Coach: sign in, turn coach tools on, create an invite ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_COACH}
+      PASSWORD: ${E2E_PASSWORD_COACH}
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "Coach Tools.*"
+    timeout: 15000
+- tapOn: "Coach Tools.*"
+- assertVisible: "Turn on coach tools"
+- takeScreenshot: 01-coach-tools-off
+- tapOn: "Turn on coach tools"
+- tapOn: "Turn on"
+- extendedWaitUntil:
+    visible: "Create invite code"
+    timeout: 15000
+- tapOn: "Create invite code"
+- extendedWaitUntil:
+    visible: "Give this code to your athlete.*"
+    timeout: 15000
+# No screenshot while the code is on screen. It is read from the accessibility label
+# ("Invite code A B C D - ...") and turned back into "ABCD-EFGH-JKLM" in Maestro's memory.
+- copyTextFrom:
+    text: "Invite code .*"
+- evalScript: ${output.code = maestro.copiedText.replace(/^Invite code /, '').replace(/ /g, '')}
+- tapOn: "Back"
+- runFlow: steps/sign-out.yaml
+
+# ══ Athlete: look up the code, see who it is from, accept explicitly ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_ATHLETE}
+      PASSWORD: ${E2E_PASSWORD_ATHLETE}
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Coaches.*"
+    timeout: 15000
+- tapOn: "My Coaches.*"
+- assertVisible: "You are not connected to a coach.*"
+- tapOn: "XXXX-XXXX-XXXX"
+- inputText: ${output.code}
+- tapOn: "Look up code"
+- extendedWaitUntil:
+    visible: "Invite from Colt"
+    timeout: 15000
+# Looking a code up connects nothing: the athlete must press Connect.
+- assertNotVisible: "You are now connected.*"
+- assertVisible: "Connect with Colt"
+# The keyboard closes once the code is looked up: the whole decision is on screen, not
+# half of it behind the keyboard (this is checked on the screenshot as well).
+- extendedWaitUntil:
+    notVisible: "Dictate"
+    timeout: 10000
+- takeScreenshot: 02-athlete-invite-preview
+- tapOn: "Connect with Colt"
+- extendedWaitUntil:
+    visible: "You are now connected to Colt."
+    timeout: 15000
+- extendedWaitUntil:
+    notVisible: "Dictate"
+    timeout: 10000
+# A new connection shares nothing.
+- assertVisible: "Sharing is off"
+- assertVisible: "Colt cannot see any of your workouts."
+- assertNotVisible: "Sharing is on"
+- takeScreenshot: 03-athlete-connected-sharing-off
+- tapOn: "Back"
+- runFlow: steps/sign-out.yaml
+
+# ══ Coach: connected, but the roster says "unavailable", not zero, and shows nothing private ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_COACH}
+      PASSWORD: ${E2E_PASSWORD_COACH}
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Athletes.*"
+    timeout: 15000
+- tapOn: "My Athletes.*"
+- extendedWaitUntil:
+    visible: "Avery.*Open workouts"
+    timeout: 15000
+# The roster card is one accessible element; its label carries every line of the card.
+- assertVisible: "Avery\\. Workouts not shared\\. Workout sharing is off\\. Open workouts"
+- assertNotVisible: ".*No completed workouts recorded.*"
+- assertNotVisible: ".*0 workouts.*"
+- assertNotVisible: ".*Latest:.*"
+- assertNotVisible: ".*Avery Push Fixture.*"
+- assertNotVisible: ".*Avery Open Session.*"
+- takeScreenshot: 04-coach-roster-sharing-off
+- tapOn: "Avery.*Open workouts"
+- extendedWaitUntil:
+    visible: "Avery is not sharing workouts with you.*"
+    timeout: 15000
+- assertNotVisible: ".*Avery Push Fixture.*"
+- assertNotVisible: "Barbell Bench Press"
+- takeScreenshot: 05-coach-athlete-not-shared
+- tapOn: "Back"
+- tapOn: "Back"
+- runFlow: steps/sign-out.yaml
+
+# ══ Athlete: explicitly enable workout sharing (it is confirmed first) ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_ATHLETE}
+      PASSWORD: ${E2E_PASSWORD_ATHLETE}
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Coaches.*"
+    timeout: 15000
+- tapOn: "My Coaches.*"
+- extendedWaitUntil:
+    visible: "Sharing is off"
+    timeout: 15000
+- tapOn: "Share my workout history with Colt"
+- extendedWaitUntil:
+    visible: "Share your workouts with Colt?"
+    timeout: 10000
+# Cancelling the confirmation leaves sharing off.
+- tapOn: "Cancel"
+- assertVisible: "Sharing is off"
+- tapOn: "Share my workout history with Colt"
+- extendedWaitUntil:
+    visible: "Share your workouts with Colt?"
+    timeout: 10000
+- tapOn: "Share workouts"
+- extendedWaitUntil:
+    visible: "Sharing is on"
+    timeout: 15000
+- assertVisible: "Colt can read your completed workouts.*"
+- takeScreenshot: 06-athlete-sharing-on
+- tapOn: "Back"
+- runFlow: steps/sign-out.yaml
+
+# ══ Coach: the completed workout is readable, read-only, with the recorded values ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_COACH}
+      PASSWORD: ${E2E_PASSWORD_COACH}
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Athletes.*"
+    timeout: 15000
+- tapOn: "My Athletes.*"
+- extendedWaitUntil:
+    visible: "Avery.*Open workouts"
+    timeout: 15000
+- assertVisible: "Avery\\. Workouts shared\\. Latest: Avery Push Fixture.*1 workout · 2 working sets\\. Open workouts"
+- assertNotVisible: ".*Workout sharing is off.*"
+- takeScreenshot: 07-coach-roster-sharing-on
+- tapOn: "Avery.*Open workouts"
+- extendedWaitUntil:
+    visible: "Avery Push Fixture.*"
+    timeout: 15000
+- assertVisible: "Workouts shared"
+# An unfinished workout is never listed, even with sharing on.
+- assertNotVisible: ".*Avery Open Session.*"
+- takeScreenshot: 08-coach-athlete-history
+- tapOn: "Avery Push Fixture.*"
+- extendedWaitUntil:
+    visible: "Read-only. Weights shown in kg."
+    timeout: 15000
+- assertVisible: "Barbell Bench Press"
+- assertVisible: "Warm-up set, 40 kg, 10 reps, RIR not logged"
+- assertVisible: "Set 2, 80 kg, 8 reps, RIR 2"
+- assertVisible: "Set 3, 82.5 kg, 6 reps, RIR 1"
+# None of the athlete's own editing controls exist on this screen.
+- assertNotVisible: "Finish workout"
+- assertNotVisible: "Log set"
+- assertNotVisible: "Add set"
+- assertNotVisible: "Add exercise"
+- assertNotVisible: "Delete.*"
+- assertNotVisible: "Start an Empty Workout"
+- takeScreenshot: 09-coach-workout-detail
+
+# ══ Coach: write feedback on this workout (only the coach's own text is editable) ══
+- scrollUntilVisible:
+    element: "Write feedback"
+    timeout: 15000
+- tapOn: "Write feedback"
+- tapOn:
+    id: "coach-feedback-input"
+- inputText: ${FEEDBACK_FIRST}
+# The keyboard is open: the text, the counter and both buttons must be reachable above it.
+- takeScreenshot: 14-coach-feedback-typing
+- tapOn: "Save feedback"
+# Saving asks first and says who will read it.
+- extendedWaitUntil:
+    visible: "Save feedback\\?"
+    timeout: 10000
+- assertVisible: "Avery will be able to read this feedback in their own workout."
+- takeScreenshot: 15-coach-feedback-confirm
+# The alert's own button. No text selector can single it out: the form's Save button behind
+# the alert carries the same label ("Save feedback"), and neither `below:` nor `index:` reached
+# the alert's node (run 5 and 6). A system alert has a fixed place on this device, so this one
+# tap is by position: the centre of the right-hand button, taken from the hierarchy bounds.
+- tapOn:
+    point: "70%,38%"
+# Saved: the form is replaced by the text with its time line, Edit and Delete. (Not "Delete"
+# alone: the keyboard's delete key matches it too, and so would the typed text.)
+- extendedWaitUntil:
+    visible: "Written .*"
+    timeout: 15000
+- assertNotVisible: "Save feedback\\?"
+- assertVisible: "Edit"
+- assertVisible: "Delete"
+- assertVisible: ".*Bar speed held up.*"
+- assertVisible: "Written .*"
+- assertNotVisible: "Edited .*"
+- takeScreenshot: 16-coach-feedback-saved
+- tapOn: "Back"
+- tapOn: "Back"
+- tapOn: "Back"
+- runFlow: steps/sign-out.yaml
+
+# ══ Athlete: reads the feedback in their own finished workout ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_ATHLETE}
+      PASSWORD: ${E2E_PASSWORD_ATHLETE}
+- runFlow:
+    file: steps/open-fixture-workout.yaml
+- scrollUntilVisible:
+    element: "Coach feedback"
+    timeout: 15000
+- assertVisible: "Written by your coach. This is not part of your workout log."
+- assertVisible: "Feedback from Colt\\. Bar speed held up on the top set\\. Keep your elbows tucked\\..*"
+- assertNotVisible: ".*Edited.*"
+- takeScreenshot: 17-athlete-reads-feedback
+- tapOn: "Back"
+- runFlow: steps/sign-out.yaml
+
+# ══ Coach: edits their own feedback (append: the cursor goes to the end of the text) ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_COACH}
+      PASSWORD: ${E2E_PASSWORD_COACH}
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Athletes.*"
+    timeout: 15000
+- tapOn: "My Athletes.*"
+- extendedWaitUntil:
+    visible: "Avery.*Open workouts"
+    timeout: 15000
+- tapOn: "Avery.*Open workouts"
+- extendedWaitUntil:
+    visible: "Avery Push Fixture.*"
+    timeout: 15000
+- tapOn: "Avery Push Fixture.*"
+- extendedWaitUntil:
+    visible: "Read-only. Weights shown in kg."
+    timeout: 15000
+- scrollUntilVisible:
+    element: "Edit"
+    timeout: 15000
+# The saved text is what is on screen before editing.
+- assertVisible: ".*Bar speed held up.*"
+- tapOn: "Edit"
+- tapOn:
+    id: "coach-feedback-input"
+    point: "90%,90%"
+- inputText: " ${FEEDBACK_ADDED}"
+- takeScreenshot: 18-coach-feedback-editing
+- tapOn: "Save feedback"
+- extendedWaitUntil:
+    visible: "Save feedback\\?"
+    timeout: 10000
+- assertVisible: "Avery will be able to read this feedback in their own workout\\."
+# The alert's own button. No text selector can single it out: the form's Save button behind
+# the alert carries the same label ("Save feedback"), and neither `below:` nor `index:` reached
+# the alert's node (run 5 and 6). A system alert has a fixed place on this device, so this one
+# tap is by position: the centre of the right-hand button, taken from the hierarchy bounds.
+- tapOn:
+    point: "70%,38%"
+- extendedWaitUntil:
+    visible: "Edited .*"
+    timeout: 15000
+- assertNotVisible: "Save feedback\\?"
+- assertVisible: "Delete"
+- assertVisible: ".*Pause the bar on your chest.*"
+- takeScreenshot: 19-coach-feedback-edited
+- tapOn: "Back"
+- tapOn: "Back"
+- tapOn: "Back"
+- runFlow: steps/sign-out.yaml
+
+# ══ Athlete: sees the edited text, then switches sharing off (no confirmation: it only shares less) ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_ATHLETE}
+      PASSWORD: ${E2E_PASSWORD_ATHLETE}
+- runFlow:
+    file: steps/open-fixture-workout.yaml
+- scrollUntilVisible:
+    element: "Coach feedback"
+    timeout: 15000
+- assertVisible: "Feedback from Colt\\. Bar speed held up on the top set\\. Keep your elbows tucked\\. Pause the bar on your chest.*Edited.*"
+- takeScreenshot: 20-athlete-reads-edited-feedback
+- tapOn: "Back"
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Coaches.*"
+    timeout: 15000
+- tapOn: "My Coaches.*"
+- extendedWaitUntil:
+    visible: "Sharing is on"
+    timeout: 15000
+- tapOn: "Share my workout history with Colt"
+- extendedWaitUntil:
+    visible: "Sharing is off"
+    timeout: 15000
+- assertVisible: "Colt cannot see any of your workouts."
+- takeScreenshot: 10-athlete-sharing-off-again
+- tapOn: "Back"
+# Turning sharing off ends the coach's access, not what the coach already wrote to the athlete.
+- tapOn: "History, tab.*"
+- runFlow:
+    file: steps/open-fixture-workout.yaml
+- scrollUntilVisible:
+    element: "Coach feedback"
+    timeout: 15000
+- assertVisible: "Feedback from Colt.*Pause the bar on your chest.*"
+- takeScreenshot: 21-athlete-feedback-after-sharing-off
+- tapOn: "Back"
+- runFlow: steps/sign-out.yaml
+
+# ══ Coach: re-enters through normal navigation; access and summaries are gone ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_COACH}
+      PASSWORD: ${E2E_PASSWORD_COACH}
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Athletes.*"
+    timeout: 15000
+- tapOn: "My Athletes.*"
+- extendedWaitUntil:
+    visible: "Avery.*Open workouts"
+    timeout: 15000
+- assertVisible: "Avery\\. Workouts not shared\\. Workout sharing is off\\. Open workouts"
+- assertNotVisible: ".*Latest:.*"
+- assertNotVisible: ".*Avery Push Fixture.*"
+- assertNotVisible: ".*1 workout.*"
+- takeScreenshot: 11-coach-roster-after-revoke
+- tapOn: "Avery.*Open workouts"
+- extendedWaitUntil:
+    visible: "Avery is not sharing workouts with you.*"
+    timeout: 15000
+- assertNotVisible: ".*Avery Push Fixture.*"
+- assertNotVisible: "Barbell Bench Press"
+- tapOn: "Back"
+
+# ══ Coach: end the connection through its confirmation ══
+- tapOn: "End connection with Avery"
+- extendedWaitUntil:
+    visible: "End connection with Avery?"
+    timeout: 10000
+# Cancelling keeps the connection.
+- tapOn: "Cancel"
+- assertVisible: "Avery.*Open workouts"
+- tapOn: "End connection with Avery"
+- extendedWaitUntil:
+    visible: "End connection with Avery?"
+    timeout: 10000
+- tapOn: "End connection"
+- extendedWaitUntil:
+    visible: "Connection with Avery ended."
+    timeout: 15000
+- assertNotVisible: "Avery.*Open workouts"
+- assertVisible: "No athletes connected yet.*"
+- takeScreenshot: 12-coach-connection-ended
+- tapOn: "Back"
+- runFlow: steps/sign-out.yaml
+
+# ══ Athlete: the coach is gone from their side too ══
+- runFlow:
+    file: steps/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL_ATHLETE}
+      PASSWORD: ${E2E_PASSWORD_ATHLETE}
+- tapOn: "Profile, tab.*"
+- scrollUntilVisible:
+    element: "My Coaches.*"
+    timeout: 15000
+- tapOn: "My Coaches.*"
+- extendedWaitUntil:
+    visible: "You are not connected to a coach.*"
+    timeout: 15000
+- assertNotVisible: "Share my workout history with Colt"
+- takeScreenshot: 13-athlete-connection-ended
+- tapOn: "Back"
+# The connection is gone and the coach cannot read anything, but what Colt wrote is the athlete's.
+- runFlow:
+    file: steps/open-fixture-workout.yaml
+- scrollUntilVisible:
+    element: "Coach feedback"
+    timeout: 15000
+- assertVisible: "Feedback from Colt.*Pause the bar on your chest.*"
+- takeScreenshot: 22-athlete-feedback-after-connection-ended

@@ -10,19 +10,73 @@
  * called /auth/refresh with the same stored token, the second call would look
  * exactly like a replay and log the user out. So concurrent callers share one
  * in-flight refresh instead.
+ *
+ * Every authenticated request, and every refresh, also belongs to the sign-in
+ * that was current when it started (the "auth epoch"). Signing out, the session
+ * expiring and starting a new sign-in each move the epoch on, and whatever was
+ * still in flight from the earlier one is obsolete from then on: it may not
+ * write tokens, clear tokens, report a session expiry, or hand its answer to a
+ * caller, because by then those would land on, or against, a different account.
  */
 
 import { API_PREFIX, API_URL } from "../config";
-import { clearTokens, getAccessToken, getRefreshToken, saveTokens } from "./tokens";
+import {
+  clearTokens,
+  clearTokensIfOwner,
+  getAccessToken,
+  getRefreshToken,
+  saveTokensIf,
+} from "./tokens";
+import type { TokenPair } from "./tokens";
 
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The server's machine-readable reason (e.g. "social_username_taken"), when it gave one. */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/** An obsolete request: the account it was made for is no longer the signed-in one. */
+export class SessionChangedError extends ApiError {
+  constructor() {
+    // 401 because the credentials it used are gone; nothing may retry it.
+    super(401, "Your session changed while this request was running.");
+    this.name = "SessionChangedError";
+  }
+}
+
+let authEpoch = 0;
+
+export function currentAuthEpoch(): number {
+  return authEpoch;
+}
+
+/** Ends the current epoch: everything still in flight from it becomes obsolete. */
+export function advanceAuthEpoch(): number {
+  authEpoch += 1;
+  return authEpoch;
+}
+
+/**
+ * Stores a token pair for the sign-in `epoch`, unless that sign-in is over.
+ * Resolves false (and leaves storage as it was) when it is. The currency check
+ * runs in the storage queue immediately before the write, and again after it:
+ * if the epoch moved on while the write was still running, the write is taken
+ * back, but only if nothing newer has replaced it.
+ */
+export async function persistTokens(pair: TokenPair, epoch: number): Promise<boolean> {
+  const owner = {};
+  const saved = await saveTokensIf(pair, owner, () => authEpoch === epoch);
+  if (saved && authEpoch !== epoch) {
+    await clearTokensIfOwner(owner);
+    return false;
+  }
+  return saved;
 }
 
 /** Called when the session cannot be recovered, so the UI can send the user to login. */
@@ -32,55 +86,102 @@ export function setOnSessionExpired(handler: (() => void) | null): void {
   onSessionExpired = handler;
 }
 
-/** The refresh currently in flight, shared by every caller that hits a 401. */
-let refreshInFlight: Promise<boolean> | null = null;
+/**
+ * The refresh currently in flight, shared by every caller that hits a 401 in
+ * the same epoch. A caller from a later epoch does not join an earlier one: its
+ * answer would belong to the wrong account.
+ */
+let refreshInFlight: { epoch: number; promise: Promise<boolean> } | null = null;
 
-async function performRefresh(): Promise<boolean> {
+async function performRefresh(epoch: number): Promise<boolean> {
   const refreshToken = await getRefreshToken();
+  if (authEpoch !== epoch) throw new SessionChangedError();
   if (!refreshToken) return false;
 
+  const response = await fetchWithNetworkError(`${API_URL}${API_PREFIX}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+
+  // Only an explicit authentication rejection proves the session invalid.
+  // Network errors, rate limits and server failures must preserve tokens.
+  if (response.status === 401) return false;
+  if (!response.ok) {
+    throw new ApiError(response.status, (await readError(response)).message);
+  }
+
+  const pair: TokenPair = await response.json();
+  // The server has rotated the token by now. If the sign-in ended while it was
+  // answering (signed out, expired, replaced), the new pair is dropped; keeping
+  // it would bring a signed-out session back, or overwrite the next account's.
+  if (!(await persistTokens(pair, epoch))) throw new SessionChangedError();
+  return true;
+}
+
+async function fetchWithNetworkError(
+  url: string,
+  options: RequestInit,
+  timeoutMs?: number,
+): Promise<Response> {
+  // Only requests that ask for it have a deadline. A request that must not hang
+  // forever (one that locks the screen while it runs) gets one; the server may
+  // still have acted, which is why the error is the same "no answer" status 0
+  // as a lost connection and callers never read it as a refusal.
+  const controller = timeoutMs === undefined ? null : new AbortController();
+  const timer = controller === null ? null : setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${API_URL}${API_PREFIX}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-
-    if (!response.ok) {
-      await clearTokens();
-      return false;
-    }
-
-    await saveTokens(await response.json());
-    return true;
+    return await fetch(url, controller === null ? options : { ...options, signal: controller.signal });
   } catch {
-    // Network failure: keep the tokens. They may still be valid once the
-    // connection is back, and wiping them would sign the user out over a
-    // flaky gym wifi.
-    return false;
+    throw new ApiError(0, "Cannot connect right now. Check your connection and try again.");
+  } finally {
+    if (timer !== null) clearTimeout(timer);
   }
 }
 
-async function refreshSession(): Promise<boolean> {
-  refreshInFlight ??= performRefresh().finally(() => {
-    refreshInFlight = null;
-  });
-  return refreshInFlight;
+async function expireSession(): Promise<never> {
+  // Only ever called straight after assertCurrent(), with no await in between,
+  // so the sign-in that was refused is still the current one: a request from an
+  // earlier sign-in never gets here to sign out whoever is signed in now.
+  advanceAuthEpoch();
+  // Tell the auth layer first, so the screens leave the account at once and do
+  // not wait for storage. It also clears account-scoped device state beyond the
+  // tokens (the active-workout pointer, the coaching stores): this HTTP layer
+  // only knows about tokens, and `onSessionExpired` is exactly the hook that
+  // exists so the caller who does know about that state can react to a forced
+  // sign-out the same way as to an explicit one.
+  onSessionExpired?.();
+  await clearTokens();
+  throw new ApiError(401, "Your session has expired. Please sign in again.");
 }
 
-async function extractError(response: Response): Promise<string> {
+function refreshSession(epoch: number): Promise<boolean> {
+  if (refreshInFlight?.epoch === epoch) return refreshInFlight.promise;
+  const promise = performRefresh(epoch).finally(() => {
+    if (refreshInFlight?.promise === promise) refreshInFlight = null;
+  });
+  refreshInFlight = { epoch, promise };
+  return promise;
+}
+
+async function readError(response: Response): Promise<{ message: string; code?: string }> {
   try {
     const body = await response.json();
+    const code = typeof body?.code === "string" ? body.code : undefined;
     // FastAPI returns {detail: "..."} for our AppError, or a list of objects
     // for Pydantic validation failures.
-    if (typeof body?.detail === "string") return body.detail;
+    if (typeof body?.detail === "string") return { message: body.detail, code };
     if (Array.isArray(body?.detail)) {
-      return body.detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(", ");
+      const message = body.detail
+        .map((item: { msg?: string }) => item.msg)
+        .filter(Boolean)
+        .join(", ");
+      return { message, code };
     }
   } catch {
     // Response was not JSON.
   }
-  return `Request failed (${response.status})`;
+  return { message: `Request failed (${response.status})` };
 }
 
 type RequestOptions = {
@@ -88,52 +189,68 @@ type RequestOptions = {
   body?: unknown;
   /** Skip the Authorization header, for login and register. */
   anonymous?: boolean;
+  /** Give up waiting for the response after this long (status 0, like a lost connection). */
+  timeoutMs?: number;
 };
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, anonymous = false } = options;
+  const { method = "GET", body, anonymous = false, timeoutMs } = options;
+
+  // The sign-in this request was made for. Anonymous requests (login, register,
+  // logout) carry no session; their callers guard them.
+  const epoch = authEpoch;
+  const assertCurrent = (): void => {
+    if (!anonymous && authEpoch !== epoch) throw new SessionChangedError();
+  };
 
   const send = async (): Promise<Response> => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
 
     if (!anonymous) {
       const token = await getAccessToken();
+      // Not sent under credentials that were read for another account.
+      assertCurrent();
       if (token) headers.Authorization = `Bearer ${token}`;
     }
 
-    return fetch(`${API_URL}${API_PREFIX}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    return fetchWithNetworkError(
+      `${API_URL}${API_PREFIX}${path}`,
+      {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      },
+      timeoutMs,
+    );
   };
 
-  let response: Response;
-  try {
-    response = await send();
-  } catch {
-    // Naming the address turns the most common setup mistake — a stale or
-    // wrong LAN IP in .env — into something the user can act on.
-    throw new ApiError(0, `Cannot reach ${API_URL}. Check the server and your .env.`);
-  }
+  let response = await send();
+  assertCurrent();
 
   // Access tokens are short-lived, so a 401 usually just means "expired".
   if (response.status === 401 && !anonymous) {
-    const recovered = await refreshSession();
+    const recovered = await refreshSession(epoch);
+    assertCurrent();
     if (!recovered) {
-      await clearTokens();
-      onSessionExpired?.();
-      throw new ApiError(401, "Your session has expired. Please sign in again.");
+      return expireSession();
     }
     response = await send();
+    assertCurrent();
+    if (response.status === 401) return expireSession();
   }
 
   if (!response.ok) {
-    throw new ApiError(response.status, await extractError(response));
+    const { message, code } = await readError(response);
+    const error = new ApiError(response.status, message, code);
+    assertCurrent();
+    throw error;
   }
 
   // 204 No Content has an empty body; calling .json() on it throws.
   if (response.status === 204) return undefined as T;
 
-  return response.json() as Promise<T>;
+  const data = (await response.json()) as T;
+  // An answer for an account that has since signed out is not handed on.
+  assertCurrent();
+  return data;
 }

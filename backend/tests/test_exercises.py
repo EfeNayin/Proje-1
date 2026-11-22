@@ -1,18 +1,23 @@
 """Tests for the exercise catalogue endpoints."""
 
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Exercise
 
 
 class TestListExercises:
     async def test_returns_the_seeded_catalogue(
         self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
-        response = await client.get("/exercises", headers=auth_headers)
+        # limit=100: the catalogue (96) now exceeds the default page size
+        # (50), unlike when this test was first written.
+        response = await client.get("/exercises?limit=100", headers=auth_headers)
 
         assert response.status_code == 200, response.text
         body = response.json()
-        assert body["total"] == 20
-        assert len(body["items"]) == 20
+        assert body["total"] == 96
+        assert len(body["items"]) == 96
 
     async def test_requires_authentication(self, client: AsyncClient) -> None:
         response = await client.get("/exercises")
@@ -40,7 +45,7 @@ class TestListExercises:
         assert len(first["items"]) == 5
         assert len(second["items"]) == 5
         # total reports the whole match, not the page.
-        assert first["total"] == second["total"] == 20
+        assert first["total"] == second["total"] == 96
         assert {item["id"] for item in first["items"]}.isdisjoint(
             item["id"] for item in second["items"]
         )
@@ -91,7 +96,8 @@ class TestSearch:
         self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
         body = (await client.get("/exercises?q=deadlift", headers=auth_headers)).json()
-        assert body["total"] == 2  # conventional + romanian
+        # conventional, romanian, single-leg romanian, sumo (Adım 24).
+        assert body["total"] == 4
 
     async def test_returns_empty_for_no_match(
         self, client: AsyncClient, auth_headers: dict[str, str]
@@ -127,14 +133,142 @@ class TestFilters:
         assert "Cable Fly" in names
         assert "Leg Curl" not in names
 
-    async def test_muscle_filter_includes_secondary_involvement(
+    async def test_muscle_filter_matches_primary_involvement_only(
         self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
-        """Bench press trains triceps as a secondary muscle and should show up
-        when browsing triceps work."""
-        body = (await client.get("/exercises?muscle=triceps", headers=auth_headers)).json()
+        """Bench press has triceps as a SECONDARY muscle. Browsing triceps must
+        not list it: the filter answers "what trains this muscle directly",
+        the same question the weekly set count asks."""
+        body = (
+            await client.get("/exercises?muscle=triceps&limit=100", headers=auth_headers)
+        ).json()
 
-        assert "Barbell Bench Press" in {item["name"] for item in body["items"]}
+        names = {item["name"] for item in body["items"]}
+        assert "Barbell Bench Press" not in names
+        assert "Tricep Pushdown" in names
+        # Decided by the stored relationship, not by the name: this one has
+        # "bench" in its name and triceps as its primary muscle.
+        assert "Close-Grip Bench Press" in names
+        # The count is of the same primary-only matches as the rows.
+        assert body["total"] == len(body["items"]) == 6
+
+    async def test_biceps_filter_excludes_rows_that_only_assist_with_biceps(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        """Barbell Row trains upper back and lats directly; biceps only assists.
+        It is listed under its own muscles and not under Biceps."""
+        biceps = (
+            await client.get("/exercises?muscle=biceps&limit=100", headers=auth_headers)
+        ).json()
+        names = [item["name"] for item in biceps["items"]]
+
+        assert "Barbell Row" not in names
+        assert "Barbell Curl" in names
+        assert all(
+            "biceps" in [muscle["name"] for muscle in item["primary_muscles"]]
+            for item in biceps["items"]
+        )
+        assert biceps["total"] == len(names) == 7
+
+        for muscle in ("upper_back", "lats"):
+            listed = (
+                await client.get(f"/exercises?muscle={muscle}&limit=100", headers=auth_headers)
+            ).json()
+            assert "Barbell Row" in [item["name"] for item in listed["items"]]
+
+        # Its details still name biceps, as a secondary muscle.
+        row_id = next(
+            item["id"]
+            for item in (
+                await client.get("/exercises?q=barbell row", headers=auth_headers)
+            ).json()["items"]
+            if item["name"] == "Barbell Row"
+        )
+        detail = (await client.get(f"/exercises/{row_id}", headers=auth_headers)).json()
+        assert ("biceps", "secondary") in [
+            (muscle["name"], muscle["role"]) for muscle in detail["muscles"]
+        ]
+
+    async def test_biceps_filter_pages_without_repeats_and_with_one_total(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        names: list[str] = []
+        for offset in (0, 3, 6):
+            page = (
+                await client.get(
+                    f"/exercises?muscle=biceps&limit=3&offset={offset}", headers=auth_headers
+                )
+            ).json()
+            assert page["total"] == 7
+            names += [item["name"] for item in page["items"]]
+
+        assert len(names) == len(set(names)) == 7
+        assert "Barbell Row" not in names
+
+    async def test_category_filter_matches_primary_involvement_only(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        triceps = (
+            await client.get("/exercises?category=triceps&limit=100", headers=auth_headers)
+        ).json()
+        chest = (
+            await client.get("/exercises?category=chest&limit=100", headers=auth_headers)
+        ).json()
+
+        assert "Barbell Bench Press" not in {item["name"] for item in triceps["items"]}
+        assert triceps["total"] == len(triceps["items"]) == 6
+        assert "Barbell Bench Press" in {item["name"] for item in chest["items"]}
+
+    async def test_muscle_filter_total_counts_every_page(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        first = (
+            await client.get("/exercises?muscle=triceps&limit=4", headers=auth_headers)
+        ).json()
+        second = (
+            await client.get("/exercises?muscle=triceps&limit=4&offset=4", headers=auth_headers)
+        ).json()
+
+        assert first["total"] == second["total"] == 6
+        assert len(first["items"]) == 4
+        assert len(second["items"]) == 2
+
+    async def test_muscle_equipment_and_search_apply_together(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        body = (
+            await client.get(
+                "/exercises?muscle=triceps&equipment=cable&q=pushdown", headers=auth_headers
+            )
+        ).json()
+
+        assert [item["name"] for item in body["items"]] == ["Tricep Pushdown"]
+        assert body["total"] == 1
+
+    async def test_bodyweight_filter_does_not_absorb_unknown_equipment(
+        self, client: AsyncClient, auth_headers: dict[str, str], db: AsyncSession
+    ) -> None:
+        """NULL equipment means "not recorded", which is not "bodyweight"."""
+        unknown = Exercise(name="Zz Unclassified Movement", equipment=None, is_compound=False)
+        db.add(unknown)
+        await db.commit()
+        try:
+            listed = (
+                await client.get("/exercises?q=zz unclassified", headers=auth_headers)
+            ).json()
+            bodyweight = (
+                await client.get(
+                    "/exercises?equipment=bodyweight&limit=100", headers=auth_headers
+                )
+            ).json()
+        finally:
+            await db.delete(unknown)
+            await db.commit()
+
+        assert listed["items"][0]["equipment"] is None
+        assert listed["items"][0]["primary_muscles"] == []
+        assert "Zz Unclassified Movement" not in {item["name"] for item in bodyweight["items"]}
+        assert all(item["equipment"] == "bodyweight" for item in bodyweight["items"])
 
     async def test_muscle_filter_returns_each_exercise_once(
         self, client: AsyncClient, auth_headers: dict[str, str]
@@ -158,6 +292,63 @@ class TestFilters:
         names = {item["name"] for item in body["items"]}
         assert "Barbell Bench Press" in names
         assert "Cable Fly" not in names  # right muscle, wrong equipment
+
+
+class TestPrimaryMuscleMetadata:
+    async def test_rows_carry_their_primary_muscles_and_not_the_secondary_ones(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        body = (await client.get("/exercises?q=barbell bench press", headers=auth_headers)).json()
+        bench = next(item for item in body["items"] if item["name"] == "Barbell Bench Press")
+
+        assert bench["primary_muscles"] == [{"name": "chest", "name_tr": "Göğüs"}]
+
+    async def test_several_primary_muscles_come_best_fit_first_then_by_code(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        body = (await client.get("/exercises?limit=100", headers=auth_headers)).json()
+        rows = {item["name"]: item for item in body["items"]}
+
+        def codes(name: str) -> list[str]:
+            return [muscle["name"] for muscle in rows[name]["primary_muscles"]]
+
+        assert codes("Barbell Back Squat") == ["quads", "glutes"]  # 5, then 4
+        assert codes("Conventional Deadlift") == ["glutes", "hamstrings", "lower_back"]  # all 4
+        assert codes("Barbell Row") == ["lats", "upper_back"]
+
+    async def test_every_row_names_at_least_one_primary_muscle(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        body = (await client.get("/exercises?limit=100", headers=auth_headers)).json()
+
+        assert all(item["primary_muscles"] for item in body["items"])
+
+    async def test_a_filtered_row_still_lists_all_of_its_primary_muscles(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        """Filtering by glutes must not trim the squat's own targets to glutes."""
+        body = (
+            await client.get("/exercises?muscle=glutes&q=barbell back squat", headers=auth_headers)
+        ).json()
+
+        assert [muscle["name"] for muscle in body["items"][0]["primary_muscles"]] == [
+            "quads",
+            "glutes",
+        ]
+
+    async def test_detail_keeps_secondary_muscles_and_adds_the_same_primary_list(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        listing = (await client.get("/exercises?q=barbell bench", headers=auth_headers)).json()
+        bench = next(item for item in listing["items"] if item["name"] == "Barbell Bench Press")
+
+        detail = (await client.get(f"/exercises/{bench['id']}", headers=auth_headers)).json()
+
+        assert detail["primary_muscles"] == bench["primary_muscles"]
+        assert {m["name"] for m in detail["muscles"] if m["role"] == "secondary"} == {
+            "triceps",
+            "front_delts",
+        }
 
 
 class TestExerciseDetail:

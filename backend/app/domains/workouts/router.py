@@ -19,6 +19,9 @@ from app.core.database import get_db
 from app.domains.auth.dependencies import CurrentUser
 from app.domains.workouts import service
 from app.domains.workouts.schemas import (
+    ExerciseHistoryQuery,
+    ExerciseHistoryResponse,
+    PreviousExerciseSession,
     SetCreate,
     SetUpdate,
     WorkoutCreate,
@@ -99,6 +102,35 @@ async def update_workout(
     return await service.update_workout(db, current_user.id, workout_id, payload)
 
 
+@router.get(
+    "/{workout_id}/exercises/{exercise_id}/previous",
+    response_model=PreviousExerciseSession | None,
+    summary="Get your previous closed session's working sets for an exercise",
+)
+async def get_previous_exercise_session(
+    workout_id: UUID,
+    exercise_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> PreviousExerciseSession | None:
+    return await service.get_previous_exercise_session(db, current_user.id, workout_id, exercise_id)
+
+
+@router.get(
+    "/{workout_id}/exercises/{exercise_id}/history",
+    response_model=ExerciseHistoryResponse,
+    summary="Browse your earlier closed sessions' working sets for an exercise",
+)
+async def get_exercise_history(
+    workout_id: UUID,
+    exercise_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    query: Annotated[ExerciseHistoryQuery, Query()],
+) -> ExerciseHistoryResponse:
+    return await service.get_exercise_history(db, current_user.id, workout_id, exercise_id, query)
+
+
 @router.delete(
     "/{workout_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -153,6 +185,21 @@ async def update_set(
     db: DbSession,
 ) -> WorkoutDetail:
     return await service.update_set(db, current_user.id, workout_id, set_id, payload)
+
+
+@router.put(
+    "/{workout_id}/sets/requests/{request_id}",
+    response_model=WorkoutDetail,
+    summary="Create a set once, safely retrying with the same request ID and details",
+)
+async def save_set_request(
+    workout_id: UUID,
+    request_id: UUID,
+    payload: SetCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> WorkoutDetail:
+    return await service.add_set(db, current_user.id, workout_id, payload, request_id=request_id)
 
 
 @router.delete(
