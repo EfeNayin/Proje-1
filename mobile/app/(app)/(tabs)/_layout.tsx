@@ -7,7 +7,7 @@ import { TabBarWithRestTimer } from "../../../src/workout/TabBarWithRestTimer";
 
 /**
  * Start Workout is the middle tab AND where the app opens. The declared order is
- * the visual order (Volume, History, Start Workout, Exercises, Profile), and a
+ * the visual order (Volume, History, Start Workout, Exercises, Diet), and a
  * tab navigator would otherwise start on the first one it lists, so the landing
  * tab is named here rather than left to the order.
  */
@@ -81,12 +81,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="diet"
         options={{
-          title: "Profile",
-          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
+          title: "Diet",
+          tabBarIcon: ({ color, size }) => <Ionicons name="nutrition" size={size} color={color} />,
         }}
       />
+      {/* Profile is opened from the Start Workout title bar. It stays a real route in this group (so
+          /profile and every link to it still work) but has no button in the bar. */}
+      <Tabs.Screen name="profile" options={{ href: null }} />
       {/* The old Programs tab. Programs now live on Start Workout; this route stays only so an old
           link to /programs still lands somewhere (it redirects), and has no button in the bar. */}
       <Tabs.Screen name="programs" options={{ href: null }} />

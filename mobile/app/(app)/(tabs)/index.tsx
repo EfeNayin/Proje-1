@@ -14,8 +14,9 @@
  *  - a program card opens /program/[id], where activating, deleting, renaming and
  *    template editing already live. A tap on a card never changes which program
  *    is active.
- * Research, which used to be a row on the old Training screen, is a button in
- * the title bar so it stays one tap away however many programs the list holds.
+ * Research, which used to be a row on the old Training screen, is a secondary
+ * button directly beneath Create program, above My programs. Profile is the
+ * title bar's trailing button (it is a hidden tab route, not a visible tab).
  */
 
 import { Ionicons } from "@expo/vector-icons";
@@ -144,15 +145,15 @@ export default function StartWorkoutScreen() {
     }
   };
 
-  const researchButton = (
+  const profileButton = (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Research, explore training research"
-      style={({ pressed }) => [styles.researchButton, pressed && styles.rowPressed]}
-      onPress={() => go(() => router.push("/research"))}
+      accessibilityLabel="Profile, open your profile and account"
+      style={({ pressed }) => [styles.profileButton, pressed && styles.rowPressed]}
+      onPress={() => go(() => router.push("/profile"))}
     >
-      <Ionicons name="library-outline" size={18} color={light.text} />
-      <Text style={styles.researchButtonText}>Research</Text>
+      <Ionicons name="person-outline" size={18} color={light.text} />
+      <Text style={styles.profileButtonText}>Profile</Text>
     </Pressable>
   );
 
@@ -210,6 +211,16 @@ export default function StartWorkoutScreen() {
       >
         <Ionicons name="add" size={20} color={light.text} />
         <Text style={styles.secondaryText}>Create program</Text>
+      </Pressable>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Research, explore training research"
+        style={({ pressed }) => [styles.secondary, pressed && styles.rowPressed]}
+        onPress={() => go(() => router.push("/research"))}
+      >
+        <Ionicons name="library-outline" size={20} color={light.text} />
+        <Text style={styles.secondaryText}>Research</Text>
       </Pressable>
 
       <Text accessibilityRole="header" style={styles.sectionTitle}>
@@ -274,7 +285,7 @@ export default function StartWorkoutScreen() {
 
   return (
     <View style={styles.screen}>
-      <TabTopBar title="Start Workout" trailing={researchButton} />
+      <TabTopBar title="Start Workout" trailing={profileButton} />
 
       <FlatList
         style={styles.list}
@@ -510,7 +521,7 @@ const styles = StyleSheet.create({
   list: { flex: 1 },
   content: { paddingHorizontal: 16, paddingBottom: 32 },
 
-  researchButton: {
+  profileButton: {
     minHeight: MIN_TOUCH,
     flexDirection: "row",
     alignItems: "center",
@@ -519,7 +530,7 @@ const styles = StyleSheet.create({
     borderRadius: MIN_TOUCH / 2,
     backgroundColor: light.surface,
   },
-  researchButtonText: { color: light.text, fontSize: 15, fontWeight: "600" },
+  profileButtonText: { color: light.text, fontSize: 15, fontWeight: "600" },
 
   primary: {
     minHeight: 52,

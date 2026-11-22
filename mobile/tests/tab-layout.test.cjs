@@ -8,7 +8,7 @@ const source = fs.readFileSync(
   'utf8',
 );
 
-// The five tabs share one light appearance. It lives in screenOptions only:
+// The five visible tabs share one light appearance. It lives in screenOptions only:
 // a per-tab override would let one tab fall back to a different bar (the
 // navigator applies the focused tab's options), which is what the redesign
 // of the tabs consolidated away.
@@ -26,20 +26,30 @@ test('tab layout: the bar appearance is defined once for all five tabs', () => {
   }
 });
 
-test('tab layout: Volume, History, Start Workout, Exercises and Profile are the tabs, all light', () => {
+test('tab layout: Volume, History, Start Workout, Exercises and Diet are the tabs, all light; Profile is a hidden route', () => {
   const screens = [...source.matchAll(/<Tabs\.Screen\s+name="([^"]+)"\s+options=\{\{([\s\S]*?)\}\}\s*\/>/g)];
   const names = screens.map((match) => match[1]);
-  // Declared order is the visual order; the old Programs route follows as a hidden one.
-  assert.deepEqual(names, ['volume', 'history', 'index', 'exercises', 'profile', 'programs']);
+  // Declared order is the visual order; the Profile and old Programs routes follow as hidden ones.
+  assert.deepEqual(names, ['volume', 'history', 'index', 'exercises', 'diet', 'profile', 'programs']);
 
   const titles = Object.fromEntries(screens.map((match) => [match[1], /title: "([^"]+)"/.exec(match[2])?.[1]]));
   assert.deepEqual(
-    ['volume', 'history', 'index', 'exercises', 'profile'].map((name) => titles[name]),
-    ['Volume', 'History', 'Start Workout', 'Exercises', 'Profile'],
+    ['volume', 'history', 'index', 'exercises', 'diet'].map((name) => titles[name]),
+    ['Volume', 'History', 'Start Workout', 'Exercises', 'Diet'],
   );
   assert.doesNotMatch(source, /title: "(Training|Programs)"/);
   assert.doesNotMatch(source, /romanTheme|\.\.\/theme"/);
   assert.match(source, /lightTheme/);
+});
+
+test('tab layout: Profile stays a registered route but is not a tab, and is never redirected to Diet', () => {
+  assert.match(source, /<Tabs\.Screen name="profile" options=\{\{ href: null \}\} \/>/);
+  assert.doesNotMatch(source, /name="profile"[\s\S]{0,80}tabBarIcon/);
+  assert.doesNotMatch(source, /Redirect/);
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'app', '(app)', '(tabs)', 'profile.tsx')));
+  const diet = fs.readFileSync(path.join(__dirname, '..', 'app', '(app)', '(tabs)', 'diet.tsx'), 'utf8');
+  assert.match(diet, /<TabTopBar title="Diet" \/>/);
+  assert.doesNotMatch(diet, /Redirect|router|fetch|api\//);
 });
 
 test('tab layout: Programs has no button in the bar, and the middle tab is where the app opens', () => {
