@@ -57,11 +57,11 @@ const detail = (over = {}) => ({
 
 // ------------------------------------------------------------------ wording
 
-test('every card and preview line states level and weekly frequency in plain words', () => {
+test('the preview line states level and weekly frequency in plain words; a card is only name and level', () => {
   assert.equal(display.frequencyLabel({ sessions_per_week: 3 }), '3 sessions per week');
   assert.equal(display.frequencyLabel({ sessions_per_week: 1 }), '1 session per week');
   assert.equal(display.cardMeta(SUMMARIES[1]), 'Intermediate · 4 sessions per week');
-  assert.equal(display.cardAccessibilityLabel(SUMMARIES[2]), 'Push/Pull/Legs, Advanced, 6 sessions per week');
+  assert.equal(display.cardAccessibilityLabel(SUMMARIES[2]), 'Push/Pull/Legs, Advanced');
   assert.equal(display.weeklySetsLabel(SUMMARIES[0]), 'About 42 working sets per week');
 });
 
@@ -323,24 +323,66 @@ test('Example programs come after My programs, as a footer; the primary action a
   assert.ok(h.texts(world.footer(tree)).includes('Example programs'));
 });
 
-test('three cards, each with its level and weekly frequency, in the catalogue order', async () => {
+test('three cards, each with only its level above its name, in the catalogue order', async () => {
   const world = hubWorld();
   const footer = world.footer(await world.show());
   assert.deepEqual(labelsOf(footer), [
-    'Full Body A/B, Beginner, 3 sessions per week',
-    'Upper/Lower, Intermediate, 4 sessions per week',
-    'Push/Pull/Legs, Advanced, 6 sessions per week',
+    'Full Body A/B, Beginner',
+    'Upper/Lower, Intermediate',
+    'Push/Pull/Legs, Advanced',
   ]);
-  const shown = h.texts(footer);
-  for (const meta of ['Beginner · 3 sessions per week', 'Intermediate · 4 sessions per week', 'Advanced · 6 sessions per week']) {
-    assert.ok(shown.includes(meta), meta);
+  // Level first, then name, per card; nothing else: no intro, no frequency, no description.
+  assert.deepEqual(h.texts(footer).map((t) => t.replace(/​/g, '')), [
+    'Example programs',
+    'Beginner', 'Full Body A/B',
+    'Intermediate', 'Upper/Lower',
+    'Advanced', 'Push/Pull/Legs',
+  ]);
+});
+
+test('a card title may wrap after a slash only; the name itself is unchanged', () => {
+  assert.equal(display.cardTitle({ name: 'Push/Pull/Legs' }), 'Push/​Pull/​Legs');
+  assert.equal(display.cardTitle({ name: 'Push/Pull/Legs' }).replace(/​/g, ''), 'Push/Pull/Legs');
+  assert.equal(display.cardTitle({ name: 'Full Body A/B' }).replace(/​/g, ''), 'Full Body A/B');
+  assert.equal(display.cardTitle({ name: 'Beginner' }), 'Beginner');
+  assert.equal(display.cardAccessibilityLabel({ name: 'Push/Pull/Legs', level: 'Advanced' }), 'Push/Pull/Legs, Advanced', 'a screen reader gets the plain name');
+});
+
+test('the cards sit in a two-column grid: pairs of equal flex cards, the odd last card alone on the left', async () => {
+  const world = hubWorld();
+  const footer = world.footer(await world.show());
+  const rows = h.nodes(footer).filter((n) => n.type === 'View' && n.props.style && [n.props.style].flat(Infinity).some((s) => s?.flexDirection === 'row' && s?.columnGap === 12));
+  assert.equal(rows.length, 2);
+  const cardsIn = (row) => h.nodes(row.props.children).filter((n) => n.type === 'Pressable');
+  assert.deepEqual(rows.map((row) => cardsIn(row).length), [2, 1]);
+  // The lone card keeps the width of a column through an empty spacer, so it is not stretched.
+  const last = rows[1].props.children.flat(Infinity).filter(Boolean);
+  assert.equal(last.length, 2);
+  assert.equal(last[1].type, 'View');
+  // Unmeasured: a square by aspect ratio. Measured: that width as the minimum height, which can grow.
+  const style = (node) => [node.props.style({ pressed: false })].flat(Infinity);
+  assert.ok(style(cardsIn(rows[0])[0]).some((s) => s?.aspectRatio === 1));
+});
+
+test('once the grid is measured each card is at least a square of one column, and may grow', async () => {
+  const world = hubWorld();
+  let tree = await world.show();
+  const measure = h.nodes(world.footer(tree)).find((n) => typeof n.props?.onLayout === 'function');
+  measure.props.onLayout({ nativeEvent: { layout: { width: 300 } } });
+  tree = world.render();
+  const cards = h.nodes(world.footer(tree)).filter((n) => n.type === 'Pressable');
+  for (const card of cards) {
+    const flat = Object.assign({}, ...[card.props.style({ pressed: false })].flat(Infinity).filter(Boolean));
+    assert.equal(flat.minHeight, 144, '(300 - 12) / 2');
+    assert.equal(flat.aspectRatio, undefined, 'no fixed height, so large text is never clipped');
+    assert.equal(flat.height, undefined);
   }
 });
 
 test('tapping a card opens its preview once and copies nothing: browsing creates no records', async () => {
   const world = hubWorld();
   const footer = world.footer(await world.show());
-  const card = h.byLabel(footer, 'Upper/Lower, Intermediate, 4 sessions per week');
+  const card = h.byLabel(footer, 'Upper/Lower, Intermediate');
   card.props.onPress();
   card.props.onPress(); // a double tap
   assert.deepEqual(world.pushes, [{ pathname: '/example-program/[id]', params: { id: 'intermediate-upper-lower' } }]);

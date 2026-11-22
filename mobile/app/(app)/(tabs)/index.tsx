@@ -41,7 +41,7 @@ import * as readinessApi from "../../../src/api/readiness";
 import * as workoutsApi from "../../../src/api/workouts";
 import { light } from "../../../src/lightTheme";
 import { TabTopBar } from "../../../src/navigation/TabTopBar";
-import { cardAccessibilityLabel, cardMeta } from "../../../src/programs/exampleDisplay";
+import { cardAccessibilityLabel, cardTitle } from "../../../src/programs/exampleDisplay";
 import { UNAVAILABLE_MESSAGE, createExampleLibrary } from "../../../src/programs/exampleLibrary";
 import { createProgramsHub } from "../../../src/programs/programsHub";
 import { clearActiveWorkout, getActiveWorkout, setActiveWorkout } from "../../../src/workout/activeWorkout";
@@ -50,6 +50,8 @@ import { resolveActiveWorkoutId } from "../../../src/workout/resolveActiveWorkou
 import { createWorkoutStarter } from "../../../src/workout/workoutStarter";
 
 const MIN_TOUCH = 44;
+const EXAMPLE_GRID_GAP = 12;
+const EXAMPLE_CARD_PADDING = 14;
 
 export default function StartWorkoutScreen() {
   const router = useRouter();
@@ -362,8 +364,9 @@ export default function StartWorkoutScreen() {
 }
 
 /**
- * Example programs, after My programs. Each card shows its level and weekly frequency and
- * opens a preview; looking creates nothing. Unavailable (an older backend answers 404, or
+ * Example programs, after My programs, as a two-column grid of square cards. Each card shows
+ * its level and name and opens a preview (which still carries the frequency and description);
+ * looking creates nothing. Unavailable (an older backend answers 404, or
  * the request failed) is shown here, inside the section, with its own retry.
  */
 function ExamplePrograms({
@@ -379,13 +382,15 @@ function ExamplePrograms({
   onRetry: () => void;
   onOpen: (id: string) => void;
 }) {
+  const [gridWidth, setGridWidth] = useState(0);
+  const cardSize = gridWidth > 0 ? (gridWidth - EXAMPLE_GRID_GAP) / 2 : null;
+  const pairs: ExampleSummary[][] = [];
+  for (let i = 0; i < (examples ?? []).length; i += 2) pairs.push((examples ?? []).slice(i, i + 2));
+
   return (
     <View>
       <Text accessibilityRole="header" style={styles.sectionTitle}>
         Example programs
-      </Text>
-      <Text style={styles.sectionNote}>
-        Starting points you can add to your programs and edit. Browsing adds nothing.
       </Text>
 
       {unavailable ? (
@@ -417,33 +422,41 @@ function ExamplePrograms({
         />
       ) : null}
 
-      {(examples ?? []).map((example, index, all) => (
-        <Pressable
-          key={example.id}
-          accessibilityRole="button"
-          accessibilityLabel={cardAccessibilityLabel(example)}
-          accessibilityHint="Opens a preview. Nothing is added until you choose to"
-          style={({ pressed }) => [
-            styles.row,
-            index === 0 && styles.rowFirst,
-            index === all.length - 1 && styles.rowLast,
-            index < all.length - 1 && styles.rowDivider,
-            pressed && styles.rowPressed,
-          ]}
-          onPress={() => onOpen(example.id)}
-        >
-          <View style={styles.rowMain}>
-            <Text style={styles.exampleMeta}>{cardMeta(example)}</Text>
-            <Text numberOfLines={2} style={styles.rowTitle}>
-              {example.name}
-            </Text>
-            <Text numberOfLines={3} style={styles.exampleSummary}>
-              {example.summary}
-            </Text>
+      {/* Two equal columns, built in pairs so the widths are exact and an odd last card stays
+          in the left column. The first row's width is measured once; every card is then at
+          least that wide square, and grows (never clips) when large text needs more height. */}
+      <View onLayout={(event) => setGridWidth(event.nativeEvent.layout.width)}>
+        {pairs.map((pair, rowIndex) => (
+          <View key={pair[0].id} style={[styles.exampleGridRow, rowIndex > 0 && styles.exampleGridRowNext]}>
+            {pair.map((example) => (
+              <Pressable
+                key={example.id}
+                accessibilityRole="button"
+                accessibilityLabel={cardAccessibilityLabel(example)}
+                accessibilityHint="Opens a preview. Nothing is added until you choose to"
+                style={({ pressed }) => [
+                  styles.exampleCard,
+                  cardSize === null ? styles.exampleCardSquare : { minHeight: cardSize },
+                  pressed && styles.rowPressed,
+                ]}
+                onPress={() => onOpen(example.id)}
+              >
+                <View style={styles.exampleCardText}>
+                  <Text style={styles.exampleMeta}>{example.level}</Text>
+                  <Text style={styles.rowTitle}>{cardTitle(example)}</Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={light.textSecondary}
+                  style={styles.exampleChevron}
+                />
+              </Pressable>
+            ))}
+            {pair.length === 1 ? <View style={styles.exampleCardSpacer} /> : null}
           </View>
-          <Ionicons name="chevron-forward" size={18} color={light.textSecondary} />
-        </Pressable>
-      ))}
+        ))}
+      </View>
     </View>
   );
 }
@@ -542,9 +555,26 @@ const styles = StyleSheet.create({
   secondaryText: { flexShrink: 1, color: light.text, fontSize: 17, fontWeight: "600" },
 
   sectionTitle: { color: light.text, fontSize: 20, fontWeight: "700", marginTop: 28, marginBottom: 8 },
-  sectionNote: { color: light.textSecondary, fontSize: 13, lineHeight: 18, marginBottom: 8 },
   exampleMeta: { color: light.textSecondary, fontSize: 13, fontWeight: "600" },
-  exampleSummary: { color: light.textSecondary, fontSize: 14, lineHeight: 19 },
+  exampleGridRow: { flexDirection: "row", alignItems: "stretch", columnGap: EXAMPLE_GRID_GAP },
+  exampleGridRowNext: { marginTop: EXAMPLE_GRID_GAP },
+  // flex: 1 + minWidth 0 gives equal widths. Before the grid is measured the card is a square by
+  // aspect ratio; afterwards minHeight = width, so larger text grows the card instead of clipping.
+  exampleCard: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: "space-between",
+    rowGap: 8,
+    backgroundColor: light.surface,
+    borderRadius: 12,
+    padding: EXAMPLE_CARD_PADDING,
+  },
+  exampleCardSquare: { aspectRatio: 1 },
+  exampleCardText: { rowGap: 4 },
+  exampleChevron: { alignSelf: "flex-end" },
+  // Same flex and same padding as a card: padding counts towards a flex item's base size, so a
+  // spacer without it would leave the lone card wider than a column.
+  exampleCardSpacer: { flex: 1, minWidth: 0, padding: EXAMPLE_CARD_PADDING },
   caption: { color: light.textSecondary, fontSize: 13 },
   rowPressed: { backgroundColor: light.pressed },
 

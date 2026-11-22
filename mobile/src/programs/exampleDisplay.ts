@@ -18,9 +18,19 @@ export function cardMeta(example: ExampleSummary): string {
   return `${example.level} · ${frequencyLabel(example)}`;
 }
 
-/** What a screen reader hears for a card. */
-export function cardAccessibilityLabel(example: ExampleSummary): string {
-  return `${example.name}, ${example.level}, ${frequencyLabel(example)}`;
+/**
+ * A card's program name for display only. A narrow card has to wrap "Push/Pull/Legs", and with no
+ * space in it a text engine may break inside a word ("Push/Pull/Leg" + "s"). A zero-width space
+ * after each slash offers a break there instead; it is invisible and changes nothing when the name
+ * fits. The accessibility label and the data keep the plain name.
+ */
+export function cardTitle(example: Pick<ExampleSummary, "name">): string {
+  return example.name.replace(/\//g, "/​");
+}
+
+/** What a screen reader hears for a card: the same two things the card shows, name and level. */
+export function cardAccessibilityLabel(example: Pick<ExampleSummary, "name" | "level">): string {
+  return `${example.name}, ${example.level}`;
 }
 
 /** "3 × 6–10" (a fixed count when min equals max). */
