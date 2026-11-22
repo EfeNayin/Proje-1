@@ -7,7 +7,9 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const walk = (dir) =>
   readdirSync(path.join(root, dir)).flatMap((name) => {
-    const rel = path.join(dir, name);
+    // Always forward slashes (path.join would give backslashes on Windows), because the
+    // assertions below compare against and match on '/'-separated paths.
+    const rel = path.posix.join(dir, name);
     return statSync(path.join(root, rel)).isDirectory() ? walk(rel) : [rel];
   });
 const sources = [...walk('app'), ...walk('src')].filter((f) => /\.tsx?$/.test(f));

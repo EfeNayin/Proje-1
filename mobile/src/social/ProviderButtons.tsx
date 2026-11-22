@@ -34,8 +34,8 @@ export const BUTTON_RADIUS = 14;
 const G_HEIGHT = 20;
 const G_WIDTH = (G_HEIGHT * 200) / 204;
 
-// Registered name of the bundled Google Sans Medium (its PostScript name), loaded the way
-// romanTheme.ts loads its fonts: from the bundle, nothing fetched at runtime.
+// Registered name of the bundled Google Sans Medium (its PostScript name), loaded from the
+// app bundle: nothing is fetched at runtime.
 export const GOOGLE_SANS_MEDIUM = "GoogleSans-Medium";
 const googleSansFiles = {
   [GOOGLE_SANS_MEDIUM]: require("../../assets/fonts/google-sans/GoogleSans-Medium.ttf"),
