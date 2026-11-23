@@ -243,7 +243,7 @@ const labels = (tree) => h.nodes(tree).filter((node) => node.type === 'Pressable
 test('Start Workout: the primary action is first, Create program is immediately below it, then My programs', async () => {
   const world = hubWorld({ programs: [program('a')] });
   const tree = await world.show();
-  assert.equal(world.topBar(tree).props.title, 'Start Workout');
+  assert.equal(world.topBar(tree).props.title, 'Workout');
   const header = world.header(tree);
   assert.deepEqual(labels(header).slice(0, 2), ['Start an Empty Workout', 'Create program']);
   const order = h.nodes(header).map((node) => node.props?.accessibilityLabel ?? (node.type === 'Text' ? h.texts(node)[0] : undefined));
@@ -388,7 +388,7 @@ test('Profile is the title bar button and opens the Profile route once', async (
   const world = hubWorld({ programs: [] });
   const tree = await world.show();
   const bar = world.topBar(tree);
-  assert.equal(bar.props.title, 'Start Workout');
+  assert.equal(bar.props.title, 'Workout');
   const profile = h.byLabel(bar.props.trailing, 'Profile, open your profile and account');
   assert.ok(profile);
   assert.ok(h.texts(bar.props.trailing).includes('Profile'));

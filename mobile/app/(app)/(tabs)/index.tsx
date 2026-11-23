@@ -1,5 +1,5 @@
 /**
- * Start Workout: the workout and program hub, and the screen the app opens on.
+ * Workout: the workout and program hub, and the screen the app opens on.
  *
  * From top to bottom: the one primary action (Start an Empty Workout, or Resume
  * workout while a session is active), Create program directly beneath it, then
@@ -285,7 +285,7 @@ export default function StartWorkoutScreen() {
 
   return (
     <View style={styles.screen}>
-      <TabTopBar title="Start Workout" trailing={profileButton} />
+      <TabTopBar title="Workout" trailing={profileButton} />
 
       <FlatList
         style={styles.list}

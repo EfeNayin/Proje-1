@@ -45,3 +45,14 @@ export const lightStatus = {
   above_mrv: { text: "#B3261E", fill: "#B3261E" },
   no_reference: { text: "#636366", fill: "#8E8E93" },
 } as const;
+
+/**
+ * Icon colours for the three macro cards on the Diet home. Each is at least 3:1 on the
+ * white card surface (graphics threshold: 5.3, 3.5, 5.1); the macro's name is always
+ * written beside its icon, so the colour never carries the meaning alone.
+ */
+export const lightMacro = {
+  protein: "#C62828",
+  carbs: "#C77700",
+  fat: "#0A64C8",
+} as const;

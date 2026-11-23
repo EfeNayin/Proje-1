@@ -2,12 +2,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
 import { light } from "../../../src/lightTheme";
-import { StartWorkoutTabLabel } from "../../../src/workout/StartWorkoutTabLabel";
 import { TabBarWithRestTimer } from "../../../src/workout/TabBarWithRestTimer";
 
 /**
- * Start Workout is the middle tab AND where the app opens. The declared order is
- * the visual order (Volume, History, Start Workout, Exercises, Diet), and a
+ * Workout is the middle tab AND where the app opens. The declared order is
+ * the visual order (Volume, History, Workout, Exercises, Diet), and a
  * tab navigator would otherwise start on the first one it lists, so the landing
  * tab is named here rather than left to the order.
  */
@@ -30,12 +29,10 @@ export default function TabsLayout() {
         // container style, so none is set here.
         tabBarActiveTintColor: light.text,
         tabBarInactiveTintColor: light.textSecondary,
-        // Five labels share the width of the smallest iPhones, and "Start Workout"
-        // is the longest; it alone is widened and fitted (see StartWorkoutTabLabel and
-        // its tabBarItemStyle below), the other labels keep this size. The bar has a
-        // fixed height, so a label that grew with Dynamic Type would be clipped by
-        // it; like the system's own tab bars it stays one size, and each tab still
-        // has its full spoken name.
+        // Five labels share the width of the smallest iPhones, so they all stay one
+        // size and one line. The bar has a fixed height, so a label that grew with
+        // Dynamic Type would be clipped by it; like the system's own tab bars it stays
+        // one size, and each tab still has its full spoken name.
         tabBarAllowFontScaling: false,
         tabBarLabelStyle: { fontSize: 10 },
       }}
@@ -59,15 +56,11 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Start Workout",
-          tabBarLabel: ({ color }) => <StartWorkoutTabLabel color={color} />,
-          tabBarAccessibilityLabel: "Start Workout",
-          // The one long label. Every tab is flex 1 with 5 pt of padding a side, which
-          // leaves 54 pt of text width on a 320 pt screen against about 64 pt for
-          // "Start Workout" at size 10. A larger share of the bar (the tabs either side
-          // stay equal, so the icon stays centred) gives it about 71 pt there; the
-          // other four still have 50+ pt for "Exercises", their widest label.
-          tabBarItemStyle: { flex: 1.35 },
+          title: "Workout",
+          tabBarAccessibilityLabel: "Workout",
+          // A stable handle for the end-to-end flows: the visible text "Workout" is also the
+          // home screen's heading, so it cannot pick out the tab.
+          tabBarButtonTestID: "tab-workout",
           tabBarIcon: ({ color, size }) => <Ionicons name="barbell" size={size} color={color} />,
         }}
       />
@@ -85,10 +78,10 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="nutrition" size={size} color={color} />,
         }}
       />
-      {/* Profile is opened from the Start Workout title bar. It stays a real route in this group (so
+      {/* Profile is opened from the Workout title bar. It stays a real route in this group (so
           /profile and every link to it still work) but has no button in the bar. */}
       <Tabs.Screen name="profile" options={{ href: null }} />
-      {/* The old Programs tab. Programs now live on Start Workout; this route stays only so an old
+      {/* The old Programs tab. Programs now live on Workout; this route stays only so an old
           link to /programs still lands somewhere (it redirects), and has no button in the bar. */}
       <Tabs.Screen name="programs" options={{ href: null }} />
     </Tabs>

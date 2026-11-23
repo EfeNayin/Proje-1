@@ -28,7 +28,7 @@ test('tab layout: the bar appearance is defined once for all five tabs', () => {
   }
 });
 
-test('tab layout: Volume, History, Start Workout, Exercises and Diet are the tabs, all light; Profile is a hidden route', () => {
+test('tab layout: Volume, History, Workout, Exercises and Diet are the tabs, all light; Profile is a hidden route', () => {
   const screens = [...source.matchAll(/<Tabs\.Screen\s+name="([^"]+)"\s+options=\{\{([\s\S]*?)\}\}\s*\/>/g)];
   const names = screens.map((match) => match[1]);
   // Declared order is the visual order; the Profile and old Programs routes follow as hidden ones.
@@ -37,9 +37,9 @@ test('tab layout: Volume, History, Start Workout, Exercises and Diet are the tab
   const titles = Object.fromEntries(screens.map((match) => [match[1], /title: "([^"]+)"/.exec(match[2])?.[1]]));
   assert.deepEqual(
     ['volume', 'history', 'index', 'exercises', 'diet'].map((name) => titles[name]),
-    ['Volume', 'History', 'Start Workout', 'Exercises', 'Diet'],
+    ['Volume', 'History', 'Workout', 'Exercises', 'Diet'],
   );
-  assert.doesNotMatch(source, /title: "(Training|Programs)"/);
+  assert.doesNotMatch(source, /title: "(Training|Programs|Start Workout)"/);
   assert.doesNotMatch(source, /romanTheme|\.\.\/theme"/);
   assert.match(source, /lightTheme/);
 });
@@ -50,15 +50,16 @@ test('tab layout: Profile stays a registered route but is not a tab, and is neve
   assert.doesNotMatch(source, /Redirect/);
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'app', '(app)', '(tabs)', 'profile.tsx')));
   const diet = fs.readFileSync(path.join(__dirname, '..', 'app', '(app)', '(tabs)', 'diet.tsx'), 'utf8');
-  assert.match(diet, /<TabTopBar title="Diet" \/>/);
-  assert.doesNotMatch(diet, /Redirect|router|fetch|api\//);
+  // Diet is a dashboard now (tests/diet-home.test.cjs); it still never redirects away.
+  assert.match(diet, /<TabTopBar\s+title="Diet"/);
+  assert.doesNotMatch(diet, /Redirect/);
 });
 
 test('tab layout: Programs has no button in the bar, and the middle tab is where the app opens', () => {
   const programs = /<Tabs\.Screen name="programs" options=\{\{ href: null \}\} \/>/.exec(source);
   assert.ok(programs, 'programs must be a hidden route, not a tab');
   assert.doesNotMatch(source, /name="programs"[\s\S]{0,80}tabBarIcon/);
-  // Start Workout is the third of five visible tabs and is named as the anchor explicitly,
+  // Workout is the third of five visible tabs and is named as the anchor explicitly,
   // because a tab navigator would otherwise start on the first tab it lists (Volume).
   assert.match(source, /export const unstable_settings = \{\s*anchor: "index",?\s*\};/);
   const visible = [...source.matchAll(/<Tabs\.Screen\s+name="([^"]+)"\s+options=\{\{\s*title:/g)].map((match) => match[1]);
@@ -66,7 +67,7 @@ test('tab layout: Programs has no button in the bar, and the middle tab is where
   assert.equal(visible[2], 'index');
 });
 
-test('tab layout: labels keep one size; "Start Workout" is one line in the stock-height bar, only that tab is widened', () => {
+test('tab layout: labels keep one size and one line in the stock-height bar; all five tabs are equal width', () => {
   const [, screenOptions] = /screenOptions=\{\{([\s\S]*?)\n {6}\}\}/.exec(source) ?? [];
   assert.match(screenOptions, /tabBarAllowFontScaling: false/);
   assert.match(screenOptions, /tabBarLabelStyle: \{ fontSize: 10 \}/);
@@ -76,24 +77,21 @@ test('tab layout: labels keep one size; "Start Workout" is one line in the stock
 
   const [, middle] = /name="index"\s+options=\{\{([\s\S]*?)\}\}\s*\/>/.exec(source) ?? [];
   assert.ok(middle, 'index tab not found');
-  assert.match(middle, /tabBarLabel: \(\{ color \}\) => <StartWorkoutTabLabel color=\{color\} \/>/);
-  assert.match(middle, /tabBarItemStyle: \{ flex: [\d.]+ \}/);
-  // The spoken name stays the whole phrase.
-  assert.match(middle, /tabBarAccessibilityLabel: "Start Workout"/);
-  assert.match(middle, /title: "Start Workout"/);
-  // The other four tabs keep the default item style.
-  assert.equal(source.split('tabBarItemStyle:').length - 1, 1, 'only the middle tab sets tabBarItemStyle');
+  // The short title is the visible label (the bar draws it on one line at size 10) and the spoken name.
+  assert.match(middle, /title: "Workout"/);
+  assert.match(middle, /tabBarAccessibilityLabel: "Workout"/);
+  assert.match(middle, /tabBarButtonTestID: "tab-workout"/);
+  // No special label component and no width bias: every tab is the same flex-1 item.
+  assert.doesNotMatch(source, /tabBarLabel:|tabBarItemStyle:|TabLabel/);
+  assert.equal(fs.existsSync(path.join(__dirname, '..', 'src', 'workout', 'StartWorkoutTabLabel.tsx')), false);
 });
 
-test('tab layout: the Start Workout label is the exact text on one line, never wrapped or cut', () => {
-  const label = fs.readFileSync(path.join(__dirname, '..', 'src', 'workout', 'StartWorkoutTabLabel.tsx'), 'utf8');
-  assert.match(label, />\s*Start Workout\s*<\/Text>/);
-  assert.doesNotMatch(label, /<br|\\n/);
-  assert.equal(label.split('<Text').length - 1, 1);
-  assert.match(label, /numberOfLines=\{1\}/);
-  assert.match(label, /adjustsFontSizeToFit/);
-  assert.match(label, /allowFontScaling=\{false\}/);
-  assert.match(label, /fontSize: 10,/);
+test('tab layout: the Workout home heading is "Workout" while the actions keep their wording', () => {
+  const home = fs.readFileSync(path.join(__dirname, '..', 'app', '(app)', '(tabs)', 'index.tsx'), 'utf8');
+  assert.match(home, /<TabTopBar title="Workout"/);
+  assert.doesNotMatch(home, /title="Start Workout"/);
+  assert.match(home, /Start an Empty Workout/);
+  assert.match(home, /Resume workout/);
 });
 
 // ------------------------------------------------------------ the floating pill
@@ -138,13 +136,12 @@ function renderBar({ index = 2, focusedHidden = false, prevent = false } = {}) {
   const calls = [];
   const names = ['volume', 'history', 'index', 'exercises', 'diet', 'profile', 'programs'];
   const routes = names.map((name) => ({ key: `${name}-key`, name }));
-  const titles = { volume: 'Volume', history: 'History', index: 'Start Workout', exercises: 'Exercises', diet: 'Diet' };
+  const titles = { volume: 'Volume', history: 'History', index: 'Workout', exercises: 'Exercises', diet: 'Diet' };
   const descriptors = Object.fromEntries(routes.map((route) => [route.key, {
     options: {
       title: titles[route.name],
       tabBarIcon: ({ color }) => h.createElement('Icon', { name: route.name, color }),
-      tabBarAccessibilityLabel: route.name === 'index' ? 'Start Workout' : undefined,
-      tabBarLabel: route.name === 'index' ? () => h.createElement(function StartWorkoutTabLabel() { return h.createElement('Text', null, 'Start Workout'); }, {}) : undefined,
+      tabBarAccessibilityLabel: route.name === 'index' ? 'Workout' : undefined,
       tabBarActiveTintColor: 'ACTIVE',
       tabBarInactiveTintColor: 'INACTIVE',
       tabBarItemStyle: titles[route.name] ? undefined : { display: 'none' },
@@ -188,7 +185,7 @@ function renderBar({ index = 2, focusedHidden = false, prevent = false } = {}) {
 const renderItem = (node, state) => node.props.children[0](state);
 const pressables = (tree) => h.nodes(tree).filter((node) => node.type === 'Pressable');
 
-test('floating bar: shows the five tabs in order, with selected state, labels and the one-line Start Workout label', () => {
+test('floating bar: shows the five tabs in order, with selected state, labels and the one-line Workout label', () => {
   const world = renderBar();
   const tree = world.render();
   const items = pressables(tree);
@@ -199,12 +196,11 @@ test('floating bar: shows the five tabs in order, with selected state, labels an
   assert.deepEqual(items.map((node) => node.props['aria-selected']), [false, false, true, false, false]);
   assert.deepEqual(
     items.map((node) => node.props.accessibilityLabel),
-    ['Volume, tab, 1 of 5', 'History, tab, 2 of 5', 'Start Workout', 'Exercises, tab, 4 of 5', 'Diet, tab, 5 of 5'],
+    ['Volume, tab, 1 of 5', 'History, tab, 2 of 5', 'Workout', 'Exercises, tab, 4 of 5', 'Diet, tab, 5 of 5'],
   );
-  // The middle label is the StartWorkoutTabLabel element, which renders its own single Text.
+  // Every tab, the middle one included, draws its title as one plain Text label.
   const contents = items.map((node) => renderItem(node, { pressed: false }));
-  assert.deepEqual(contents.flatMap((content) => h.texts(content)), ['Volume', 'History', 'Exercises', 'Diet']);
-  assert.ok(h.nodes(contents[2]).some((node) => typeof node.type === 'function' && node.type.name === 'StartWorkoutTabLabel'));
+  assert.deepEqual(contents.flatMap((content) => h.texts(content)), ['Volume', 'History', 'Workout', 'Exercises', 'Diet']);
   assert.ok(h.nodes(tree).some((node) => node.props?.role === 'tablist'));
 });
 
