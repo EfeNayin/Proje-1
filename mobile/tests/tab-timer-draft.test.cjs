@@ -163,11 +163,12 @@ test('returning from the timer while the workout is still in the stack pops back
   assert.deepEqual(world.calls, [['dismissTo', '/workout/workout']]);
 });
 
-test('the strip is the first thing in the tab bar on every tab, the bar itself is passed through untouched', () => {
+test('the strip is the first thing in the tab bar on every tab, the floating bar itself is passed through untouched', () => {
   const bar = h.loadFile('src/workout/TabBarWithRestTimer.tsx', {
     globals: { React: { createElement: h.createElement } },
     modules: {
-      'expo-router/js-tabs': { BottomTabBar: 'BottomTabBar' },
+      './FloatingTabBar': { FloatingTabBar: 'FloatingTabBar' },
+      '../lightTheme': { light: { background: '#F5F5F7' } },
       'react-native': h.reactNative(),
       './RestTimerPill': { RestTimerStrip: 'RestTimerStrip' },
     },
@@ -176,8 +177,8 @@ test('the strip is the first thing in the tab bar on every tab, the bar itself i
     const props = { state: { index, routes: TABS.map((name) => ({ name })) }, tab };
     const tree = bar(props);
     const kinds = h.nodes(tree).map((node) => node.type);
-    assert.ok(kinds.indexOf('RestTimerStrip') !== -1 && kinds.indexOf('RestTimerStrip') < kinds.indexOf('BottomTabBar'), tab);
-    assert.deepEqual(h.nodes(tree).find((node) => node.type === 'BottomTabBar').props.tab, tab);
+    assert.ok(kinds.indexOf('RestTimerStrip') !== -1 && kinds.indexOf('RestTimerStrip') < kinds.indexOf('FloatingTabBar'), tab);
+    assert.deepEqual(h.nodes(tree).find((node) => node.type === 'FloatingTabBar').props.tab, tab);
   }
   // Pushed screens have no tab bar, so only there may the floating overlay appear (and only for another workout's page).
   for (const tab of TABS) assert.equal(pillOverlayAllowed(segmentsFor(tab), undefined, 'workout'), false, tab);
