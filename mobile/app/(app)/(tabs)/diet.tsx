@@ -14,10 +14,11 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -44,6 +45,7 @@ import {
 } from "../../../src/nutrition/dietWeek";
 
 const MIN_TOUCH = 44;
+const MINUTE_MS = 60_000;
 // From this system text scale up, three macro cards no longer fit side by side.
 const STACK_MACROS_FROM_SCALE = 1.5;
 
@@ -71,14 +73,49 @@ export default function DietScreen() {
 
   const navigatingRef = useRef(false);
 
-  // On every focus: re-read the day (midnight may have passed) and the goals (an edit on
-  // the Nutrition Goals screen shows up on return).
+  // The signed-in account's zone, read by the clock checks below without restarting them.
+  const timeZoneRef = useRef(timeZone);
+  useEffect(() => {
+    timeZoneRef.current = timeZone;
+  }, [timeZone]);
+
+  // While focused: re-read the day (midnight may have passed) and the goals (an edit made on
+  // the Nutrition Goals screen shows up on return). The day is re-checked at every minute
+  // boundary and whenever the app returns to the foreground, because Diet can stay focused
+  // across midnight or in the background without any tab switch. `now` only changes when the
+  // calendar day (in the account's zone) really did, so a quiet minute re-renders nothing and
+  // a deliberately picked day is kept.
   useFocusEffect(
     useCallback(() => {
       navigatingRef.current = false;
-      setNow(new Date());
+      const syncDay = () =>
+        setNow((previous) => {
+          const next = new Date();
+          return calendarDateIn(next, timeZoneRef.current) ===
+            calendarDateIn(previous, timeZoneRef.current)
+            ? previous
+            : next;
+        });
+      syncDay();
       void loader.load();
-      return () => loader.invalidate();
+
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const scheduleNextMinute = () => {
+        timer = setTimeout(() => {
+          syncDay();
+          scheduleNextMinute();
+        }, MINUTE_MS - (Date.now() % MINUTE_MS) + 50);
+      };
+      scheduleNextMinute();
+      const subscription = AppState.addEventListener("change", (state) => {
+        if (state === "active") syncDay();
+      });
+
+      return () => {
+        if (timer !== null) clearTimeout(timer);
+        subscription.remove();
+        loader.invalidate();
+      };
     }, [loader]),
   );
 
@@ -186,7 +223,7 @@ function WeekStrip({
   onSelect: (date: CalendarDate) => void;
 }) {
   return (
-    <View style={styles.week} accessibilityRole="tablist">
+    <View style={styles.week}>
       {days.map((day) => {
         const isSelected = day.date === selected;
         return (

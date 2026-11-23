@@ -91,6 +91,10 @@ function dietWorld({ user = { id: 'u1', timezone: 'Europe/Istanbul' }, now = '20
   const hooks = h.createHooks();
   const pushes = [];
   const state = { user, fetches: 0, fetchGoals, fontScale };
+  // Fake timers and AppState: the clock only moves when a test says so.
+  const timers = new Map();
+  let nextTimer = 1;
+  const appState = { listeners: new Set(), removed: 0 };
   const RealDate = Date;
   const clock = { now: new RealDate(now) };
   class FakeDate extends RealDate {
@@ -98,12 +102,25 @@ function dietWorld({ user = { id: 'u1', timezone: 'Europe/Istanbul' }, now = '20
     static now() { return clock.now.getTime(); }
   }
   const screen = h.loadFile('app/(app)/(tabs)/diet.tsx', {
-    globals: { React: { createElement: h.createElement }, Date: FakeDate, Intl },
+    globals: {
+      React: { createElement: h.createElement }, Date: FakeDate, Intl,
+      setTimeout: (fn, delay) => { const id = nextTimer++; timers.set(id, { fn, due: clock.now.getTime() + delay }); return id; },
+      clearTimeout: (id) => { timers.delete(id); },
+    },
     modules: {
       '@expo/vector-icons': { Ionicons: 'Ionicons' },
       'expo-router': { useFocusEffect: hooks.hooks.useFocusEffect, useRouter: () => ({ push: (href) => pushes.push(href) }) },
       react: hooks.hooks,
-      'react-native': h.reactNative({ useWindowDimensions: () => ({ fontScale: state.fontScale }) }),
+      'react-native': h.reactNative({
+        useWindowDimensions: () => ({ fontScale: state.fontScale }),
+        AppState: {
+          addEventListener: (event, listener) => {
+            assert.equal(event, 'change');
+            appState.listeners.add(listener);
+            return { remove: () => { appState.listeners.delete(listener); appState.removed++; } };
+          },
+        },
+      }),
       '../../../src/api/nutrition': { fetchNutritionGoals: () => { state.fetches++; return state.fetchGoals(); } },
       '../../../src/auth/AuthContext': { useAuth: () => ({ user: state.user }) },
       '../../../src/lightTheme': { light, lightMacro },
@@ -113,7 +130,21 @@ function dietWorld({ user = { id: 'u1', timezone: 'Europe/Istanbul' }, now = '20
     },
   }).default;
   const world = {
-    hooks, pushes, state, clock,
+    hooks, pushes, state, clock, timers, appState,
+    /** Moves the clock to `to` and fires every timer that has come due, in order (each may schedule the next). */
+    advanceTo(to) {
+      const target = new RealDate(to).getTime();
+      for (;;) {
+        const due = [...timers].filter(([, t]) => t.due <= target).sort((a, b) => a[1].due - b[1].due)[0];
+        if (!due) break;
+        timers.delete(due[0]);
+        clock.now = new RealDate(due[1].due);
+        due[1].fn();
+      }
+      clock.now = new RealDate(target);
+    },
+    foreground: () => [...appState.listeners].forEach((listener) => listener('active')),
+    background: () => [...appState.listeners].forEach((listener) => listener('background')),
     render: () => h.expand(hooks.render(screen)),
     async show() { world.render(); hooks.focus(); await h.settle(); return world.render(); },
     days: (tree) => h.nodes(tree).filter((n) => n.type === 'Pressable' && /^\w+day, \w+ \d+, \d{4}/.test(n.props.accessibilityLabel ?? '')),
@@ -265,6 +296,116 @@ test('leaving the screen drops an answer still on its way; another account gets 
   account.state.fetchGoals = async () => ({ calorie_goal: null, protein_goal_g: null, carb_goal_g: null, fat_goal_g: null });
   tree = account.render(); // a different account: the previous account's numbers are not shown
   assert.ok(!h.texts(tree).includes('2400'));
+});
+
+test('staying focused across midnight advances today by itself, in the account timezone', async () => {
+  // 23:59:30 Sunday in Istanbul (20:59:30 UTC): Diet is open and never loses focus.
+  const world = dietWorld({ now: '2026-11-22T20:59:30Z' });
+  let tree = await world.show();
+  assert.equal(world.mealContext(tree), 'Today · Sun, Nov 22');
+  assert.equal(world.days(tree)[6].props.accessibilityState.selected, true);
+  assert.equal(world.timers.size, 1);
+
+  // Still the same Istanbul day a minute later than UTC midnight would suggest: nothing changes.
+  world.advanceTo('2026-11-22T20:59:59Z');
+  assert.equal(world.mealContext(world.render()), 'Today · Sun, Nov 22');
+
+  // The minute boundary after local midnight: today moves to Monday, in a brand-new week.
+  world.advanceTo('2026-11-22T21:01:00Z');
+  tree = world.render();
+  assert.equal(world.mealContext(tree), 'Today · Mon, Nov 23');
+  assert.equal(world.days(tree)[0].props.accessibilityState.selected, true);
+  assert.ok(world.days(tree)[0].props.accessibilityLabel.endsWith('today'));
+  assert.equal(world.days(tree)[0].props.accessibilityLabel.split(',').slice(0, 2).join(','), 'Monday, November 23');
+  assert.equal(world.timers.size, 1); // the next minute's check is already scheduled
+  // The goals were not reloaded by the clock check.
+  assert.equal(world.state.fetches, 1);
+
+  // The UTC midnight (which is NOT local midnight for this account) never moved the day earlier.
+  const utcMidnight = dietWorld({ now: '2026-11-22T20:59:30Z', user: { id: 'u3', timezone: 'Europe/Istanbul' } });
+  await utcMidnight.show();
+  utcMidnight.advanceTo('2026-11-22T21:00:20Z');
+  assert.equal(utcMidnight.mealContext(utcMidnight.render()), 'Today · Mon, Nov 23');
+});
+
+test('a deliberately picked day survives the clock check; a pick outside the new week falls back to today', async () => {
+  const world = dietWorld({ now: '2026-11-25T12:00:00Z' }); // Wednesday
+  let tree = await world.show();
+  world.days(tree)[4].props.onPress(); // Friday 27
+  world.advanceTo('2026-11-25T12:05:00Z'); // minutes pass, same day
+  assert.equal(world.mealContext(world.render()), 'Fri, Nov 27');
+  world.advanceTo('2026-11-26T09:00:00Z'); // the next day, same week
+  tree = world.render();
+  assert.equal(world.mealContext(tree), 'Tomorrow · Fri, Nov 27'); // the pick is kept ...
+  assert.ok(world.days(tree)[3].props.accessibilityLabel.endsWith('today')); // ... while today moved to Thursday
+
+  // Across the weekend: the picked Friday belongs to the finished week, so today is selected.
+  world.advanceTo('2026-11-30T09:00:00Z');
+  tree = world.render();
+  assert.equal(world.mealContext(tree), 'Today · Mon, Nov 30');
+  assert.equal(world.days(tree)[0].props.accessibilityState.selected, true);
+});
+
+test('returning from the background re-reads the day at once, even before the next minute check', async () => {
+  const world = dietWorld({ now: '2026-11-22T12:00:00Z' }); // Sunday
+  let tree = await world.show();
+  assert.equal(world.mealContext(tree), 'Today · Sun, Nov 22');
+  assert.equal(world.appState.listeners.size, 1);
+
+  world.background(); // going to the background does nothing
+  assert.equal(world.mealContext(world.render()), 'Today · Sun, Nov 22');
+
+  // The phone slept for two days: timers did not fire, the clock jumped.
+  world.clock.now = new Date('2026-11-24T08:00:00Z');
+  world.foreground();
+  tree = world.render();
+  assert.equal(world.mealContext(tree), 'Today · Tue, Nov 24');
+  assert.equal(world.days(tree)[1].props.accessibilityState.selected, true);
+  assert.equal(world.state.fetches, 1);
+
+  // Resuming on the same day with a picked date changes nothing.
+  world.days(tree)[4].props.onPress();
+  world.foreground();
+  assert.equal(world.mealContext(world.render()), 'Fri, Nov 27');
+});
+
+test('the clock timer and AppState listener are removed on blur and on unmount, and refocus starts one of each', async () => {
+  const world = dietWorld();
+  await world.show();
+  assert.equal(world.timers.size, 1);
+  assert.equal(world.appState.listeners.size, 1);
+
+  world.hooks.blur();
+  assert.equal(world.timers.size, 0);
+  assert.equal(world.appState.listeners.size, 0);
+  assert.equal(world.appState.removed, 1);
+  // An event or timer arriving after blur has nothing left to run.
+  world.foreground();
+  world.advanceTo('2026-11-24T12:00:00Z');
+  assert.equal(world.mealContext(world.render()), 'Today · Mon, Nov 23');
+
+  world.hooks.focus();
+  assert.equal(world.timers.size, 1);
+  assert.equal(world.appState.listeners.size, 1);
+  await h.settle();
+  assert.equal(world.mealContext(world.render()), 'Today · Tue, Nov 24'); // refocus re-read the day
+
+  world.hooks.unmount();
+  assert.equal(world.timers.size, 0);
+  assert.equal(world.appState.listeners.size, 0);
+});
+
+test('the week strip is a plain group of date buttons, not a tablist', async () => {
+  const world = dietWorld();
+  const tree = await world.show();
+  assert.ok(!h.nodes(tree).some((n) => n.props?.accessibilityRole === 'tablist' || n.props?.role === 'tablist'));
+  const days = world.days(tree);
+  assert.equal(days.length, 7);
+  days.forEach((day) => {
+    assert.equal(day.props.accessibilityRole, 'button');
+    assert.match(day.props.accessibilityLabel, /^\w+day, \w+ \d+, \d{4}/);
+    assert.equal(typeof day.props.accessibilityState.selected, 'boolean');
+  });
 });
 
 test('Edit goals / Set goals opens the existing nutrition goals form, once', async () => {
