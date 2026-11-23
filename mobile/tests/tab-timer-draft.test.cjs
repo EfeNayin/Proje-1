@@ -9,7 +9,9 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const h = require('./support/screen-harness.cjs');
 
-const TABS = ['profile', 'history', 'index', 'exercises', 'volume'];
+// Profile is no longer a visible tab but is still a route inside the tab group (opened from the
+// Start Workout title bar, with the bar and the rest strip underneath), so it stays in this list.
+const TABS = ['profile', 'history', 'index', 'exercises', 'volume', 'diet'];
 // The router's segments for the focused tab: the index tab has no segment of its own.
 const segmentsFor = (tab) => (tab === 'index' ? ['(app)', '(tabs)'] : ['(app)', '(tabs)', tab]);
 
@@ -185,5 +187,5 @@ test('the strip is the first thing in the tab bar on every tab, the bar itself i
 test('the tab bar that carries the strip is the one all five tabs use', () => {
   const layout = h.read('app/(app)/(tabs)/_layout.tsx');
   assert.match(layout, /tabBar=\{\(props\) => <TabBarWithRestTimer \{\.\.\.props\} \/>\}/);
-  assert.equal(layout.split('<Tabs.Screen').length - 1, 6); // five tabs and the hidden route share this one navigator
+  assert.equal(layout.split('<Tabs.Screen').length - 1, 7); // five tabs and the two hidden routes (Profile, Programs) share this one navigator
 });

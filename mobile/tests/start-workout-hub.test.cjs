@@ -358,20 +358,44 @@ test('My programs lists every program; a card only opens the program and never c
   assert.equal(world.spies.activate, 0);
 });
 
-test('Create program opens the creation screen once, and Research stays one tap away in the title bar', async () => {
+test('Create program opens the creation screen once', async () => {
   const world = hubWorld({ programs: [] });
   const tree = await world.show();
   const create = h.byLabel(world.header(tree), 'Create program');
   create.props.onPress();
   create.props.onPress();
   assert.deepEqual(world.pushes, ['/program/new']);
+});
 
-  const research = h.byLabel(world.topBar(tree).props.trailing, 'Research, explore training research');
-  assert.ok(research);
-  const second = hubWorld();
-  const secondTree = await second.show();
-  h.byLabel(second.topBar(secondTree).props.trailing, 'Research, explore training research').props.onPress();
-  assert.deepEqual(second.pushes, ['/research']);
+test('Research is a secondary button directly below Create program and above My programs, not in the title bar', async () => {
+  const world = hubWorld({ programs: [] });
+  const tree = await world.show();
+  const header = world.header(tree);
+  const labels = h.nodes(header).map((node) => node.props?.accessibilityLabel).filter(Boolean);
+  const create = labels.indexOf('Create program');
+  assert.ok(create >= 0);
+  assert.equal(labels[create + 1], 'Research, explore training research');
+  const order = h.nodes(header).map((node) => node.props?.accessibilityLabel ?? (node.props?.accessibilityRole === 'header' ? h.texts(node)[0] : undefined)).filter(Boolean);
+  assert.ok(order.indexOf('Research, explore training research') < order.indexOf('My programs'));
+  // The title bar no longer carries Research.
+  assert.equal(h.byLabel(world.topBar(tree).props.trailing, 'Research, explore training research'), undefined);
+
+  h.byLabel(header, 'Research, explore training research').props.onPress();
+  assert.deepEqual(world.pushes, ['/research']);
+});
+
+test('Profile is the title bar button and opens the Profile route once', async () => {
+  const world = hubWorld({ programs: [] });
+  const tree = await world.show();
+  const bar = world.topBar(tree);
+  assert.equal(bar.props.title, 'Start Workout');
+  const profile = h.byLabel(bar.props.trailing, 'Profile, open your profile and account');
+  assert.ok(profile);
+  assert.ok(h.texts(bar.props.trailing).includes('Profile'));
+  assert.equal(h.byLabel(bar.props.trailing, 'Research, explore training research'), undefined);
+  profile.props.onPress();
+  profile.props.onPress();
+  assert.deepEqual(world.pushes, ['/profile']);
 });
 
 test('no programs yet is stated; a failed load is an error with a retry, never an empty list', async () => {
