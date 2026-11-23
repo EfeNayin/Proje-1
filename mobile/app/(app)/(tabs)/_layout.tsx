@@ -18,18 +18,16 @@ export const unstable_settings = {
 export default function TabsLayout() {
   return (
     <Tabs
-      // The usual bar, with the rest countdown above it while one is running.
+      // The floating pill bar, with the rest countdown above it while one is running.
       tabBar={(props) => <TabBarWithRestTimer {...props} />}
       screenOptions={{
         // Every tab draws its own title bar (headerShown: false below); a native
         // header as well would show each title twice.
         headerShown: false,
         sceneStyle: { backgroundColor: light.background },
-        // Shared by all five tabs.
-        tabBarStyle: {
-          backgroundColor: light.surface,
-          borderTopColor: light.separator,
-        },
+        // Shared by all five tabs. The bar itself (one floating pill with a moving
+        // highlight behind the selected tab) is drawn by FloatingTabBar, which owns the
+        // container style, so none is set here.
         tabBarActiveTintColor: light.text,
         tabBarInactiveTintColor: light.textSecondary,
         // Five labels share the width of the smallest iPhones, and "Start Workout"

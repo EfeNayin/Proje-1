@@ -406,7 +406,7 @@ test('the pill sits in the tab bar and the overlay beside the stack, so each is 
   const tabs = read('app/(app)/(tabs)/_layout.tsx');
   assert.match(tabs, /tabBar=\{\(props\) => <TabBarWithRestTimer \{\.\.\.props\} \/>\}/);
   const bar = read('src/workout/TabBarWithRestTimer.tsx');
-  assert.match(bar, /<RestTimerStrip \/>\s*<BottomTabBar \{\.\.\.props\} \/>/);
+  assert.match(bar, /<RestTimerStrip \/>\s*<FloatingTabBar \{\.\.\.props\} \/>/);
 
   const layout = read('app/(app)/_layout.tsx');
   assert.ok(layout.indexOf('<RestTimerOverlay />') > layout.indexOf('</Stack>'));
