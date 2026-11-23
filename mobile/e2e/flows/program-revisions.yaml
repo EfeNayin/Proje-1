@@ -195,7 +195,8 @@ appId: host.exp.Exponent
 - tapOn: "Back"
 - tapOn: "Back"
 - tapOn: "Back"
-- tapOn: "Start Workout, tab.*"
+- tapOn:
+    id: "tab-workout"
 - extendedWaitUntil:
     visible: "Start from a template in Coach Base.*"
     timeout: 20000
@@ -338,8 +339,9 @@ appId: host.exp.Exponent
 - tapOn: "Back"
 - tapOn: "Back"
 - tapOn: "Back"
-# Programs now live under "My programs" on the Start Workout tab.
-- tapOn: "Start Workout, tab.*"
+# Programs now live under "My programs" on the Workout tab.
+- tapOn:
+    id: "tab-workout"
 - extendedWaitUntil:
     visible: "Coach Base, active program"
     timeout: 15000
@@ -348,7 +350,8 @@ appId: host.exp.Exponent
 - takeScreenshot: rev-19-programs-after-v2
 
 # ══ Athlete: the open workout still has version 1's plan; finish it ══
-- tapOn: "Start Workout, tab.*"
+- tapOn:
+    id: "tab-workout"
 - extendedWaitUntil:
     visible: "Resume workout"
     timeout: 20000
@@ -379,7 +382,8 @@ appId: host.exp.Exponent
 - tapOn: "Back"
 
 # ══ Athlete: the next workout from the active copy uses version 2 ══
-- tapOn: "Start Workout, tab.*"
+- tapOn:
+    id: "tab-workout"
 - extendedWaitUntil:
     visible: "Start from a template in Coach Base.*"
     timeout: 20000
